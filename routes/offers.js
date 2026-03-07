@@ -209,27 +209,29 @@ router.post("/", (req, res) => {
     const validForDays = Math.max(1, parseInt(body.validForDays || "1", 10));
     validUntil = new Date(now.getTime() + validForDays * 24 * 60 * 60 * 1000).toISOString();
   }
-
-  const offer = {
-    id: generateId(),
-    clientName: body.clientName || "",
-    clientPhone: body.clientPhone || "",
-    destination: body.destination || "",
-    flightRoute: body.flightRoute || "",
-    hotel: body.hotel || "",
-    travelDates: body.travelDates || "",
-    guests: body.guests || "",
-    basePrice,
-    markupPercent,
-    price: finalPrice,
-    marginAmount,
-    currency: body.currency || "EUR",
-    status: body.status || "draft",
-    createdAt: now.toISOString(),
-    validUntil,
-    notes: body.notes || "",
-    clientViewed: false
-  };
+ const offer = {
+   id: generateId(),
+  clientName: body.clientName || "",
+  clientPhone: body.clientPhone || "",
+  destination: body.destination || "",
+  flightRoute: body.flightRoute || "",
+  hotel: body.hotel || "",
+  travelDates: body.travelDates || "",
+  guests: body.guests || "",
+  basePrice,
+  markupPercent,
+  price: finalPrice,
+  marginAmount,
+  currency: body.currency || "EUR",
+  status: body.status || "draft",
+  createdAt: now.toISOString(),
+  validUntil,
+  notes: body.notes || "",
+  followUpDate: body.followUpDate || null,
+  bookedAt: null,
+  lostAt: null,
+  clientViewed: false
+};
 
   db.offers.unshift(offer);
   writeDB(db);
