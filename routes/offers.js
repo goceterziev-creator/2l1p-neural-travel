@@ -123,6 +123,37 @@ router.get("/:id/pdf", (req, res) => {
     </html>
   `);
 });
+notes: req.body.notes || "",
+followUpDate: req.body.followUpDate || null,
+bookedAt: null,
+lostAt: null
+
+router.patch("/:id/status", (req, res) => {
+
+const db = JSON.parse(fs.readFileSync("./DATABASE/database.json"))
+
+const offer = db.offers.find(o => o.id === req.params.id)
+
+if (!offer) {
+return res.status(404).json({error:"Offer not found"})
+}
+
+offer.status = req.body.status
+offer.updatedAt = new Date()
+
+if(req.body.status === "booked"){
+offer.bookedAt = new Date()
+}
+
+if(req.body.status === "lost"){
+offer.lostAt = new Date()
+}
+
+fs.writeFileSync("./DATABASE/database.json",JSON.stringify(db,null,2))
+
+res.json({success:true})
+
+})
 
 router.get("/:id", (req, res) => {
   const db = readDB();
