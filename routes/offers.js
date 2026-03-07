@@ -64,8 +64,8 @@ router.get("/stats", (req, res) => {
   const db = readDB();
   const offers = db.offers || [];
 
-  const activeOffers = offers.filter((o) =>
-    !["booked", "cancelled", "lost"].includes(o.status)
+  const activeOffers = offers.filter(
+    (o) => !["booked", "cancelled", "lost"].includes(o.status)
   ).length;
 
   const totalRevenuePotential = offers
@@ -76,11 +76,39 @@ router.get("/stats", (req, res) => {
     .filter((o) => !["cancelled", "lost"].includes(o.status))
     .reduce((sum, o) => sum + (toNumber(o.price) - toNumber(o.basePrice)), 0);
 
+  const bookedRevenue = offers
+    .filter((o) => o.status === "booked")
+    .reduce((sum, o) => sum + toNumber(o.price), 0);
+
+  const lostRevenue = offers
+    .filter((o) => o.status === "lost")
+    .reduce((sum, o) => sum + toNumber(o.price), 0);
+
+  const byStatus = {
+    draft: 0,
+    sent: 0,
+    viewed: 0,
+    booked: 0,
+    lost: 0,
+    cancelled: 0,
+    expired: 0
+  };
+
+  offers.forEach((offer) => {
+    const status = getEffectiveStatus(offer);
+    if (byStatus[status] !== undefined) {
+      byStatus[status] += 1;
+    }
+  });
+
   res.json({
     totalOffers: offers.length,
     activeOffers,
     totalRevenuePotential,
-    totalMarginPotential
+    totalMarginPotential,
+    bookedRevenue,
+    lostRevenue,
+    byStatus
   });
 });
 
@@ -119,41 +147,11 @@ router.get("/:id/pdf", (req, res) => {
       <div class="row"><b>Valid until:</b> ${offer.validUntil || "-"}</div>
       <div class="row"><b>Offer ID:</b> ${offer.id}</div>
       <div class="row"><b>Notes:</b> ${offer.notes || "-"}</div>
+      <div class="row"><b>Follow-up:</b> ${offer.followUpDate || "-"}</div>
     </body>
     </html>
   `);
 });
-notes: req.body.notes || "",
-followUpDate: req.body.followUpDate || null,
-bookedAt: null,
-lostAt: null
-
-router.patch("/:id/status", (req, res) => {
-
-const db = JSON.parse(fs.readFileSync("./DATABASE/database.json"))
-
-const offer = db.offers.find(o => o.id === req.params.id)
-
-if (!offer) {
-return res.status(404).json({error:"Offer not found"})
-}
-
-offer.status = req.body.status
-offer.updatedAt = new Date()
-
-if(req.body.status === "booked"){
-offer.bookedAt = new Date()
-}
-
-if(req.body.status === "lost"){
-offer.lostAt = new Date()
-}
-
-fs.writeFileSync("./DATABASE/database.json",JSON.stringify(db,null,2))
-
-res.json({success:true})
-
-})
 
 router.get("/:id", (req, res) => {
   const db = readDB();
@@ -191,7 +189,8 @@ router.post("/", (req, res) => {
 
   const basePrice = toNumber(body.basePrice);
   const markupPercent = toNumber(body.markupPercent);
-  const customFinalPrice = body.price !== "" && body.price != null ? toNumber(body.price) : null;
+  const customFinalPrice =
+    body.price !== "" && body.price != null ? toNumber(body.price) : null;
 
   const finalPrice =
     customFinalPrice !== null
@@ -207,31 +206,34 @@ router.post("/", (req, res) => {
     validUntil = new Date(body.customValidUntil).toISOString();
   } else {
     const validForDays = Math.max(1, parseInt(body.validForDays || "1", 10));
-    validUntil = new Date(now.getTime() + validForDays * 24 * 60 * 60 * 1000).toISOString();
+    validUntil = new Date(
+      now.getTime() + validForDays * 24 * 60 * 60 * 1000
+    ).toISOString();
   }
- const offer = {
-   id: generateId(),
-  clientName: body.clientName || "",
-  clientPhone: body.clientPhone || "",
-  destination: body.destination || "",
-  flightRoute: body.flightRoute || "",
-  hotel: body.hotel || "",
-  travelDates: body.travelDates || "",
-  guests: body.guests || "",
-  basePrice,
-  markupPercent,
-  price: finalPrice,
-  marginAmount,
-  currency: body.currency || "EUR",
-  status: body.status || "draft",
-  createdAt: now.toISOString(),
-  validUntil,
-  notes: body.notes || "",
-  followUpDate: body.followUpDate || null,
-  bookedAt: null,
-  lostAt: null,
-  clientViewed: false
-};
+
+  const offer = {
+    id: generateId(),
+    clientName: body.clientName || "",
+    clientPhone: body.clientPhone || "",
+    destination: body.destination || "",
+    flightRoute: body.flightRoute || "",
+    hotel: body.hotel || "",
+    travelDates: body.travelDates || "",
+    guests: body.guests || "",
+    basePrice,
+    markupPercent,
+    price: finalPrice,
+    marginAmount,
+    currency: body.currency || "EUR",
+    status: body.status || "draft",
+    createdAt: now.toISOString(),
+    validUntil,
+    notes: body.notes || "",
+    followUpDate: body.followUpDate || null,
+    bookedAt: null,
+    lostAt: null,
+    clientViewed: false
+  };
 
   db.offers.unshift(offer);
   writeDB(db);
@@ -255,6 +257,14 @@ router.patch("/:id/status", (req, res) => {
 
   offer.status = req.body.status || offer.status;
   offer.updatedAt = new Date().toISOString();
+
+  if (offer.status === "booked" && !offer.bookedAt) {
+    offer.bookedAt = new Date().toISOString();
+  }
+
+  if (offer.status === "lost" && !offer.lostAt) {
+    offer.lostAt = new Date().toISOString();
+  }
 
   writeDB(db);
 
