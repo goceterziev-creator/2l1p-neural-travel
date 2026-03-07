@@ -1,0 +1,14 @@
+{
+  "name": "2l1p-neural-travel-v3",
+  "version": "3.0.0",
+  "description": "2L1P Neural Travel MVP v3 - offers, statuses, pricing logic, admin filters, PDFs, WhatsApp, client pages",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^4.19.2",
+    "pdfkit": "^0.15.0"
+  }
+}

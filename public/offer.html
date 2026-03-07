@@ -1,0 +1,80 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Travel Offer</title>
+<style>
+body{
+  font-family: Arial, sans-serif;
+  background:#111;
+  color:white;
+  padding:40px;
+}
+.card{
+  background:#1c1c1c;
+  padding:30px;
+  border-radius:10px;
+  max-width:600px;
+  margin:auto;
+}
+.price{
+  font-size:32px;
+  color:#00e6b8;
+}
+.small{
+  opacity:0.8;
+  font-size:14px;
+}
+</style>
+</head>
+<body>
+
+<div class="card" id="offer">
+Loading offer...
+</div>
+
+<script>
+function getOfferId() {
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const lastPart = pathParts[pathParts.length - 1];
+  const queryId = new URLSearchParams(window.location.search).get("id");
+
+  if (lastPart && lastPart !== "offer" && lastPart !== "offer.html") {
+    return lastPart;
+  }
+
+  return queryId;
+}
+
+const id = getOfferId();
+
+if (!id) {
+  document.getElementById("offer").innerHTML = "<p>Offer ID missing</p>";
+} else {
+  fetch("/api/offers/" + id)
+    .then(r => {
+      if (!r.ok) throw new Error("Offer not found");
+      return r.json();
+    })
+    .then(data => {
+      document.getElementById("offer").innerHTML = `
+        <h1>2L1P Neural Travel</h1>
+        <p><b>Client:</b> ${data.clientName || "TBA"}</p>
+        <p><b>Destination:</b> ${data.destination || "TBA"}</p>
+        <p><b>Flights:</b> ${data.flightRoute || "TBA"}</p>
+        <p><b>Hotel:</b> ${data.hotel || "TBA"}</p>
+        <p><b>Guests:</b> ${data.guests || "TBA"}</p>
+        <p><b>Dates:</b> ${data.travelDates || "TBA"}</p>
+        <h2 class="price">${data.price} ${data.currency || "EUR"}</h2>
+        <p><b>Valid until:</b> ${new Date(data.validUntil).toLocaleString()}</p>
+        <p class="small"><b>Offer ID:</b> ${data.id}</p>
+      `;
+    })
+    .catch(err => {
+      document.getElementById("offer").innerHTML = `<p>${err.message}</p>`;
+    });
+}
+</script>
+
+</body>
+</html>
