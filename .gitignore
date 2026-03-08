@@ -1,3 +1,4 @@
+node_modules
 DATABASE/database.json
 DATABASE/database.db
-node_modules
+*.bak
