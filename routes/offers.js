@@ -47,71 +47,128 @@ function getEffectiveStatus(offer) {
 
   return offer.status || "draft";
 }
+function scoreOffer(offer) {
+  const now = Date.now();
+  const validUntilTs = offer.validUntil ? new Date(offer.validUntil).getTime() : null;
+  const hoursLeft =
+    Number.isFinite(validUntilTs) ? (validUntilTs - now) / (1000 * 60 * 60) : null;
+
+  let dealScore = 0;
+  let urgencyScore = 0;
+  let profitScore = 0;
+
+  const price = toNumber(offer.price);
+  const basePrice = toNumber(offer.basePrice);
+  const margin = price - basePrice;
+
+  if (offer.clientViewed) dealScore += 30;
+  if (offer.status === "viewed") dealScore += 20;
+  if (offer.status === "sent") dealScore += 10;
+  if (offer.status === "draft") dealScore += 5;
+
+  if (margin >= 500) profitScore += 95;
+  else if (margin >= 200) profitScore += 75;
+  else if (margin >= 100) profitScore += 55;
+  else if (margin >= 30) profitScore += 35;
+  else profitScore += 15;
+
+  if (price >= 5000) dealScore += 20;
+  else if (price >= 1500) dealScore += 10;
+
+  if (hoursLeft !== null) {
+    if (hoursLeft <= 6) urgencyScore += 95;
+    else if (hoursLeft <= 24) urgencyScore += 80;
+    else if (hoursLeft <= 48) urgencyScore += 60;
+    else if (hoursLeft <= 96) urgencyScore += 35;
+    else urgencyScore += 10;
+  }
+
+  if (offer.followUpDate) {
+    const followUpTs = new Date(offer.followUpDate).getTime();
+    if (Number.isFinite(followUpTs) && followUpTs <= now) urgencyScore += 25;
+  }
+
+  if (["booked", "cancelled", "lost"].includes(offer.status)) {
+    dealScore = 0;
+    urgencyScore = 0;
+  }
+
+  dealScore = Math.min(100, dealScore);
+  urgencyScore = Math.min(100, urgencyScore);
+  profitScore = Math.min(100, profitScore);
+
+  let clientTemperature = "cold";
+  if (dealScore >= 70) clientTemperature = "hot";
+  else if (dealScore >= 40) clientTemperature = "warm";
+
+  let nextAction = "Monitor";
+  if (offer.status === "draft") nextAction = "Send offer";
+  if (offer.status === "sent") nextAction = "Follow up";
+  if (offer.status === "viewed") nextAction = "Call client";
+  if (urgencyScore >= 80) nextAction = "Urgent follow-up";
+  if (offer.followUpDate && new Date(offer.followUpDate).getTime() <= now) {
+    nextAction = "Follow-up due now";
+  }
+
+  return {
+    dealScore,
+    urgencyScore,
+    profitScore,
+    clientTemperature,
+    nextAction
+  };
+}
+
 
 router.get("/", (req, res) => {
   const db = readDB();
   const offers = db.offers
-    .map((offer) => ({
-      ...offer,
-      effectiveStatus: getEffectiveStatus(offer)
-    }))
+  .map((offer) => ({
+    ...offer,
+    effectiveStatus: getEffectiveStatus(offer),
+    ...scoreOffer(offer)
+  }))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   res.json({ offers });
 });
 
-router.get("/stats", (req, res) => {
+router.get("/hot-deals", (req, res) => {
   const db = readDB();
-  const offers = db.offers || [];
 
-  const activeOffers = offers.filter(
-    (o) => !["booked", "cancelled", "lost"].includes(o.status)
-  ).length;
+  const enriched = db.offers
+    .map((offer) => ({
+      ...offer,
+      effectiveStatus: getEffectiveStatus(offer),
+      ...scoreOffer(offer)
+    }))
+    .filter((offer) => !["booked", "cancelled", "lost"].includes(offer.status));
 
-  const totalRevenuePotential = offers
-    .filter((o) => !["cancelled", "lost"].includes(o.status))
-    .reduce((sum, o) => sum + toNumber(o.price), 0);
+  const hotDeals = [...enriched]
+    .sort((a, b) => (b.dealScore + b.urgencyScore + b.profitScore) - (a.dealScore + a.urgencyScore + a.profitScore))
+    .slice(0, 5);
 
-  const totalMarginPotential = offers
-    .filter((o) => !["cancelled", "lost"].includes(o.status))
-    .reduce((sum, o) => sum + (toNumber(o.price) - toNumber(o.basePrice)), 0);
+  const expiringSoon = [...enriched]
+    .filter((o) => o.validUntil)
+    .sort((a, b) => new Date(a.validUntil) - new Date(b.validUntil))
+    .slice(0, 5);
 
-  const bookedRevenue = offers
-    .filter((o) => o.status === "booked")
-    .reduce((sum, o) => sum + toNumber(o.price), 0);
+  const highMargin = [...enriched]
+    .sort((a, b) => (toNumber(b.price) - toNumber(b.basePrice)) - (toNumber(a.price) - toNumber(a.basePrice)))
+    .slice(0, 5);
 
-  const lostRevenue = offers
-    .filter((o) => o.status === "lost")
-    .reduce((sum, o) => sum + toNumber(o.price), 0);
-
-  const byStatus = {
-    draft: 0,
-    sent: 0,
-    viewed: 0,
-    booked: 0,
-    lost: 0,
-    cancelled: 0,
-    expired: 0
-  };
-
-  offers.forEach((offer) => {
-    const status = getEffectiveStatus(offer);
-    if (byStatus[status] !== undefined) {
-      byStatus[status] += 1;
-    }
-  });
+  const followUpRequired = [...enriched]
+    .filter((o) => o.followUpDate || o.status === "viewed" || o.status === "sent")
+    .sort((a, b) => b.urgencyScore - a.urgencyScore)
+    .slice(0, 5);
 
   res.json({
-    totalOffers: offers.length,
-    activeOffers,
-    totalRevenuePotential,
-    totalMarginPotential,
-    bookedRevenue,
-    lostRevenue,
-    byStatus
+    hotDeals,
+    expiringSoon,
+    highMargin,
+    followUpRequired
   });
 });
-
 router.get("/:id/pdf", (req, res) => {
   const db = readDB();
   const offer = db.offers.find((o) => o.id === req.params.id);

@@ -1,4 +1,5 @@
-﻿const adminOffers = document.getElementById("adminOffers");
+﻿const hotDealWidgets = document.getElementById("hotDealWidgets");
+const adminOffers = document.getElementById("adminOffers");
 const adminStats = document.getElementById("adminStats");
 const filterIds = ["q", "status", "destination", "from", "to", "sort"];
 
@@ -126,6 +127,39 @@ async function loadStats() {
   `;
 }
 
+function miniList(title, items) {
+  return `
+    <div class="kpi">
+      <div class="label">${title}</div>
+      <div style="margin-top:10px; display:grid; gap:8px;">
+        ${items.length ? items.map(o => `
+          <div style="font-size:13px; line-height:1.35;">
+            <b>${o.destination || "Untitled"}</b><br>
+            <span style="opacity:.75">${o.clientName || "No client"}</span><br>
+            <span style="opacity:.75">${Number(o.price || 0).toFixed(2)} ${o.currency || "EUR"}</span>
+          </div>
+        `).join("") : `<div class="empty">No data</div>`}
+      </div>
+    </div>
+  `;
+}
+
+async function loadHotDeals() {
+  try {
+    const res = await fetch("/api/offers/hot-deals");
+    const data = await res.json();
+
+    hotDealWidgets.innerHTML = `
+      ${miniList("🔥 Hot Deals", data.hotDeals || [])}
+      ${miniList("⏰ Expiring Soon", data.expiringSoon || [])}
+      ${miniList("💰 High Margin", data.highMargin || [])}
+      ${miniList("📞 Follow-up Required", data.followUpRequired || [])}
+    `;
+  } catch (e) {
+    hotDealWidgets.innerHTML = "";
+  }
+}
+
 async function loadOffers() {
   const params = new URLSearchParams();
 
@@ -155,8 +189,9 @@ async function loadOffers() {
         body: JSON.stringify({ status: sel.value })
       });
 
-      loadOffers();
-      loadStats();
+loadOffers();
+loadStats();
+loadHotDeals();
     })
   );
 
@@ -178,5 +213,6 @@ filterIds.forEach((id) => {
   el.addEventListener("change", loadOffers);
 });
 
-loadStats();
 loadOffers();
+loadStats();
+loadHotDeals();
