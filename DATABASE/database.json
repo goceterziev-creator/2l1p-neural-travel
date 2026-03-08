@@ -56,11 +56,12 @@
       "price": 1050,
       "marginAmount": 50,
       "currency": "EUR",
-      "status": "draft",
+      "status": "viewed",
       "createdAt": "2026-03-07T07:49:27.781Z",
       "validUntil": "2026-03-08T07:49:27.781Z",
       "notes": "",
-      "clientViewed": false
+      "clientViewed": true,
+      "updatedAt": "2026-03-07T22:42:08.809Z"
     },
     {
       "id": "OFF-1772859373876-2o4tq",

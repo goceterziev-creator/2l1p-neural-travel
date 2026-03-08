@@ -1,5 +1,3 @@
-node_modules/
-*.bak
-{
-{const
-r.json())
+DATABASE/database.json
+DATABASE/database.db
+node_modules
