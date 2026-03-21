@@ -19,7 +19,7 @@ function getOfferById(id) {
 router.post("/generate", async (req, res) => {
   try {
     const result = generateOffer(req.body, {
-      clientBaseUrl: "http://localhost:3001/api/offers/view"
+      clientBaseUrl: "https://https://twol1p-neural-travel-1.onrender.com/api/offers/view"
     });
 
     const saved = await saveGeneratedOffer(result, GENERATED_OFFERS_DIR);
