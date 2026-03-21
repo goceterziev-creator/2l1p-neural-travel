@@ -1,0 +1,118 @@
+{
+  "offer": {
+    "id": "OFF-1773842001392",
+    "destination": "Tokyo, Japan",
+    "country": "",
+    "startDate": "2026-03-28",
+    "endDate": "2026-04-12",
+    "departureAirport": "Sofia",
+    "adults": 2,
+    "children": [
+      {
+        "age": 13
+      },
+      {
+        "age": 1
+      }
+    ],
+    "currency": "EUR",
+    "validHours": 24,
+    "contactPhone": "+359894842882",
+    "contactWhatsApp": "+359894842882",
+    "brandName": "AYA Offer Engine",
+    "notes": "",
+    "pricing": {},
+    "packages": [
+      {
+        "key": "premium",
+        "name": "PREMIUM",
+        "price": 5290,
+        "badge": "Най-добра стойност",
+        "features": [
+          "15 нощувки в 3.5★ / 4★ хотел",
+          "Семейна стая или свързани стаи",
+          "Самолетни билети за 2 възрастни + 2 деца",
+          "Багаж + базови трансфери",
+          "Примерна програма за Токио"
+        ]
+      },
+      {
+        "key": "luxury",
+        "name": "LUXURY",
+        "price": 6480,
+        "badge": "Препоръчан вариант",
+        "features": [
+          "15 нощувки в 4★ / 4.5★ хотел",
+          "По-централна зона и по-лесна логистика",
+          "По-удобни полети за семейно пътуване",
+          "Private airport transfer",
+          "1 family experience включено"
+        ]
+      },
+      {
+        "key": "vip",
+        "name": "VIP FAMILY",
+        "price": 8250,
+        "badge": "Максимален комфорт",
+        "features": [
+          "15 нощувки в 5★ хотел / family suite",
+          "Premium routing и private transfers",
+          "Персонализирана day-by-day програма",
+          "Concierge support",
+          "2 family experiences включени"
+        ]
+      }
+    ],
+    "hotelZones": [
+      "Shinjuku",
+      "Ginza",
+      "Tokyo Station Area"
+    ],
+    "experiences": [
+      "Tokyo highlights с балансирано темпо за семейство",
+      "Family-friendly ден с по-лек график",
+      "Шопинг / свободно време / optional experience"
+    ],
+    "itinerary": [
+      "Пристигане, private transfer и настаняване",
+      "Лек старт около хотела и адаптация",
+      "Tokyo highlights",
+      "Family-friendly ден",
+      "Свободно време / shopping / optional experience",
+      "Спокоен ритъм и локални разходки"
+    ],
+    "breakdown": {
+      "flights": "€2,200 – €3,000",
+      "hotel": "€2,400 – €4,200",
+      "transfers": "€120 – €280",
+      "extras": "Според избрания пакет"
+    },
+    "nights": 15,
+    "datesLabel": "28.03.2026 г. – 12.04.2026 г.",
+    "title": "TOKYO FAMILY EXPERIENCE",
+    "tagline": "Семейно пътуване с комфорт, добра локация и лесна логистика",
+    "route": "София → Истанбул / Доха / Дубай → Токио",
+    "travelersLabel": "2 възрастни + 2 деца",
+    "childrenLabel": "Дете 1: 13 г. · Дете 2: 1 г.",
+    "recommendedPackage": "luxury"
+  },
+  "pdfData": {
+    "DESTINATION": "Tokyo, Japan",
+    "YEAR": 2026,
+    "TAGLINE": "Семейно пътуване с комфорт, добра локация и лесна логистика",
+    "DATES": "28.03.2026 г. – 12.04.2026 г.",
+    "TRAVELERS": "2 възрастни + 2 деца · Дете 1: 13 г. · Дете 2: 1 г.",
+    "HOTEL": "Shinjuku / Ginza / Tokyo Station Area",
+    "SCOPE": "HTML offer + PDF + WhatsApp ready",
+    "CONCEPT_TEXT": "Подготвихме Tokyo, Japan family offer с фокус върху комфорт, удобна локация и семейна логистика за 15 нощувки.",
+    "EXPERIENCE_1_TITLE": "Family-friendly Tokyo rhythm",
+    "EXPERIENCE_1_DESC": "Tokyo highlights с балансирано темпо за семейство",
+    "EXPERIENCE_2_TITLE": "Comfort + flexibility",
+    "EXPERIENCE_2_DESC": "Family-friendly ден с по-лек график",
+    "DAY_1": "Пристигане, private transfer и настаняване",
+    "DAY_2": "Лек старт около хотела и адаптация",
+    "DAY_3": "Tokyo highlights"
+  },
+  "whatsappText": "Здравейте 👋\n\nПодготвихме вашата оферта за Tokyo, Japan за периода 28.03.2026 г. – 12.04.2026 г..\n\nПътуващи: 2 възрастни + 2 деца\nПрепоръчан пакет: LUXURY\nОт: €5,290\n\nРазгледайте офертата тук: http://localhost:3001/offer/OFF-1773842001392\n\nПри желание можем да коригираме хотела, полетите или бюджета и да изпратим обновена версия.",
+  "clientUrl": "http://localhost:3001/offer/OFF-1773842001392"
+}

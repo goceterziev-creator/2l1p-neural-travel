@@ -1,251 +1,46 @@
 ﻿<!DOCTYPE html>
-<html lang="bg">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin Dashboard</title>
+  <title>2L1P Neural Travel - Admin</title>
   <link rel="stylesheet" href="/styles.css" />
-  <style>
-    body { font-family: Arial, sans-serif; margin: 0; background: #0f1115; color: #fff; }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
-    .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
-    .title { font-size: 28px; font-weight: 700; }
-    .sub { opacity: 0.75; margin-top: 6px; }
-    .btn {
-      display: inline-block; padding: 10px 14px; border-radius: 10px;
-      background: #1f2937; color: #fff; text-decoration: none; border: 1px solid #334155;
-    }
-    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 20px 0; }
-    .kpi { background: #171a21; border: 1px solid #2a3040; border-radius: 14px; padding: 16px; }
-    .kpi .label { opacity: 0.7; font-size: 13px; }
-    .kpi .value { font-size: 28px; font-weight: 700; margin-top: 8px; }
-    .filters {
-      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px;
-      margin: 18px 0 20px;
-    }
-    input, select {
-      width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155;
-      background: #111827; color: white;
-    }
-    .list { display: grid; gap: 14px; }
-    .card {
-      background: #171a21; border: 1px solid #2a3040; border-radius: 16px; padding: 16px;
-    }
-    .row1 {
-      display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 10px;
-    }
-    .dest { font-size: 22px; font-weight: 700; }
-    .subline { opacity: 0.75; margin-top: 6px; }
-    .price { font-size: 24px; font-weight: 700; color: #34d399; }
-    .meta {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px;
-    }
-    .box {
-      background: #0f141d; border: 1px solid #263041; border-radius: 12px; padding: 12px;
-    }
-    .box .l { opacity: 0.65; font-size: 12px; margin-bottom: 6px; }
-    .box .v { font-size: 14px; word-break: break-word; }
-    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-    .badge {
-      display: inline-block; padding: 5px 10px; border-radius: 999px; font-size: 12px;
-      border: 1px solid #334155; background: #111827; margin-bottom: 8px;
-    }
-    .empty { opacity: 0.7; padding: 20px 0; }
-    @media (max-width: 900px) {
-      .grid, .meta, .filters { grid-template-columns: 1fr; }
-      .row1 { flex-direction: column; }
-    }
-  </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="top">
-      <div>
-        <div class="title">Admin Dashboard</div>
-        <div class="sub">Search, filter, sort, update statuses, and monitor revenue potential.</div>
-      </div>
-      <a class="btn" href="/">Back to Offer Creator</a>
-    </div>
-
-    <div class="grid" id="kpis"></div>
+  <div class="container">
+    <h1>2L1P Neural Travel - Admin Dashboard</h1>
 
     <div class="filters">
-      <input id="search" placeholder="Search by client, phone, destination, hotel, ID..." />
       <select id="statusFilter">
-        <option value="">all statuses</option>
+        <option value="all">all statuses</option>
         <option value="draft">draft</option>
         <option value="sent">sent</option>
         <option value="viewed">viewed</option>
         <option value="booked">booked</option>
         <option value="cancelled">cancelled</option>
-        <option value="lost">lost</option>
-        <option value="expired">expired</option>
       </select>
-      <select id="sortBy">
+
+      <input id="destination" placeholder="destination" />
+      <input id="from" type="date" />
+      <input id="to" type="date" />
+
+      <select id="sort">
         <option value="newest">newest</option>
         <option value="oldest">oldest</option>
         <option value="price_desc">price high-low</option>
         <option value="price_asc">price low-high</option>
         <option value="destination">destination</option>
       </select>
-      <button class="btn" id="refreshBtn" type="button">Refresh</button>
     </div>
 
-    <div class="list" id="offersList"></div>
+    <div class="list" id="adminOffers"></div>
+
+    <section class="admin-section">
+      <h2>Requests Queue</h2>
+      <div id="requestsList"></div>
+    </section>
   </div>
 
-  <script>
-    const kpis = document.getElementById("kpis");
-    const offersList = document.getElementById("offersList");
-    const searchInput = document.getElementById("search");
-    const statusFilter = document.getElementById("statusFilter");
-    const sortBy = document.getElementById("sortBy");
-    const refreshBtn = document.getElementById("refreshBtn");
-
-    let allOffers = [];
-
-    function pad(n) {
-      return String(n).padStart(2, "0");
-    }
-
-    function formatDate(d) {
-      const x = new Date(d);
-      if (isNaN(x)) return "-";
-      return `${pad(x.getDate())}.${pad(x.getMonth()+1)}.${x.getFullYear()} ${pad(x.getHours())}:${pad(x.getMinutes())}`;
-    }
-
-    function money(v, c = "EUR") {
-      return `${Number(v || 0).toFixed(2)} ${c}`;
-    }
-
-    function renderKpis(offers) {
-      const activeOffers = offers.filter(o => !["booked", "cancelled", "lost"].includes(o.status)).length;
-      const revenue = offers
-        .filter(o => !["cancelled", "lost"].includes(o.status))
-        .reduce((sum, o) => sum + Number(o.price || 0), 0);
-      const margin = offers
-        .filter(o => !["cancelled", "lost"].includes(o.status))
-        .reduce((sum, o) => sum + (Number(o.price || 0) - Number(o.basePrice || 0)), 0);
-
-      kpis.innerHTML = `
-        <div class="kpi"><div class="label">Total Offers</div><div class="value">${offers.length}</div></div>
-        <div class="kpi"><div class="label">Active Offers</div><div class="value">${activeOffers}</div></div>
-        <div class="kpi"><div class="label">Revenue Potential</div><div class="value">${money(revenue)}</div></div>
-        <div class="kpi"><div class="label">Margin Potential</div><div class="value">${money(margin)}</div></div>
-      `;
-    }
-
-    function applyFilters() {
-      const q = searchInput.value.trim().toLowerCase();
-      const status = statusFilter.value;
-      const sort = sortBy.value;
-
-      let filtered = [...allOffers];
-
-      if (q) {
-        filtered = filtered.filter(o =>
-          [
-            o.id,
-            o.clientName,
-            o.clientPhone,
-            o.destination,
-            o.hotel,
-            o.flightRoute
-          ].join(" ").toLowerCase().includes(q)
-        );
-      }
-
-      if (status) {
-        filtered = filtered.filter(o => (o.effectiveStatus || o.status) === status);
-      }
-
-      if (sort === "newest") {
-        filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      } else if (sort === "oldest") {
-        filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      } else if (sort === "price_desc") {
-        filtered.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
-      } else if (sort === "price_asc") {
-        filtered.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
-      } else if (sort === "destination") {
-        filtered.sort((a, b) => String(a.destination || "").localeCompare(String(b.destination || "")));
-      }
-
-      renderOffers(filtered);
-    }
-
-    function renderOffers(offers) {
-      if (!offers.length) {
-        offersList.innerHTML = `<div class="empty">No offers found.</div>`;
-        return;
-      }
-
-      offersList.innerHTML = offers.map(o => `
-        <div class="card">
-          <div class="row1">
-            <div>
-              <div class="badge">${o.effectiveStatus || o.status || "draft"}</div>
-              <div class="dest">${o.destination || "Untitled Offer"}</div>
-              <div class="subline">${o.clientName || "No client"} · ${o.flightRoute || "No route"} · ${o.hotel || "No hotel"}</div>
-            </div>
-            <div>
-              <div class="price">${money(o.price, o.currency)}</div>
-            </div>
-          </div>
-
-          <div class="meta">
-            <div class="box"><div class="l">Offer ID</div><div class="v">${o.id}</div></div>
-            <div class="box"><div class="l">Client Phone</div><div class="v">${o.clientPhone || "-"}</div></div>
-            <div class="box"><div class="l">Created</div><div class="v">${formatDate(o.createdAt)}</div></div>
-            <div class="box"><div class="l">Valid Until</div><div class="v">${formatDate(o.validUntil)}</div></div>
-            <div class="box"><div class="l">Guests</div><div class="v">${o.guests || "-"}</div></div>
-            <div class="box"><div class="l">Base Price</div><div class="v">${money(o.basePrice, o.currency)}</div></div>
-            <div class="box"><div class="l">Markup</div><div class="v">${Number(o.markupPercent || 0).toFixed(2)}%</div></div>
-            <div class="box"><div class="l">Margin</div><div class="v">${money((Number(o.price || 0) - Number(o.basePrice || 0)), o.currency)}</div></div>
-          </div>
-
-          <div class="actions">
-            <select data-id="${o.id}" class="statusSelect">
-              ${["draft","sent","viewed","booked","cancelled","lost"].map(s =>
-                `<option value="${s}" ${(o.status || "draft") === s ? "selected" : ""}>${s}</option>`
-              ).join("")}
-            </select>
-            <a class="btn" href="/offer/${o.id}" target="_blank">Client Page</a>
-            <a class="btn" href="/api/offers/${o.id}/pdf" target="_blank">PDF</a>
-          </div>
-        </div>
-      `).join("");
-
-      document.querySelectorAll(".statusSelect").forEach(sel => {
-        sel.addEventListener("change", async () => {
-          await fetch(`/api/offers/${sel.dataset.id}/status`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: sel.value })
-          });
-          await loadAdmin();
-        });
-      });
-    }
-
-    async function loadAdmin() {
-      try {
-        const res = await fetch("/api/offers");
-        const data = await res.json();
-        allOffers = Array.isArray(data) ? data : (data.offers || []);
-        renderKpis(allOffers);
-        applyFilters();
-      } catch (e) {
-        offersList.innerHTML = `<div class="empty">Failed to load offers.</div>`;
-      }
-    }
-
-    searchInput.addEventListener("input", applyFilters);
-    statusFilter.addEventListener("change", applyFilters);
-    sortBy.addEventListener("change", applyFilters);
-    refreshBtn.addEventListener("click", loadAdmin);
-
-    loadAdmin();
-  </script>
+  <script src="/admin.js"></script>
 </body>
 </html>

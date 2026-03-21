@@ -1,15 +1,15 @@
 {
-  "name": "2l1p-neural-travel-v3",
-  "version": "3.0.0",
-  "description": "2L1P Neural Travel MVP v3 - offers, statuses, pricing logic, admin filters, PDFs, WhatsApp, client pages",
+  "name": "2l1p-neural-travel-v4",
+  "version": "1.0.0",
+  "description": "AYA Offer Engine / 2L1P Neural Travel",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.2",
-    "cors": "^2.8.6",
-    "express": "^4.19.2",
-    "pdfkit": "^0.15.0"
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "pdfkit": "^0.15.2",
+    "puppeteer": "^24.22.3"
   }
-}
+}                                                                                                                                                                                                                                                                                                                                                                            

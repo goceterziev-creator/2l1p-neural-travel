@@ -11,6 +11,7 @@ const pad = (n) => String(n).padStart(2, "0");
 function formatDate(d) {
   const x = new Date(d);
   if (isNaN(x)) return "-";
+
   return (
     pad(x.getDate()) +
     "." +
@@ -57,15 +58,41 @@ ${link}
   return `https://wa.me/${safePhone}?text=${encodeURIComponent(text)}`;
 }
 
+async function bookOffer(id) {
+  const ok = confirm("Confirm booking?");
+  if (!ok) return;
+
+  try {
+    const res = await fetch(`/api/offers/${id}/book`, {
+      method: "POST"
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      alert(data.message || "Booking failed");
+      return;
+    }
+
+    alert("Booking confirmed!");
+    loadOffers();
+    loadSnapshot();
+  } catch (err) {
+    alert("Booking failed");
+  }
+}
+
 function offerCard(offer) {
   const link = buildOfferLink(offer.id);
   const whatsappUrl = buildWhatsAppUrl(offer.clientPhone || "", offer);
+  const effectiveStatus = offer.effectiveStatus || offer.status || "draft";
+  const isClosed = ["booked", "cancelled", "lost", "expired"].includes(effectiveStatus);
 
   return `
     <div class="offer-card">
       <div class="offer-top">
         <div>
-          ${badge(offer.effectiveStatus || offer.status || "draft")}
+          ${badge(effectiveStatus)}
           <h3 class="offer-title">${offer.destination || "Untitled Offer"}</h3>
           <div class="offer-sub">
             ${offer.flightRoute || "No route"} · ${offer.hotel || "No hotel"} · ${offer.guests || "No guests"}
@@ -115,6 +142,11 @@ function offerCard(offer) {
         <a class="btn secondary" href="/offer/${offer.id}" target="_blank">Client Page</a>
         <a class="btn secondary" href="/api/offers/${offer.id}/pdf" target="_blank">PDF</a>
         <a class="btn success" href="${whatsappUrl}" target="_blank">WhatsApp</a>
+        ${
+          isClosed
+            ? ""
+            : `<button class="btn success book-offer" data-id="${offer.id}">Book</button>`
+        }
         <button class="btn secondary copy-link" data-link="${link}">Copy Link</button>
       </div>
     </div>
@@ -123,10 +155,9 @@ function offerCard(offer) {
 
 async function loadSnapshot() {
   try {
-    const res = await fetch("/api/offers/stats");
-    if (!res.ok) throw new Error("Failed to load stats");
-
-    const s = await res.json();
+    const res = await fetch("/api/offers/stats/summary");
+    const data = await res.json();
+    const s = data.stats || {};
 
     snapshot.innerHTML = `
       <div class="kpi">
@@ -138,12 +169,12 @@ async function loadSnapshot() {
         <div class="value">${s.activeOffers ?? 0}</div>
       </div>
       <div class="kpi">
-        <div class="label">Revenue Potential</div>
-        <div class="value">${Number(s.totalRevenuePotential || 0).toFixed(2)} EUR</div>
+        <div class="label">Revenue</div>
+        <div class="value">${Number(s.totalRevenue || 0).toFixed(2)} EUR</div>
       </div>
       <div class="kpi">
-        <div class="label">Margin Potential</div>
-        <div class="value">${Number(s.totalMarginPotential || 0).toFixed(2)} EUR</div>
+        <div class="label">Margin</div>
+        <div class="value">${Number(s.totalMargin || 0).toFixed(2)} EUR</div>
       </div>
     `;
   } catch (err) {
@@ -154,10 +185,8 @@ async function loadSnapshot() {
 async function loadOffers() {
   try {
     const res = await fetch("/api/offers");
-    if (!res.ok) throw new Error("Failed to load offers");
-
     const data = await res.json();
-    const offers = Array.isArray(data) ? data : (data.offers || []);
+    const offers = data.offers || [];
 
     if (!offers.length) {
       offersList.innerHTML = '<div class="empty">No offers yet.</div>';
@@ -170,9 +199,7 @@ async function loadOffers() {
       btn.addEventListener("click", async () => {
         await navigator.clipboard.writeText(btn.dataset.link);
         btn.textContent = "Copied";
-        setTimeout(() => {
-          btn.textContent = "Copy Link";
-        }, 1200);
+        setTimeout(() => (btn.textContent = "Copy Link"), 1200);
       });
     });
 
@@ -188,31 +215,20 @@ async function loadOffers() {
         loadSnapshot();
       });
     });
+
+    document.querySelectorAll(".book-offer").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await bookOffer(btn.dataset.id);
+      });
+    });
   } catch (err) {
     offersList.innerHTML = `<div class="empty">Offers unavailable</div>`;
   }
 }
 
-async function sendWhatsApp() {
-  let phoneInput = document.getElementById("clientPhone");
-  let phone = phoneInput ? phoneInput.value.trim() : "";
-
-  if (!phone) {
-    alert("Please enter client phone number");
-    return;
-  }
-
-  if (!window.currentOffer?.id) {
-    alert("Offer not generated yet");
-    return;
-  }
-
-  const url = buildWhatsAppUrl(phone, window.currentOffer);
-  window.open(url, "_blank");
-}
-
 offerForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+
   formMessage.textContent = "Saving...";
 
   const payload = Object.fromEntries(new FormData(offerForm).entries());
@@ -226,7 +242,7 @@ offerForm.addEventListener("submit", async (e) => {
 
     const data = await res.json();
 
-    if (!res.ok || !data.success) {
+    if (!data.success) {
       formMessage.textContent = data.message || "Error";
       return;
     }
@@ -234,11 +250,11 @@ offerForm.addEventListener("submit", async (e) => {
     window.currentOffer = data.offer;
 
     formMessage.textContent = `Saved ${data.offer.id}`;
+
     offerForm.reset();
     offerForm.currency.value = "EUR";
     offerForm.validForDays.value = "1";
     offerForm.status.value = "draft";
-    offerForm.clientPhone.value = data.offer.clientPhone || "";
 
     loadOffers();
     loadSnapshot();

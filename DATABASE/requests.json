@@ -1,0 +1,32 @@
+{
+  "requests": [
+    {
+      "id": "REQ-1773654929024",
+      "name": "Bibi",
+      "phone": "359888123456",
+      "destination": "Paros",
+      "from": "Sofia",
+      "dates": "10 Jun - 15 Jun",
+      "guests": 2,
+      "budget": 1200,
+      "status": "generated",
+      "createdAt": "2026-03-16T09:55:29.024Z",
+      "generatedOfferId": "OFF-1773655446950",
+      "generatedAt": "2026-03-16T10:04:06.953Z"
+    },
+    {
+      "id": "REQ-1773644939991",
+      "name": "Bibi",
+      "phone": "359888123456",
+      "destination": "Paros",
+      "from": "Sofia",
+      "dates": "10 Jun - 15 Jun",
+      "guests": 2,
+      "budget": 1200,
+      "status": "generated",
+      "createdAt": "2026-03-16T07:08:59.991Z",
+      "generatedOfferId": "OFF-1774008750300",
+      "generatedAt": "2026-03-20T12:12:30.304Z"
+    }
+  ]
+}

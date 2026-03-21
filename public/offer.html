@@ -25,6 +25,49 @@ body{
   opacity:0.8;
   font-size:14px;
 }
+.actions{
+  margin-top:24px;
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+}
+.btn{
+  border:none;
+  border-radius:8px;
+  padding:12px 18px;
+  font-size:14px;
+  cursor:pointer;
+  text-decoration:none;
+  display:inline-block;
+}
+.btn.secondary{
+  background:#2f2f2f;
+  color:white;
+}
+.btn.secondary:hover{
+  background:#3b3b3b;
+}
+.btn.success{
+  background:#00e6b8;
+  color:#111;
+  font-weight:bold;
+}
+.btn.success:hover{
+  background:#00cfa6;
+}
+.status{
+  display:inline-block;
+  margin-bottom:14px;
+  padding:6px 10px;
+  border-radius:999px;
+  background:#2f2f2f;
+  font-size:13px;
+  text-transform:uppercase;
+}
+.note{
+  margin-top:14px;
+  color:#cfcfcf;
+}
 </style>
 </head>
 <body>
@@ -34,6 +77,8 @@ Loading offer...
 </div>
 
 <script>
+window.offer = null;
+
 function getOfferId() {
   const pathParts = window.location.pathname.split("/").filter(Boolean);
   const lastPart = pathParts[pathParts.length - 1];
@@ -46,34 +91,110 @@ function getOfferId() {
   return queryId;
 }
 
-const id = getOfferId();
-
-if (!id) {
-  document.getElementById("offer").innerHTML = "<p>Offer ID missing</p>";
-} else {
-  fetch("/api/offers/" + id)
-    .then(r => {
-      if (!r.ok) throw new Error("Offer not found");
-      return r.json();
-    })
-    .then(data => {
-      document.getElementById("offer").innerHTML = `
-        <h1>2L1P Neural Travel</h1>
-        <p><b>Client:</b> ${data.clientName || "TBA"}</p>
-        <p><b>Destination:</b> ${data.destination || "TBA"}</p>
-        <p><b>Flights:</b> ${data.flightRoute || "TBA"}</p>
-        <p><b>Hotel:</b> ${data.hotel || "TBA"}</p>
-        <p><b>Guests:</b> ${data.guests || "TBA"}</p>
-        <p><b>Dates:</b> ${data.travelDates || "TBA"}</p>
-        <h2 class="price">${data.price} ${data.currency || "EUR"}</h2>
-        <p><b>Valid until:</b> ${new Date(data.validUntil).toLocaleString()}</p>
-        <p class="small"><b>Offer ID:</b> ${data.id}</p>
-      `;
-    })
-    .catch(err => {
-      document.getElementById("offer").innerHTML = `<p>${err.message}</p>`;
-    });
+function formatDate(value) {
+  const d = new Date(value);
+  if (isNaN(d)) return "-";
+  return d.toLocaleString();
 }
+
+async function bookOffer() {
+  if (!window.offer || !window.offer.id) {
+    alert("Offer not loaded");
+    return;
+  }
+
+  const ok = confirm("Confirm booking?");
+  if (!ok) return;
+
+  try {
+    const res = await fetch("/api/offers/" + window.offer.id + "/book", {
+      method: "POST"
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      alert(data.message || "Booking failed");
+      return;
+    }
+
+    alert("Booking confirmed!");
+    loadOffer();
+  } catch (err) {
+    alert("Booking failed");
+  }
+}
+
+async function trackClick() {
+  if (!window.offer || !window.offer.id) return;
+
+  try {
+    await fetch("/api/offers/" + window.offer.id + "/click", {
+      method: "POST"
+    });
+  } catch (err) {
+    // silent fail
+  }
+}
+
+function renderOffer(data) {
+  const offer = data.offer || data;
+  window.offer = offer;
+
+  const effectiveStatus = offer.effectiveStatus || offer.status || "draft";
+
+  document.getElementById("offer").innerHTML = `
+    <div class="status">${effectiveStatus}</div>
+    <h1>2L1P Neural Travel</h1>
+    <p><b>Client:</b> ${offer.clientName || "TBA"}</p>
+    <p><b>Destination:</b> ${offer.destination || "TBA"}</p>
+    <p><b>Flights:</b> ${offer.flightRoute || "TBA"}</p>
+    <p><b>Hotel:</b> ${offer.hotel || "TBA"}</p>
+    <p><b>Guests:</b> ${offer.guests || "TBA"}</p>
+    <p><b>Dates:</b> ${offer.travelDates || "TBA"}</p>
+    <h2 class="price">${Number(offer.price || 0).toFixed(2)} ${offer.currency || "EUR"}</h2>
+    <p><b>Valid until:</b> ${formatDate(offer.validUntil)}</p>
+    <p class="small"><b>Offer ID:</b> ${offer.id}</p>
+    <p class="note"><b>Notes:</b> ${offer.notes || "-"}</p>
+
+    <div class="actions">
+      <a class="btn secondary" href="/api/offers/${offer.id}/pdf" target="_blank">Open PDF</a>
+      <button id="bookBtn" class="btn success">Book This Offer</button>
+    </div>
+  `;
+
+  const bookBtn = document.getElementById("bookBtn");
+  if (bookBtn) {
+    bookBtn.addEventListener("click", async () => {
+      await trackClick();
+      await bookOffer();
+    });
+  }
+}
+
+async function loadOffer() {
+  const id = getOfferId();
+
+  if (!id) {
+    document.getElementById("offer").innerHTML = "<p>Offer ID missing</p>";
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/offers/" + id);
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || data.message || "Offer not found");
+    }
+
+    renderOffer(data);
+  } catch (err) {
+    document.getElementById("offer").innerHTML = `<p>${err.message}</p>`;
+  }
+}
+
+loadOffer();
 </script>
 
 </body>

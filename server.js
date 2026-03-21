@@ -1,41 +1,27 @@
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
-const db = require("./DATABASE/db");
-const offersRouter = require("./routes/offers");
+const requests = require("./routes/requests");
+const offers = require("./routes/offers");
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/api/health", (req, res) => {
-  res.json({
-    status: "OK",
-    service: "2L1P Neural Travel V3",
-    port: PORT,
-    version: "3.6.0"
-  });
-});
-
-app.use("/api/offers", offersRouter);
-
-app.get("/offer/:id", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "offer.html"));
-});
-
-app.get("/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "admin.html"));
-});
+app.use(express.static("public"));
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(__dirname + "/public/index.html");
+});
+
+app.use("/api/requests", requests);
+app.use("/api/offers", offers);
+
+app.get("/api/health", (req, res) => {
+  res.json({ status: "OK", service: "2L1P Neural Travel", port: PORT });
 });
 
 app.listen(PORT, () => {
-  console.log(`2L1P Neural Travel V3 running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
