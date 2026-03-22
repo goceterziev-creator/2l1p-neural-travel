@@ -20,6 +20,7 @@ router.post("/generate", async (req, res) => {
   try {
     const result = generateOffer(req.body, {
       clientBaseUrl: "https://twol1p-neural-travel-1.onrender.com/api/offers/view"
+    });
 
     const saved = await saveGeneratedOffer(result, GENERATED_OFFERS_DIR);
 
@@ -42,6 +43,7 @@ router.post("/generate", async (req, res) => {
       guests: result.offer.travelersLabel,
       status: "draft",
       basePrice: premiumPrice,
+      markup: 0,
       finalPrice: luxuryPrice,
       price: luxuryPrice,
       currency: result.offer.currency || "EUR",
@@ -100,6 +102,79 @@ router.get("/view/:id", (req, res) => {
 router.get("/", (req, res) => {
   const db = readJson(OFFER_DB, { offers: [] });
   res.json({ offers: Array.isArray(db.offers) ? db.offers : [] });
+});
+
+router.post("/", (req, res) => {
+  try {
+    const db = readJson(OFFER_DB, { offers: [] });
+    const offers = Array.isArray(db.offers) ? db.offers : [];
+
+    const body = req.body || {};
+
+    const basePrice = Number(body.basePrice || 0);
+    const markup = Number(body.markup || 0);
+    const finalPriceInput =
+      body.finalPrice !== undefined && body.finalPrice !== ""
+        ? Number(body.finalPrice)
+        : null;
+
+    const calculatedFinalPrice =
+      finalPriceInput !== null
+        ? finalPriceInput
+        : basePrice * (1 + markup / 100);
+
+    const finalPrice = Number(calculatedFinalPrice || 0);
+    const margin = finalPrice - basePrice;
+
+    const validDays = Number(body.validDays || 1);
+    const validUntil = body.validUntil
+      ? new Date(body.validUntil).toISOString()
+      : new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const offer = {
+      id: body.id || `OFF-${Date.now()}`,
+      clientName: body.clientName || "",
+      clientPhone: body.clientPhone || "",
+      destination: body.destination || "",
+      flightRoute: body.flightRoute || "",
+      hotel: body.hotel || "",
+      travelDates: body.travelDates || "",
+      guests: body.guests || "",
+      status: (body.status || "draft").toLowerCase(),
+      basePrice,
+      markup,
+      finalPrice,
+      price: finalPrice,
+      margin,
+      currency: body.currency || "EUR",
+      validUntil,
+      notes: body.notes || "",
+      createdAt: body.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const existingIndex = offers.findIndex((x) => x.id === offer.id);
+    if (existingIndex >= 0) {
+      offer.createdAt = offers[existingIndex].createdAt || offer.createdAt;
+      offers[existingIndex] = offer;
+    } else {
+      offers.unshift(offer);
+    }
+
+    db.offers = offers;
+    writeJson(OFFER_DB, db);
+
+    res.json({
+      success: true,
+      offer
+    });
+  } catch (error) {
+    console.error("Save offer error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 router.get("/:id", (req, res) => {

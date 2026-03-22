@@ -36,11 +36,9 @@ function buildFlightLabel(adults, childrenCount) {
   if (childrenCount === 1) {
     return `Самолетни билети за ${adults} възрастни + 1 дете`;
   }
-
   if (childrenCount > 1) {
     return `Самолетни билети за ${adults} възрастни + ${childrenCount} деца`;
   }
-
   return `Самолетни билети за ${adults} възрастни`;
 }
 
@@ -48,11 +46,9 @@ function buildTravelersLabel(adults, childrenCount) {
   if (childrenCount === 0) {
     return `${adults} възрастни`;
   }
-
   if (childrenCount === 1) {
     return `${adults} възрастни + 1 дете`;
   }
-
   return `${adults} възрастни + ${childrenCount} деца`;
 }
 
@@ -84,15 +80,12 @@ function getHotelZones(destination = "") {
   if (d.includes("dubai")) {
     return ["Dubai Marina", "Downtown Dubai", "Palm Jumeirah"];
   }
-
   if (d.includes("tokyo")) {
     return ["Shinjuku", "Ginza", "Tokyo Station Area"];
   }
-
   if (d.includes("paros")) {
     return ["Parikia", "Naousa", "Golden Beach"];
   }
-
   if (d.includes("milano") || d.includes("milan")) {
     return ["Duomo", "Porta Nuova", "Navigli"];
   }
@@ -148,15 +141,12 @@ function getTagline(destination = "") {
   if (d.includes("dubai")) {
     return "Семейно пътуване с комфорт, добра локация и лесна логистика";
   }
-
   if (d.includes("paros")) {
     return "Спокойна островна почивка с добра локация, плажове и лесна организация";
   }
-
   if (d.includes("tokyo")) {
     return "Градско пътуване с балансирана програма, добра локация и удобна логистика";
   }
-
   if (d.includes("milano") || d.includes("milan")) {
     return "Стилен city break с централна локация, удобни връзки и добър ритъм";
   }
@@ -260,18 +250,9 @@ function renderHtml(offer, whatsappLink) {
     }
 
     @media print {
-      body {
-        background: white;
-      }
-
-      .wrap {
-        max-width: 100%;
-        padding: 0;
-      }
-
-      .grid {
-        grid-template-columns: 1fr;
-      }
+      body { background: white; }
+      .wrap { max-width: 100%; padding: 0; }
+      .grid { grid-template-columns: 1fr; }
 
       .hero,
       .card,
@@ -282,17 +263,9 @@ function renderHtml(offer, whatsappLink) {
         page-break-inside: avoid;
       }
 
-      .packages {
-        display: block;
-      }
-
-      .package-card {
-        margin-bottom: 16px;
-      }
-
-      .foot {
-        padding-bottom: 0;
-      }
+      .packages { display: block; }
+      .package-card { margin-bottom: 16px; }
+      .foot { padding-bottom: 0; }
     }
   </style>
 </head>
@@ -401,7 +374,6 @@ function generateOffer(input, options = {}) {
   const children = Array.isArray(input.children) ? input.children : [];
   const nights = calculateNights(startDate, endDate);
   const childrenCount = children.length;
-  const flightLabel = buildFlightLabel(adults, childrenCount);
   const destination = input.destination || "Tokyo, Japan";
   const validHours = Number(input.validHours || 24);
 
@@ -451,8 +423,6 @@ function generateOffer(input, options = {}) {
     markupPct: 12
   });
 
-  const travelersLabel = buildTravelersLabel(adults, childrenCount);
-
   const offer = {
     id: input.id || `OFF-${Date.now()}`,
     destination,
@@ -481,7 +451,7 @@ function generateOffer(input, options = {}) {
         features: [
           `${nights} нощувки в 3.5★ / 4★ хотел`,
           "Семейна стая или свързани стаи",
-          flightLabel,
+          buildFlightLabel(adults, childrenCount),
           "Багаж + базови трансфери",
           `Примерен план за престоя в ${destination}`
         ]
@@ -515,13 +485,13 @@ function generateOffer(input, options = {}) {
     ],
     recommendedPackage: "luxury",
     datesLabel: `${startDate} – ${endDate}`,
-    travelersLabel,
+    travelersLabel: buildTravelersLabel(adults, childrenCount),
     childrenLabel: children.length
       ? children.map((c, i) => `Дете ${i + 1}: ${c.age} г.`).join(" · ")
       : "Без деца"
   };
 
-  const baseUrl = options.clientBaseUrl || "http://localhost:3001/api/offers/view";
+  const baseUrl = options.clientBaseUrl || "https://twol1p-neural-travel-1.onrender.com/api/offers/view";
   const clientUrl = `${baseUrl}/${offer.id}`;
 
   const whatsappText = `Здравейте 👋
@@ -541,16 +511,14 @@ ${clientUrl}
   const whatsappLink = buildWhatsAppLink(offer.contactWhatsApp, whatsappText);
   const html = renderHtml(offer, whatsappLink);
 
-  const pdfData = {
-    DESTINATION: offer.destination,
-    DATES: offer.datesLabel,
-    TRAVELERS: offer.travelersLabel
-  };
-
   return {
     offer,
     html,
-    pdfData,
+    pdfData: {
+      DESTINATION: offer.destination,
+      DATES: offer.datesLabel,
+      TRAVELERS: offer.travelersLabel
+    },
     whatsappText,
     whatsappLink,
     clientUrl
@@ -561,9 +529,7 @@ async function savePdfOffer(result, htmlPath, outputDir) {
   fs.mkdirSync(outputDir, { recursive: true });
 
   const pdfPath = path.join(outputDir, `${result.offer.id}.pdf`);
-  const browser = await puppeteer.launch({
-    headless: true
-  });
+  const browser = await puppeteer.launch({ headless: true });
 
   try {
     const page = await browser.newPage();
