@@ -592,5 +592,7 @@ async function saveGeneratedOffer(result, outputDir) {
 
 module.exports = {
   generateOffer,
-  saveGeneratedOffer
+  saveGeneratedOffer,
+  renderHtml,
+  buildWhatsAppLink
 };

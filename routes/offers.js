@@ -1,13 +1,23 @@
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
+const { pathToFileURL } = require("url");
 const express = require("express");
+const puppeteer = require("puppeteer");
+
 const router = express.Router();
 
-const { generateOffer, saveGeneratedOffer } = require("../generateOffer");
+const {
+  generateOffer,
+  saveGeneratedOffer,
+  renderHtml
+} = require("../generateOffer");
+
 const { readJson, writeJson } = require("../utils/jsonDb");
 
 const OFFER_DB = path.join(__dirname, "..", "DATABASE", "database.json");
 const GENERATED_OFFERS_DIR = path.join(__dirname, "..", "generated-offers");
+const LIVE_BASE_URL = "https://twol1p-neural-travel-1.onrender.com/api/offers/view";
 
 function getOfferById(id) {
   const db = readJson(OFFER_DB, { offers: [] });
@@ -16,10 +26,47 @@ function getOfferById(id) {
   return { db, offers, offer };
 }
 
+function parseTravelDates(travelDates = "") {
+  const parts = String(travelDates).split("–").map((x) => x.trim());
+  if (parts.length === 2) {
+    return {
+      startDate: parts[0],
+      endDate: parts[1]
+    };
+  }
+  return {
+    startDate: "",
+    endDate: ""
+  };
+}
+
+function normalizeOfferForEngine(offer) {
+  const parsedDates = parseTravelDates(offer.travelDates || "");
+
+  return {
+    id: offer.id,
+    destination: offer.destination || "",
+    startDate: offer.startDate || parsedDates.startDate || "",
+    endDate: offer.endDate || parsedDates.endDate || "",
+    departureAirport: offer.departureAirport || "Sofia",
+    adults: Number(offer.adults || 2),
+    children: Array.isArray(offer.children) ? offer.children : [],
+    contactPhone: offer.clientPhone || offer.contactPhone || "+359894842882",
+    contactWhatsApp:
+      offer.clientPhone ||
+      offer.contactWhatsApp ||
+      offer.contactPhone ||
+      "+359894842882",
+    brandName: offer.brandName || "AYA Offer Engine",
+    validHours: Number(offer.validHours || 24),
+    currency: offer.currency || "EUR"
+  };
+}
+
 router.post("/generate", async (req, res) => {
   try {
     const result = generateOffer(req.body, {
-      clientBaseUrl: "https://twol1p-neural-travel-1.onrender.com/api/offers/view"
+      clientBaseUrl: LIVE_BASE_URL
     });
 
     const saved = await saveGeneratedOffer(result, GENERATED_OFFERS_DIR);
@@ -34,7 +81,15 @@ router.post("/generate", async (req, res) => {
       id: result.offer.id,
       clientName: req.body.clientName || "Generated Client",
       clientPhone: req.body.contactPhone || req.body.clientPhone || "",
+      contactPhone: req.body.contactPhone || req.body.clientPhone || "",
       destination: result.offer.destination,
+      startDate: result.offer.startDate,
+      endDate: result.offer.endDate,
+      departureAirport: result.offer.departureAirport,
+      adults: result.offer.adults,
+      children: result.offer.children,
+      validHours: result.offer.validHours,
+      brandName: result.offer.brandName,
       flightRoute:
         req.body.flightRoute ||
         `${result.offer.departureAirport} → ${result.offer.destination}`,
@@ -43,7 +98,6 @@ router.post("/generate", async (req, res) => {
       guests: result.offer.travelersLabel,
       status: "draft",
       basePrice: premiumPrice,
-      markup: 0,
       finalPrice: luxuryPrice,
       price: luxuryPrice,
       currency: result.offer.currency || "EUR",
@@ -84,13 +138,18 @@ router.post("/generate", async (req, res) => {
 
 router.get("/view/:id", (req, res) => {
   try {
-    const filePath = path.join(GENERATED_OFFERS_DIR, `${req.params.id}.html`);
+    const { offer } = getOfferById(req.params.id);
 
-    if (!fs.existsSync(filePath)) {
+    if (!offer) {
       return res.status(404).send("Offer not found");
     }
 
-    const html = fs.readFileSync(filePath, "utf8");
+    const generated = generateOffer(normalizeOfferForEngine(offer), {
+      clientBaseUrl: LIVE_BASE_URL
+    });
+
+    const html = renderHtml(generated.offer, generated.whatsappLink);
+
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(html);
   } catch (error) {
@@ -135,12 +194,20 @@ router.post("/", (req, res) => {
       id: body.id || `OFF-${Date.now()}`,
       clientName: body.clientName || "",
       clientPhone: body.clientPhone || "",
+      contactPhone: body.clientPhone || "",
       destination: body.destination || "",
+      startDate: body.startDate || "",
+      endDate: body.endDate || "",
+      departureAirport: body.departureAirport || "Sofia",
+      adults: Number(body.adults || 2),
+      children: Array.isArray(body.children) ? body.children : [],
+      validHours: Number(body.validHours || 24),
+      brandName: body.brandName || "AYA Offer Engine",
       flightRoute: body.flightRoute || "",
       hotel: body.hotel || "",
       travelDates: body.travelDates || "",
       guests: body.guests || "",
-      status: (body.status || "draft").toLowerCase(),
+      status: String(body.status || "draft").toLowerCase(),
       basePrice,
       markup,
       finalPrice,
@@ -193,29 +260,100 @@ router.get("/:id", (req, res) => {
   });
 });
 
-router.get("/:id/pdf", (req, res) => {
-  try {
-    const filePath = path.join(GENERATED_OFFERS_DIR, `${req.params.id}.pdf`);
+router.get("/:id/pdf", async (req, res) => {
+  let browser;
 
-    if (!fs.existsSync(filePath)) {
+  try {
+    const { offer } = getOfferById(req.params.id);
+
+    if (!offer) {
       return res.status(404).json({
         success: false,
-        error: "PDF not found"
+        error: "Offer not found"
       });
     }
+
+    const generated = generateOffer(normalizeOfferForEngine(offer), {
+      clientBaseUrl: LIVE_BASE_URL
+    });
+
+    const html = renderHtml(generated.offer, generated.whatsappLink);
+    const tempHtmlPath = path.join(os.tmpdir(), `${offer.id}.html`);
+    fs.writeFileSync(tempHtmlPath, html, "utf8");
+
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    });
+
+    const page = await browser.newPage();
+    await page.goto(pathToFileURL(tempHtmlPath).href, {
+      waitUntil: "networkidle0"
+    });
+    await page.emulateMediaType("screen");
+
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      preferCSSPageSize: true,
+      margin: {
+        top: "12mm",
+        right: "12mm",
+        bottom: "12mm",
+        left: "12mm"
+      }
+    });
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `inline; filename="${req.params.id}.pdf"`
+      `inline; filename="${offer.id}.pdf"`
     );
-
-    res.sendFile(filePath);
+    res.send(pdfBuffer);
   } catch (error) {
-    console.error("PDF serve error:", error);
+    console.error("PDF render error:", error);
     res.status(500).json({
       success: false,
       error: "Server error"
+    });
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+});
+
+router.post("/:id/book", (req, res) => {
+  try {
+    const db = readJson(OFFER_DB, { offers: [] });
+    db.offers = Array.isArray(db.offers) ? db.offers : [];
+
+    const offer = db.offers.find(
+      (o) => String(o.id) === String(req.params.id)
+    );
+
+    if (!offer) {
+      return res.status(404).json({
+        success: false,
+        error: "Offer not found"
+      });
+    }
+
+    offer.status = "booked";
+    offer.bookedAt = new Date().toISOString();
+    offer.updatedAt = new Date().toISOString();
+
+    writeJson(OFFER_DB, db);
+
+    return res.json({
+      success: true,
+      offer
+    });
+  } catch (error) {
+    console.error("Book offer error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Booking failed"
     });
   }
 });
@@ -248,6 +386,11 @@ router.patch("/:id/status", (req, res) => {
 
   if (newStatus === "cancelled") {
     offer.cancelledAt = new Date().toISOString();
+  }
+
+  const index = db.offers.findIndex((x) => x.id === offer.id);
+  if (index >= 0) {
+    db.offers[index] = offer;
   }
 
   writeJson(OFFER_DB, db);
