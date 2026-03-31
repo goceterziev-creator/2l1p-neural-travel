@@ -9,7 +9,7 @@
       "hotel": "Shinjuku",
       "travelDates": "2026-10-05 – 2026-10-12",
       "guests": "2 възрастни + 1 дете",
-      "status": "draft",
+      "status": "booked",
       "basePrice": 2120,
       "finalPrice": 3140,
       "price": 3140,
@@ -18,7 +18,8 @@
       "validUntil": "2026-03-22T13:14:48.241Z",
       "notes": "Generated via Offer Engine for Tokyo, Japan",
       "createdAt": "2026-03-21T13:15:01.123Z",
-      "updatedAt": "2026-03-21T13:15:01.123Z"
+      "updatedAt": "2026-03-31T13:39:25.713Z",
+      "bookedAt": "2026-03-31T13:39:25.712Z"
     },
     {
       "id": "OFF-1774096669481",

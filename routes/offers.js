@@ -1,7 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
-const { pathToFileURL } = require("url");
 const express = require("express");
 const puppeteer = require("puppeteer");
 
@@ -28,12 +26,14 @@ function getOfferById(id) {
 
 function parseTravelDates(travelDates = "") {
   const parts = String(travelDates).split("–").map((x) => x.trim());
+
   if (parts.length === 2) {
     return {
       startDate: parts[0],
       endDate: parts[1]
     };
   }
+
   return {
     startDate: "",
     endDate: ""
@@ -111,6 +111,7 @@ router.post("/generate", async (req, res) => {
     };
 
     const existingIndex = offers.findIndex((x) => x.id === offerRecord.id);
+
     if (existingIndex >= 0) {
       offers[existingIndex] = offerRecord;
     } else {
@@ -120,7 +121,7 @@ router.post("/generate", async (req, res) => {
     db.offers = offers;
     writeJson(OFFER_DB, db);
 
-    res.json({
+    return res.json({
       success: true,
       offer: result.offer,
       clientUrl: result.clientUrl,
@@ -129,7 +130,7 @@ router.post("/generate", async (req, res) => {
     });
   } catch (error) {
     console.error("Generate offer error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error.message
     });
@@ -151,27 +152,30 @@ router.get("/view/:id", (req, res) => {
     const html = renderHtml(generated.offer, generated.whatsappLink);
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.send(html);
+    return res.send(html);
   } catch (error) {
     console.error("View offer error:", error);
-    res.status(500).send("Server error");
+    return res.status(500).send("Server error");
   }
 });
 
 router.get("/", (req, res) => {
   const db = readJson(OFFER_DB, { offers: [] });
-  res.json({ offers: Array.isArray(db.offers) ? db.offers : [] });
+
+  return res.json({
+    offers: Array.isArray(db.offers) ? db.offers : []
+  });
 });
 
 router.post("/", (req, res) => {
   try {
     const db = readJson(OFFER_DB, { offers: [] });
     const offers = Array.isArray(db.offers) ? db.offers : [];
-
     const body = req.body || {};
 
     const basePrice = Number(body.basePrice || 0);
     const markup = Number(body.markup || 0);
+
     const finalPriceInput =
       body.finalPrice !== undefined && body.finalPrice !== ""
         ? Number(body.finalPrice)
@@ -186,6 +190,7 @@ router.post("/", (req, res) => {
     const margin = finalPrice - basePrice;
 
     const validDays = Number(body.validDays || 1);
+
     const validUntil = body.validUntil
       ? new Date(body.validUntil).toISOString()
       : new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString();
@@ -221,6 +226,7 @@ router.post("/", (req, res) => {
     };
 
     const existingIndex = offers.findIndex((x) => x.id === offer.id);
+
     if (existingIndex >= 0) {
       offer.createdAt = offers[existingIndex].createdAt || offer.createdAt;
       offers[existingIndex] = offer;
@@ -231,13 +237,13 @@ router.post("/", (req, res) => {
     db.offers = offers;
     writeJson(OFFER_DB, db);
 
-    res.json({
+    return res.json({
       success: true,
       offer
     });
   } catch (error) {
     console.error("Save offer error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error.message
     });
@@ -254,7 +260,7 @@ router.get("/:id", (req, res) => {
     });
   }
 
-  res.json({
+  return res.json({
     success: true,
     offer
   });
@@ -278,8 +284,6 @@ router.get("/:id/pdf", async (req, res) => {
     });
 
     const html = renderHtml(generated.offer, generated.whatsappLink);
-    const tempHtmlPath = path.join(os.tmpdir(), `${offer.id}.html`);
-    fs.writeFileSync(tempHtmlPath, html, "utf8");
 
     browser = await puppeteer.launch({
       headless: true,
@@ -287,10 +291,16 @@ router.get("/:id/pdf", async (req, res) => {
     });
 
     const page = await browser.newPage();
-    await page.goto(pathToFileURL(tempHtmlPath).href, {
-      waitUntil: "networkidle0"
+
+    await page.setViewport({
+      width: 1400,
+      height: 2200
     });
-    await page.emulateMediaType("screen");
+
+    await page.setContent(html, {
+      waitUntil: "domcontentloaded",
+      timeout: 0
+    });
 
     const pdfBuffer = await page.pdf({
       format: "A4",
@@ -309,12 +319,13 @@ router.get("/:id/pdf", async (req, res) => {
       "Content-Disposition",
       `inline; filename="${offer.id}.pdf"`
     );
-    res.send(pdfBuffer);
+
+    return res.send(pdfBuffer);
   } catch (error) {
     console.error("PDF render error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      error: "Server error"
+      error: error.message || "PDF generation failed"
     });
   } finally {
     if (browser) {
@@ -389,13 +400,14 @@ router.patch("/:id/status", (req, res) => {
   }
 
   const index = db.offers.findIndex((x) => x.id === offer.id);
+
   if (index >= 0) {
     db.offers[index] = offer;
   }
 
   writeJson(OFFER_DB, db);
 
-  res.json({
+  return res.json({
     success: true,
     offer
   });
