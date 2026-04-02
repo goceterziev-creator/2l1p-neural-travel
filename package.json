@@ -4,7 +4,8 @@
   "description": "AYA Offer Engine / 2L1P Neural Travel",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "npx puppeteer browsers install chrome"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -12,4 +13,4 @@
     "pdfkit": "^0.15.2",
     "puppeteer": "^24.22.3"
   }
-}                                                                                                                                                                                                                                                                                                                                                                            
+}
