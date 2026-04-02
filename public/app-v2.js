@@ -1,4 +1,7 @@
-﻿const offerForm = document.getElementById("offerForm");
+﻿console.log("APP-V2 LOADED A77");
+alert("APP-V2 LOADED A77");
+
+const offerForm = document.getElementById("offerForm");
 const offersList = document.getElementById("offersList");
 const statsBox = document.getElementById("statsBox");
 const statusFilter = document.getElementById("statusFilter");

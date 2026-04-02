@@ -11,8 +11,8 @@
       "budget": 1200,
       "status": "generated",
       "createdAt": "2026-03-16T09:55:29.024Z",
-      "generatedOfferId": "OFF-1773655446950",
-      "generatedAt": "2026-03-16T10:04:06.953Z"
+      "generatedOfferId": "OFF-1775097507887",
+      "generatedAt": "2026-04-02T02:38:27.890Z"
     },
     {
       "id": "REQ-1773644939991",
@@ -25,8 +25,8 @@
       "budget": 1200,
       "status": "generated",
       "createdAt": "2026-03-16T07:08:59.991Z",
-      "generatedOfferId": "OFF-1774008750300",
-      "generatedAt": "2026-03-20T12:12:30.304Z"
+      "generatedOfferId": "OFF-1775097513402",
+      "generatedAt": "2026-04-02T02:38:33.404Z"
     }
   ]
 }

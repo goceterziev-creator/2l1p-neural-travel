@@ -15,6 +15,9 @@ app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
 
+app.get("/offer/:id", (req, res) => {
+  res.redirect(`/api/offers/view/${req.params.id}`);
+});
 app.use("/api/requests", requests);
 app.use("/api/offers", offers);
 
