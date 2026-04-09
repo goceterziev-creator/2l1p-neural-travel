@@ -18,11 +18,24 @@ app.get("/", (req, res) => {
 app.get("/offer/:id", (req, res) => {
   res.redirect(`/api/offers/view/${req.params.id}`);
 });
+
 app.use("/api/requests", requests);
 app.use("/api/offers", offers);
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "OK", service: "2L1P Neural Travel", port: PORT });
+  res.json({
+    status: "OK",
+    service: "2L1P Neural Travel",
+    port: PORT
+  });
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT ERROR:", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED REJECTION:", err);
 });
 
 app.listen(PORT, () => {

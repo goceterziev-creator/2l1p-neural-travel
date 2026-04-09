@@ -1,10 +1,9 @@
-﻿console.log("APP-V2 LOADED A77");
-alert("APP-V2 LOADED A77");
-
-const offerForm = document.getElementById("offerForm");
+﻿const offerForm = document.getElementById("offerForm");
 const offersList = document.getElementById("offersList");
-const statsBox = document.getElementById("statsBox");
+const snapshot = document.getElementById("snapshot");
 const statusFilter = document.getElementById("statusFilter");
+const formMessage = document.getElementById("formMessage");
+const clearBtn = document.getElementById("clearBtn");
 
 window.currentOffer = null;
 
@@ -12,7 +11,7 @@ function formatDate(value) {
   if (!value) return "-";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
+  return d.toLocaleString("bg-BG");
 }
 
 function safeNumber(value, fallback = 0) {
@@ -34,7 +33,9 @@ function getStatusClass(status) {
 }
 
 function getEffectiveStatus(offer) {
-  const status = String(offer?.effectiveStatus || offer?.status || "draft").toLowerCase();
+  const status = String(
+    offer?.effectiveStatus || offer?.status || "draft"
+  ).toLowerCase();
 
   if (status === "booked" || status === "cancelled" || status === "expired") {
     return status;
@@ -62,9 +63,9 @@ function buildWhatsAppUrl(phone, offer) {
   const cleanedPhone = String(phone || "").replace(/[^\d]/g, "");
   const link = buildOfferLink(offer.id);
 
-  const text = `Hello${offer.clientName ? " " + offer.clientName : ""}!
+  const text = `Здравейте${offer.clientName ? " " + offer.clientName : ""}!
 
-Your travel offer is ready.
+Вашата оферта е готова.
 
 Offer ID: ${offer.id}
 Destination: ${offer.destination || "TBA"}
@@ -93,6 +94,118 @@ async function fetchJson(url, options = {}) {
   }
 
   return data;
+}
+
+function collectFormData(form) {
+  const fd = new FormData(form);
+
+  const basePrice = Number(fd.get("basePrice") || 0);
+  const markupPercent = Number(fd.get("markupPercent") || 0);
+  const explicitPrice = fd.get("price");
+
+  const finalPrice =
+    explicitPrice !== null && explicitPrice !== ""
+      ? Number(explicitPrice)
+      : Number((basePrice * (1 + markupPercent / 100)).toFixed(2));
+
+  const customValidUntil = String(fd.get("customValidUntil") || "").trim();
+  const validForDays = Number(fd.get("validForDays") || 1);
+
+  return {
+    clientName: String(fd.get("clientName") || "").trim(),
+    clientPhone: String(fd.get("clientPhone") || "").trim(),
+    destination: String(fd.get("destination") || "").trim(),
+    flightRoute: String(fd.get("flightRoute") || "").trim(),
+    hotel: String(fd.get("hotel") || "").trim(),
+    travelDates: String(fd.get("travelDates") || "").trim(),
+    guests: String(fd.get("guests") || "").trim(),
+    status: String(fd.get("status") || "draft").trim().toLowerCase(),
+    basePrice,
+    markupPercent,
+    finalPrice,
+    currency: String(fd.get("currency") || "EUR").trim(),
+    validForDays,
+    customValidUntil,
+    notes: String(fd.get("notes") || "").trim()
+  };
+}
+
+async function saveOfferFromForm(event) {
+  event.preventDefault();
+
+  try {
+    const payload = collectFormData(offerForm);
+
+    const body = {
+      clientName: payload.clientName,
+      clientPhone: payload.clientPhone,
+      destination: payload.destination,
+      flightRoute: payload.flightRoute,
+      hotel: payload.hotel,
+      travelDates: payload.travelDates,
+      guests: payload.guests,
+      status: payload.status,
+      basePrice: payload.basePrice,
+      markup: payload.markupPercent,
+      finalPrice: payload.finalPrice,
+      currency: payload.currency,
+      validDays: payload.validForDays,
+      validUntil: payload.customValidUntil || "",
+      notes: payload.notes
+    };
+
+    const data = await fetchJson("/api/offers", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!data.success) {
+      throw new Error(data.error || "Save failed");
+    }
+
+    window.currentOffer = data.offer;
+
+    if (formMessage) {
+      formMessage.textContent = `Saved: ${data.offer.id}`;
+    }
+
+    await loadOffers();
+  } catch (error) {
+    console.error("Save offer error:", error);
+
+    if (formMessage) {
+      formMessage.textContent = error.message || "Save failed";
+    }
+
+    alert(error.message || "Save failed");
+  }
+}
+
+function clearOfferForm() {
+  if (!offerForm) return;
+  offerForm.reset();
+  window.currentOffer = null;
+
+  if (formMessage) {
+    formMessage.textContent = "";
+  }
+}
+
+function sendWhatsApp() {
+  if (!window.currentOffer) {
+    alert("Първо запази офертата.");
+    return;
+  }
+
+  const url = buildWhatsAppUrl(
+    window.currentOffer.clientPhone || "",
+    window.currentOffer
+  );
+
+  window.open(url, "_blank");
 }
 
 async function bookOffer(id) {
@@ -148,11 +261,13 @@ function offerCard(offer) {
   const price = safeNumber(offer.finalPrice ?? offer.price);
   const basePrice = safeNumber(offer.basePrice);
   const markupPercent = safeNumber(
-    offer.markupPercent ?? offer.markup ?? (
-      basePrice > 0 ? ((price - basePrice) / basePrice) * 100 : 0
-    )
+    offer.markupPercent ??
+      offer.markup ??
+      (basePrice > 0 ? ((price - basePrice) / basePrice) * 100 : 0)
   );
-  const margin = safeNumber(offer.marginAmount ?? offer.margin ?? (price - basePrice));
+  const margin = safeNumber(
+    offer.marginAmount ?? offer.margin ?? (price - basePrice)
+  );
 
   return `
     <div class="offer-card">
@@ -218,7 +333,10 @@ function offerCard(offer) {
         <select class="status-select" onchange="updateStatus('${offer.id}', this.value)">
           ${["draft", "sent", "viewed", "booked", "cancelled", "expired"]
             .map(
-              (s) => `<option value="${s}" ${String(offer.status || "").toLowerCase() === s ? "selected" : ""}>${s}</option>`
+              (s) =>
+                `<option value="${s}" ${
+                  String(offer.status || "").toLowerCase() === s ? "selected" : ""
+                }>${s}</option>`
             )
             .join("")}
         </select>
@@ -227,8 +345,8 @@ function offerCard(offer) {
   `;
 }
 
-function renderStats(offers) {
-  if (!statsBox) return;
+function renderSnapshot(offers) {
+  if (!snapshot) return;
 
   const total = offers.length;
   const active = offers.filter((o) => {
@@ -236,14 +354,18 @@ function renderStats(offers) {
     return !["booked", "cancelled", "expired"].includes(s);
   }).length;
 
-  const revenue = offers.reduce((sum, o) => sum + safeNumber(o.finalPrice ?? o.price), 0);
+  const revenue = offers.reduce(
+    (sum, o) => sum + safeNumber(o.finalPrice ?? o.price),
+    0
+  );
+
   const margin = offers.reduce((sum, o) => {
     const price = safeNumber(o.finalPrice ?? o.price);
     const base = safeNumber(o.basePrice);
     return sum + (price - base);
   }, 0);
 
-  statsBox.innerHTML = `
+  snapshot.innerHTML = `
     <div class="stat-card">
       <div class="label">Total Offers</div>
       <div class="value">${total}</div>
@@ -277,7 +399,7 @@ async function loadOffers() {
       return getEffectiveStatus(offer) === selectedStatus;
     });
 
-    renderStats(offers);
+    renderSnapshot(offers);
 
     if (!filtered.length) {
       offersList.innerHTML = `<p>No offers found.</p>`;
@@ -289,6 +411,14 @@ async function loadOffers() {
     console.error("Load offers error:", error);
     offersList.innerHTML = `<p style="color:red;">Failed to load offers: ${escapeHtml(error.message)}</p>`;
   }
+}
+
+if (offerForm) {
+  offerForm.addEventListener("submit", saveOfferFromForm);
+}
+
+if (clearBtn) {
+  clearBtn.addEventListener("click", clearOfferForm);
 }
 
 if (statusFilter) {
