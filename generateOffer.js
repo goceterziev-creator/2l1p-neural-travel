@@ -1,7 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
-const puppeteer = require("puppeteer");
 
 function calculateNights(startDate, endDate) {
   const start = new Date(startDate);
@@ -525,39 +524,6 @@ ${clientUrl}
   };
 }
 
-async function savePdfOffer(result, htmlPath, outputDir) {
-  fs.mkdirSync(outputDir, { recursive: true });
-
-  const pdfPath = path.join(outputDir, `${result.offer.id}.pdf`);
-  const browser = await puppeteer.launch({ headless: true });
-
-  try {
-    const page = await browser.newPage();
-    await page.goto(pathToFileURL(htmlPath).href, {
-      waitUntil: "networkidle0"
-    });
-
-    await page.emulateMediaType("screen");
-
-    await page.pdf({
-      path: pdfPath,
-      format: "A4",
-      printBackground: true,
-      preferCSSPageSize: true,
-      margin: {
-        top: "12mm",
-        right: "12mm",
-        bottom: "12mm",
-        left: "12mm"
-      }
-    });
-
-    return { pdfPath };
-  } finally {
-    await browser.close();
-  }
-}
-
 async function saveGeneratedOffer(result, outputDir) {
   fs.mkdirSync(outputDir, { recursive: true });
 
@@ -580,15 +546,6 @@ async function saveGeneratedOffer(result, outputDir) {
     ),
     "utf8"
   );
-
-  const pdfSaved = await savePdfOffer(result, htmlPath, outputDir);
-
-  return {
-    htmlPath,
-    jsonPath,
-    pdfPath: pdfSaved.pdfPath
-  };
-}
 
 module.exports = {
   generateOffer,
