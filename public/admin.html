@@ -3,249 +3,521 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin Dashboard</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <title>2L1P Neural Travel · Admin V7.3</title>
+
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; background: #0f1115; color: #fff; }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
-    .top { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
-    .title { font-size: 28px; font-weight: 700; }
-    .sub { opacity: 0.75; margin-top: 6px; }
-    .btn {
-      display: inline-block; padding: 10px 14px; border-radius: 10px;
-      background: #1f2937; color: #fff; text-decoration: none; border: 1px solid #334155;
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #07132b;
+      color: #eef2ff;
     }
-    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 20px 0; }
-    .kpi { background: #171a21; border: 1px solid #2a3040; border-radius: 14px; padding: 16px; }
-    .kpi .label { opacity: 0.7; font-size: 13px; }
-    .kpi .value { font-size: 28px; font-weight: 700; margin-top: 8px; }
-    .filters {
-      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px;
-      margin: 18px 0 20px;
+
+    .topbar {
+      background: #050b18;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding: 20px 0;
     }
-    input, select {
-      width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155;
-      background: #111827; color: white;
+
+    .topbar-inner {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
     }
-    .list { display: grid; gap: 14px; }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.5px;
+    }
+
+    .brand p {
+      margin: 6px 0 0;
+      color: #a5b4fc;
+      font-size: 13px;
+    }
+
+    .topbar a {
+      background: #1f2937;
+      color: white;
+      text-decoration: none;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .wrap {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 28px 24px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 18px;
+      align-items: start;
+    }
+
     .card {
-      background: #171a21; border: 1px solid #2a3040; border-radius: 16px; padding: 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 18px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.18);
     }
-    .row1 {
-      display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 10px;
+
+    .card h2 { margin: 0 0 12px; font-size: 22px; }
+    .card h3 { margin: 16px 0 10px; font-size: 16px; color: #fff; }
+
+    .muted {
+      color: #94a3b8;
+      font-size: 12px;
+      line-height: 1.5;
     }
-    .dest { font-size: 22px; font-weight: 700; }
-    .subline { opacity: 0.75; margin-top: 6px; }
-    .price { font-size: 24px; font-weight: 700; color: #34d399; }
-    .meta {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px;
+
+    .note {
+      margin-top: 8px;
+      color: #fbbf24;
+      font-size: 12px;
+      line-height: 1.4;
     }
-    .box {
-      background: #0f141d; border: 1px solid #263041; border-radius: 12px; padding: 12px;
+
+    label {
+      display: block;
+      margin: 10px 0 6px;
+      font-size: 12px;
+      color: #cbd5e1;
     }
-    .box .l { opacity: 0.65; font-size: 12px; margin-bottom: 6px; }
-    .box .v { font-size: 14px; word-break: break-word; }
-    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-    .badge {
-      display: inline-block; padding: 5px 10px; border-radius: 999px; font-size: 12px;
-      border: 1px solid #334155; background: #111827; margin-bottom: 8px;
+
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid #334155;
+      background: #111827;
+      color: #fff;
+      padding: 11px 12px;
+      border-radius: 10px;
+      outline: none;
+      font-size: 13px;
     }
-    .empty { opacity: 0.7; padding: 20px 0; }
-    @media (max-width: 900px) {
-      .grid, .meta, .filters { grid-template-columns: 1fr; }
-      .row1 { flex-direction: column; }
+
+    textarea {
+      min-height: 86px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    input[readonly] {
+      opacity: 0.9;
+      background: #0b1220;
+      color: #a5b4fc;
+    }
+
+    .row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      width: auto;
+      border: none;
+      background: #4f46e5;
+      color: white;
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 13px;
+    }
+
+    button.secondary { background: #1f2937; }
+    button.success { background: #047857; }
+    button.danger { background: #991b1b; }
+
+    .upload-box {
+      border: 1px dashed rgba(255,255,255,0.18);
+      border-radius: 16px;
+      padding: 14px;
+      background: rgba(255,255,255,0.025);
+      margin-bottom: 14px;
+    }
+
+    .price-box {
+      border: 1px solid rgba(16,185,129,0.35);
+      background: rgba(16,185,129,0.08);
+      border-radius: 14px;
+      padding: 12px;
+      margin-top: 14px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .stat {
+      background: #0b1220;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .stat .label {
+      color: #94a3b8;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    .stat .value {
+      font-size: 22px;
+      font-weight: bold;
+      margin-top: 7px;
+    }
+
+    .offer {
+      background: #0b1220;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 15px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .offer strong {
+      display: block;
+      font-size: 16px;
+      margin-bottom: 5px;
+    }
+
+    .offer .actions a,
+    .offer .actions button {
+      display: inline-block;
+      text-decoration: none;
+      background: #1f2937;
+      color: white;
+      border-radius: 9px;
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+
+    .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.08);
+      margin: 18px 0;
+    }
+
+    @media (max-width: 980px) {
+      .layout, .row, .row-3, .stats {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar-inner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
     }
   </style>
 </head>
+
 <body>
-  <div class="wrap">
-    <div class="top">
-      <div>
-        <div class="title">Admin Dashboard</div>
-        <div class="sub">Search, filter, sort, update statuses, and monitor revenue potential.</div>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <h1>2L1P Neural Travel · Admin V7.3</h1>
+        <p>Admin = вътрешни цени. Client Offer = само крайна цена.</p>
       </div>
-      <a class="btn" href="/">Back to Offer Creator</a>
+      <a href="/admin">Open Admin Dashboard</a>
     </div>
+  </header>
 
-    <div class="grid" id="kpis"></div>
-
-    <div class="filters">
-      <input id="search" placeholder="Search by client, phone, destination, hotel, ID..." />
-      <select id="statusFilter">
-        <option value="">all statuses</option>
-        <option value="draft">draft</option>
-        <option value="sent">sent</option>
-        <option value="viewed">viewed</option>
-        <option value="booked">booked</option>
-        <option value="cancelled">cancelled</option>
-        <option value="lost">lost</option>
-        <option value="expired">expired</option>
-      </select>
-      <select id="sortBy">
-        <option value="newest">newest</option>
-        <option value="oldest">oldest</option>
-        <option value="price_desc">price high-low</option>
-        <option value="price_asc">price low-high</option>
-        <option value="destination">destination</option>
-      </select>
-      <button class="btn" id="refreshBtn" type="button">Refresh</button>
-    </div>
-
-    <div class="list" id="offersList"></div>
-  </div>
-
-  <script>
-    const kpis = document.getElementById("kpis");
-    const offersList = document.getElementById("offersList");
-    const searchInput = document.getElementById("search");
-    const statusFilter = document.getElementById("statusFilter");
-    const sortBy = document.getElementById("sortBy");
-    const refreshBtn = document.getElementById("refreshBtn");
-
-    let allOffers = [];
-
-    function pad(n) {
-      return String(n).padStart(2, "0");
-    }
-
-    function formatDate(d) {
-      const x = new Date(d);
-      if (isNaN(x)) return "-";
-      return `${pad(x.getDate())}.${pad(x.getMonth()+1)}.${x.getFullYear()} ${pad(x.getHours())}:${pad(x.getMinutes())}`;
-    }
-
-    function money(v, c = "EUR") {
-      return `${Number(v || 0).toFixed(2)} ${c}`;
-    }
-
-    function renderKpis(offers) {
-      const activeOffers = offers.filter(o => !["booked", "cancelled", "lost"].includes(o.status)).length;
-      const revenue = offers
-        .filter(o => !["cancelled", "lost"].includes(o.status))
-        .reduce((sum, o) => sum + Number(o.price || 0), 0);
-      const margin = offers
-        .filter(o => !["cancelled", "lost"].includes(o.status))
-        .reduce((sum, o) => sum + (Number(o.price || 0) - Number(o.basePrice || 0)), 0);
-
-      kpis.innerHTML = `
-        <div class="kpi"><div class="label">Total Offers</div><div class="value">${offers.length}</div></div>
-        <div class="kpi"><div class="label">Active Offers</div><div class="value">${activeOffers}</div></div>
-        <div class="kpi"><div class="label">Revenue Potential</div><div class="value">${money(revenue)}</div></div>
-        <div class="kpi"><div class="label">Margin Potential</div><div class="value">${money(margin)}</div></div>
-      `;
-    }
-
-    function applyFilters() {
-      const q = searchInput.value.trim().toLowerCase();
-      const status = statusFilter.value;
-      const sort = sortBy.value;
-
-      let filtered = [...allOffers];
-
-      if (q) {
-        filtered = filtered.filter(o =>
-          [
-            o.id,
-            o.clientName,
-            o.clientPhone,
-            o.destination,
-            o.hotel,
-            o.flightRoute
-          ].join(" ").toLowerCase().includes(q)
-        );
-      }
-
-      if (status) {
-        filtered = filtered.filter(o => (o.effectiveStatus || o.status) === status);
-      }
-
-      if (sort === "newest") {
-        filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      } else if (sort === "oldest") {
-        filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      } else if (sort === "price_desc") {
-        filtered.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
-      } else if (sort === "price_asc") {
-        filtered.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
-      } else if (sort === "destination") {
-        filtered.sort((a, b) => String(a.destination || "").localeCompare(String(b.destination || "")));
-      }
-
-      renderOffers(filtered);
-    }
-
-    function renderOffers(offers) {
-      if (!offers.length) {
-        offersList.innerHTML = `<div class="empty">No offers found.</div>`;
-        return;
-      }
-
-      offersList.innerHTML = offers.map(o => `
+  <main class="wrap">
+    <div class="layout">
+      <section>
         <div class="card">
-          <div class="row1">
+          <h2>Create Offer</h2>
+          <p class="muted">Вътрешните цени остават тук. Клиентът вижда само Final Price.</p>
+
+          <div class="row">
             <div>
-              <div class="badge">${o.effectiveStatus || o.status || "draft"}</div>
-              <div class="dest">${o.destination || "Untitled Offer"}</div>
-              <div class="subline">${o.clientName || "No client"} · ${o.flightRoute || "No route"} · ${o.hotel || "No hotel"}</div>
+              <label>Client Name</label>
+              <input id="clientName" placeholder="Goce Terziev" />
             </div>
             <div>
-              <div class="price">${money(o.price, o.currency)}</div>
+              <label>Client Phone</label>
+              <input id="clientPhone" placeholder="00359894842882" />
             </div>
           </div>
 
-          <div class="meta">
-            <div class="box"><div class="l">Offer ID</div><div class="v">${o.id}</div></div>
-            <div class="box"><div class="l">Client Phone</div><div class="v">${o.clientPhone || "-"}</div></div>
-            <div class="box"><div class="l">Created</div><div class="v">${formatDate(o.createdAt)}</div></div>
-            <div class="box"><div class="l">Valid Until</div><div class="v">${formatDate(o.validUntil)}</div></div>
-            <div class="box"><div class="l">Guests</div><div class="v">${o.guests || "-"}</div></div>
-            <div class="box"><div class="l">Base Price</div><div class="v">${money(o.basePrice, o.currency)}</div></div>
-            <div class="box"><div class="l">Markup</div><div class="v">${Number(o.markupPercent || 0).toFixed(2)}%</div></div>
-            <div class="box"><div class="l">Margin</div><div class="v">${money((Number(o.price || 0) - Number(o.basePrice || 0)), o.currency)}</div></div>
+          <div class="row">
+            <div>
+              <label>Destination *</label>
+              <input id="destination" placeholder="Bari" />
+            </div>
+            <div>
+              <label>Travel Dates</label>
+              <input id="travelDates" placeholder="02.05.2026 - 04.05.2026" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Guests</label>
+              <input id="guests" value="2 adults" />
+            </div>
+            <div>
+              <label>Status</label>
+              <select id="status">
+                <option value="draft">draft</option>
+                <option value="sent">sent</option>
+                <option value="viewed">viewed</option>
+                <option value="booked">booked</option>
+                <option value="cancelled">cancelled</option>
+                <option value="lost">lost</option>
+                <option value="expired">expired</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <h3>AI Flight Screenshot Import</h3>
+          <div class="upload-box">
+            <label>Flight Screenshot</label>
+            <input id="flightImage" type="file" accept="image/*" />
+            <div class="actions">
+              <button type="button" onclick="uploadFlightImage()">Scan Flight Screenshot</button>
+            </div>
+            <div class="muted">AI fills flight details and flight price.</div>
+          </div>
+
+          <h3>AI Hotel Screenshot Import</h3>
+          <div class="upload-box">
+            <label>Hotel Screenshot</label>
+            <input id="hotelImage" type="file" accept="image/*" />
+            <div class="actions">
+              <button type="button" onclick="uploadHotelImage()">Scan Hotel Screenshot</button>
+            </div>
+            <div class="muted">AI fills hotel name, room, meal, hotel description and hotel price.</div>
+          </div>
+
+<div class="actions">
+  <button type="button" class="success" onclick="autoBuildOffer()">
+    GT63 AUTO BUILD OFFER
+  </button>
+</div>
+
+          <div class="divider"></div>
+
+          <h3>Import URLs</h3>
+          <div class="row">
+            <div>
+              <label>Flight URL</label>
+              <input id="flightUrl" placeholder="Paste flight URL" />
+            </div>
+            <div>
+              <label>Hotel URL</label>
+              <input id="hotelUrl" placeholder="Paste hotel URL" />
+            </div>
           </div>
 
           <div class="actions">
-            <select data-id="${o.id}" class="statusSelect">
-              ${["draft","sent","viewed","booked","cancelled","lost"].map(s =>
-                `<option value="${s}" ${(o.status || "draft") === s ? "selected" : ""}>${s}</option>`
-              ).join("")}
-            </select>
-            <a class="btn" href="/offer/${o.id}" target="_blank">Client Page</a>
-            <a class="btn" href="/api/offers/${o.id}/pdf" target="_blank">PDF</a>
+            <button type="button" onclick="importData()">Import URL Data</button>
+          </div>
+          <div class="note">URL import is fallback only. Use screenshots for real flight/hotel data.</div>
+
+          <div class="divider"></div>
+
+          <h3>Flight Details</h3>
+          <div class="row">
+            <div>
+              <label>Flight Airline</label>
+              <input id="flightAirline" placeholder="Wizz Air" />
+            </div>
+            <div>
+              <label>Flight Route</label>
+              <input id="flightRoute" placeholder="SOF → BRI / BRI → SOF" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Flight Departure</label>
+              <input id="flightDeparture" />
+            </div>
+            <div>
+              <label>Flight Arrival</label>
+              <input id="flightArrival" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Flight Baggage</label>
+              <input id="flightBaggage" />
+            </div>
+            <div>
+              <label>Flight Notes</label>
+              <input id="flightNotes" />
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <h3>Hotel Details</h3>
+          <div class="row">
+            <div>
+              <label>Main Hotel</label>
+              <input id="hotelName" placeholder="Hotel name" />
+            </div>
+            <div>
+              <label>Hotel Stars</label>
+              <input id="hotelStars" placeholder="4*" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Hotel Area</label>
+              <input id="hotelArea" />
+            </div>
+            <div>
+              <label>Hotel Distance</label>
+              <input id="hotelDistance" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Room</label>
+              <input id="hotelRoom" />
+            </div>
+            <div>
+              <label>Meal</label>
+              <input id="hotelMeal" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Rooms Left</label>
+              <input id="hotelRoomsLeft" />
+            </div>
+            <div>
+              <label>Currency</label>
+              <input id="currency" value="EUR" />
+            </div>
+          </div>
+
+          <label>Hotel Description</label>
+          <textarea id="hotelDescription" placeholder="Short hotel description for the client..."></textarea>
+
+          <label>Hotel Image URLs</label>
+          <textarea id="hotelImages" placeholder="Paste one image URL per line"></textarea>
+
+          <div class="divider"></div>
+
+          <h3>Internal Pricing</h3>
+          <p class="muted">Тези цени са само за теб. Клиентът не ги вижда.</p>
+
+          <div class="row-3">
+            <div>
+              <label>Flight Price</label>
+              <input id="flightPrice" type="number" step="0.01" value="0" />
+            </div>
+            <div>
+              <label>Hotel Price</label>
+              <input id="hotelPrice" type="number" step="0.01" value="0" />
+            </div>
+            <div>
+              <label>Transfer Price</label>
+              <input id="transferPrice" type="number" step="0.01" value="0" />
+            </div>
+          </div>
+
+          <div class="price-box">
+            <div class="row-3">
+              <div>
+                <label>Base Price Auto Total</label>
+                <input id="basePrice" type="number" step="0.01" value="0" readonly />
+              </div>
+              <div>
+                <label>Markup %</label>
+                <input id="markupPercent" type="number" step="0.01" value="5" />
+              </div>
+              <div>
+                <label>Final Price Override</label>
+                <input id="finalPrice" type="number" step="0.01" placeholder="Optional" />
+              </div>
+            </div>
+
+            <div id="pricingPreview" class="note" style="color:#86efac; margin-top:10px;">
+              <div><strong>Base:</strong> 0.00 EUR</div>
+              <div><strong>Final:</strong> 0.00 EUR</div>
+              <div><strong>Profit:</strong> 0.00 EUR</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Valid for days</label>
+              <input id="validForDays" type="number" value="1" />
+            </div>
+            <div>
+              <label>Custom Valid Until</label>
+              <input id="customValidUntil" type="datetime-local" />
+            </div>
+          </div>
+
+          <label>Destination Description</label>
+          <textarea id="destinationDescription" placeholder="Short premium text about the destination..."></textarea>
+
+          <label>Notes</label>
+          <textarea id="notes" placeholder="Client-facing notes..."></textarea>
+
+          <div class="actions">
+            <button type="button" class="success" onclick="saveOffer()">Save Offer</button>
+            <button type="button" class="secondary" onclick="clearForm()">Clear</button>
           </div>
         </div>
-      `).join("");
+      </section>
 
-      document.querySelectorAll(".statusSelect").forEach(sel => {
-        sel.addEventListener("change", async () => {
-          await fetch(`/api/offers/${sel.dataset.id}/status`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: sel.value })
-          });
-          await loadAdmin();
-        });
-      });
-    }
+      <aside>
+        <div class="card">
+          <h2>Agency Snapshot</h2>
+          <p class="muted">Status flow: draft → sent → viewed → booked / cancelled.</p>
 
-    async function loadAdmin() {
-      try {
-        const res = await fetch("/api/offers");
-        const data = await res.json();
-        allOffers = Array.isArray(data) ? data : (data.offers || []);
-        renderKpis(allOffers);
-        applyFilters();
-      } catch (e) {
-        offersList.innerHTML = `<div class="empty">Failed to load offers.</div>`;
-      }
-    }
+          <div class="stats">
+            <div class="stat"><div class="label">Total Offers</div><div class="value" id="statTotal">0</div></div>
+            <div class="stat"><div class="label">Active Offers</div><div class="value" id="statActive">0</div></div>
+            <div class="stat"><div class="label">Revenue Potential</div><div class="value" id="statRevenue">0</div></div>
+            <div class="stat"><div class="label">Margin Potential</div><div class="value" id="statMargin">0</div></div>
+            <div class="stat"><div class="label">Booked Revenue</div><div class="value" id="statBooked">0</div></div>
+            <div class="stat"><div class="label">Lost Revenue</div><div class="value" id="statLost">0</div></div>
+          </div>
+        </div>
 
-    searchInput.addEventListener("input", applyFilters);
-    statusFilter.addEventListener("change", applyFilters);
-    sortBy.addEventListener("change", applyFilters);
-    refreshBtn.addEventListener("click", loadAdmin);
+        <div class="card">
+          <h2>Recent Offers</h2>
+          <div id="offersBox"><div class="muted">Loading...</div></div>
+        </div>
+      </aside>
+    </div>
+  </main>
 
-    loadAdmin();
-  </script>
+  <script src="/admin.js"></script>
 </body>
 </html>

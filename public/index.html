@@ -5,6 +5,92 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>2L1P Neural Travel - MVP v3</title>
   <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .builder-block {
+      margin-top: 8px;
+      padding: 14px;
+      border: 1px dashed rgba(255,255,255,.14);
+      border-radius: 16px;
+      background: rgba(255,255,255,.03);
+    }
+
+    .builder-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .builder-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .builder-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .builder-card {
+      background: rgba(255,255,255,.035);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .builder-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .builder-card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .builder-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .mini-note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.45;
+    }
+
+    .price-helper {
+      margin-top: 10px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(70,211,143,.10);
+      border: 1px solid rgba(70,211,143,.20);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .danger-btn {
+      background: rgba(255,127,150,.12);
+      border: 1px solid rgba(255,127,150,.24);
+      color: var(--text);
+    }
+
+    @media (max-width: 900px) {
+      .builder-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 <body>
   <div class="topbar">
@@ -12,7 +98,7 @@
       <div>
         <div class="brand-title">2L1P Neural Travel - MVP v3</div>
         <div class="brand-sub">
-          Create offers, generate PDFs, share client links, manage statuses, and track agency flow.
+          Create offers, share client links, manage statuses, and track agency flow.
         </div>
       </div>
       <div class="actions">
@@ -24,7 +110,7 @@
   <div class="container hero">
     <div class="hero-grid">
       <div class="hero-card">
-        <h1 class="hero-title">Create Offer</h1>
+        <h1 class="hero-title" id="formTitle">Create Offer</h1>
         <p class="hero-sub">
           V3 adds status workflow, pricing logic, agency margin visibility, richer client presentation, and admin-ready filtering.
         </p>
@@ -32,37 +118,37 @@
         <form id="offerForm" class="form-grid">
           <div class="field">
             <label>Client Name</label>
-            <input name="clientName" placeholder="Bibi Client" />
+            <input name="clientName" placeholder="Goce Terziev" />
           </div>
 
           <div class="field">
             <label>Client Phone</label>
-            <input id="clientPhone" name="clientPhone" placeholder="359888123456" />
+            <input id="clientPhone" name="clientPhone" placeholder="00359894842882" />
           </div>
 
           <div class="field">
             <label>Destination *</label>
-            <input name="destination" required placeholder="Paros, Greece" />
+            <input name="destination" required placeholder="Rome" />
           </div>
 
           <div class="field">
             <label>Flight Route</label>
-            <input name="flightRoute" placeholder="Sofia - Athens - Paros" />
+            <input name="flightRoute" placeholder="sofia - rome - sofia" />
           </div>
 
           <div class="field">
             <label>Hotel</label>
-            <input name="hotel" placeholder="Paros Bay Hotel" />
+            <input name="hotel" placeholder="esperanto" />
           </div>
 
           <div class="field">
             <label>Travel Dates</label>
-            <input name="travelDates" placeholder="10.03.2026 - 15.03.2026" />
+            <input name="travelDates" placeholder="25.04 - 30.04.2026" />
           </div>
 
           <div class="field">
             <label>Guests</label>
-            <input name="guests" placeholder="2 adults" />
+            <input name="guests" placeholder="2 възрастни" />
           </div>
 
           <div class="field">
@@ -73,24 +159,25 @@
               <option value="viewed">viewed</option>
               <option value="booked">booked</option>
               <option value="cancelled">cancelled</option>
+              <option value="lost">lost</option>
             </select>
           </div>
 
           <div class="field">
             <label>Base Price *</label>
-            <input name="basePrice" type="number" step="0.01" placeholder="900" required />
+            <input id="basePrice" name="basePrice" type="number" step="0.01" placeholder="остави празно за auto" />
           </div>
 
           <div class="field">
             <label>Markup %</label>
-            <input name="markupPercent" type="number" step="0.01" placeholder="5" />
+            <input id="markupPercent" name="markupPercent" type="number" step="0.01" placeholder="5" value="5" />
             <div class="inline-note">Final price auto-calculates if final price is empty.</div>
           </div>
 
           <div class="field">
             <label>Final Client Price (optional)</label>
-            <input name="price" type="number" step="0.01" placeholder="945" />
-            <div class="inline-note">If filled, final price overrides markup and margin is recalculated.</div>
+            <input id="priceField" name="price" type="number" step="0.01" placeholder="остави празно за auto" />
+            <div class="inline-note">If filled, final price overrides auto pricing and margin is recalculated.</div>
           </div>
 
           <div class="field">
@@ -103,18 +190,76 @@
             <input name="validForDays" type="number" min="1" value="1" />
           </div>
 
-          <div class="field">
-            <label>Custom valid until (optional)</label>
-            <input name="customValidUntil" type="text" placeholder="2026-03-10T18:00" />
+         <div class="field">
+  <label>Custom valid until (optional)</label>
+  <input name="customValidUntil" type="text" placeholder="2026-04-15T18:00" />
+</div>
+
+<div class="field full">
+  <label>Import from URL</label>
+  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <input id="importUrl" placeholder="Paste hotel or flight URL..." />
+   <button type="button" class="btn secondary" id="importBtn" onclick="importFromUrl()">Import</button>
+  </div>
+  <div class="inline-note">Imports basic hotel/flight data into the current offer builder.</div>
+</div>
+
+<div class="field full">
+  <label>Template</label>
+  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <select id="templateSelect">
+      <option value="">Choose template...</option>
+      <option value="city_break">City Break</option>
+      <option value="family_beach">Family Beach</option>
+      <option value="luxury_escape">Luxury Escape</option>
+    </select>
+    <button type="button" class="btn secondary" id="applyTemplateBtn">Apply Template</button>
+  </div>
+</div>
+
+<div class="field full">
+  <label>Notes</label>
+  <textarea name="notes" placeholder="Luxury offer with flexible hotel options..."></textarea>
+</div>
+
+<div class="field full">
+            <div class="builder-block">
+              <div class="builder-header">
+                <h3 class="builder-title">✈️ Flight Options</h3>
+                <button type="button" class="btn secondary" onclick="addFlight()">+ Add Flight</button>
+              </div>
+
+              <div class="mini-note">
+                Add one or more flight options. These will appear on the client HTML offer page.
+              </div>
+
+              <div id="flightsWrapper" class="builder-list"></div>
+            </div>
           </div>
 
           <div class="field full">
-            <label>Notes</label>
-            <textarea name="notes" placeholder="Luxury offer with flexible hotel options..."></textarea>
+            <div class="builder-block">
+              <div class="builder-header">
+                <h3 class="builder-title">🏨 Hotel Options</h3>
+                <button type="button" class="btn secondary" onclick="addHotel()">+ Add Hotel</button>
+              </div>
+
+              <div class="mini-note">
+                Add one or more hotel options with manual prices, description, and image URLs.
+              </div>
+
+              <div id="hotelsWrapper" class="builder-list"></div>
+            </div>
+          </div>
+
+          <div class="field full">
+            <div id="autoPriceBox" class="price-helper">
+              Auto pricing: waiting for flight/hotel prices...
+            </div>
           </div>
 
           <div class="field full status-row">
-            <button type="submit">Save Offer</button>
+            <button type="submit" id="submitBtn">Save Offer</button>
             <button type="button" class="btn secondary" id="clearBtn">Clear</button>
             <button type="button" class="btn" onclick="sendWhatsApp()">Send via WhatsApp</button>
             <span class="muted" id="formMessage"></span>

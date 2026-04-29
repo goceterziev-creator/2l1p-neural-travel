@@ -1,0 +1,22 @@
+GT63 LOAD PROJECT
+
+Project:
+2L1P Neural Travel
+
+Use the following files as the source of truth:
+
+SYSTEM/GT63_CONTEXT.md
+SYSTEM/GT63_PROJECT_MAP.md
+
+Do not invent architecture.
+Do not redesign system.
+Extend the existing project only.
+
+Current version:
+V4 FULL
+
+Stack:
+Node.js
+Express
+Vanilla JS
+JSON database
