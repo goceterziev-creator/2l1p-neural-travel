@@ -1,4 +1,5 @@
 node_modules
 DATABASE/database.json
 DATABASE/database.db
-*.bak
+*.bak.env.local
+.env
