@@ -1,5 +1,10 @@
 node_modules
+.env.local
+.env
+eng.traineddata
+tmp_pdf_review/
 DATABASE/database.json
 DATABASE/database.db
+DATABASE/*.json
+backups/*.json
 *.bak.env.local
-.env

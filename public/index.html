@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>2L1P Neural Travel - MVP v3</title>
+  <title>2L1P Neural Travel - V8</title>
   <link rel="stylesheet" href="/styles.css" />
   <style>
     .builder-block {
@@ -96,7 +96,7 @@
   <div class="topbar">
     <div class="container topbar-inner">
       <div>
-        <div class="brand-title">2L1P Neural Travel - MVP v3</div>
+        <div class="brand-title">2L1P Neural Travel - V8</div>
         <div class="brand-sub">
           Create offers, share client links, manage statuses, and track agency flow.
         </div>
@@ -112,7 +112,7 @@
       <div class="hero-card">
         <h1 class="hero-title" id="formTitle">Create Offer</h1>
         <p class="hero-sub">
-          V3 adds status workflow, pricing logic, agency margin visibility, richer client presentation, and admin-ready filtering.
+          V8 brings status workflow, pricing logic, agency margin visibility, richer client presentation, and admin-ready filtering.
         </p>
 
         <form id="offerForm" class="form-grid">
@@ -133,12 +133,17 @@
 
           <div class="field">
             <label>Flight Route</label>
-            <input name="flightRoute" placeholder="sofia - rome - sofia" />
+           <input id="flightRoute" name="flightRoute" placeholder="sofia - rome - sofia" />
           </div>
+
+<div class="field">
+  <label>Import from Screenshot</label>
+  <input type="file" id="imageUpload" accept="image/*" />
+</div>
 
           <div class="field">
             <label>Hotel</label>
-            <input name="hotel" placeholder="esperanto" />
+           <input id="hotel" name="hotel" />
           </div>
 
           <div class="field">

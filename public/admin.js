@@ -1,4 +1,6 @@
-﻿async function fetchJson(url, options = {}) {
+﻿let editingOfferId = null;
+
+async function fetchJson(url, options = {}) {
   const res = await fetch(url, options);
 
   let data = null;
@@ -11,6 +13,11 @@
   }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+
     const message =
       data?.details?.error?.message ||
       data?.details?.message ||
@@ -22,6 +29,26 @@
   }
 
   return data;
+}
+
+async function loadCurrentUser() {
+  try {
+    const data = await fetchJson("/api/auth/me");
+    const user = data.user || {};
+    if ($("currentUser")) {
+      $("currentUser").textContent = `${user.name || user.email || "User"} · ${user.plan || "PLAN"}`;
+    }
+  } catch (error) {
+    console.error("User load error:", error);
+  }
+}
+
+async function logout() {
+  try {
+    await fetchJson("/api/auth/logout", { method: "POST" });
+  } finally {
+    window.location.href = "/login";
+  }
 }
 
 function $(id) {
@@ -159,6 +186,7 @@ async function loadOffers() {
               <a href="${clientLink}" target="_blank">Open</a>
               <a href="${pdfLink}" target="_blank">PDF</a>
               <a href="${waLink}" target="_blank">WhatsApp</a>
+              <button type="button" onclick="editOffer('${offer.id}')">Edit</button>
               <button type="button" onclick="setStatus('${offer.id}', 'sent')">Sent</button>
               <button type="button" onclick="setStatus('${offer.id}', 'viewed')">Viewed</button>
               <button type="button" onclick="setStatus('${offer.id}', 'booked')">Book</button>
@@ -187,6 +215,86 @@ async function setStatus(id, status) {
   } catch (error) {
     alert(`Status update failed: ${error.message}`);
   }
+}
+
+function firstItem(items) {
+  return Array.isArray(items) && items.length ? items[0] : {};
+}
+
+function setValue(id, value = "") {
+  const el = $(id);
+  if (el) el.value = value ?? "";
+}
+
+function setEditMode(offerId = null) {
+  editingOfferId = offerId;
+  const isEditing = Boolean(offerId);
+
+  if ($("formTitle")) $("formTitle").textContent = isEditing ? "Edit Offer" : "Create Offer";
+  if ($("editBanner")) {
+    $("editBanner").style.display = isEditing ? "block" : "none";
+    $("editBanner").textContent = isEditing ? `Editing ${offerId}` : "";
+  }
+  if ($("saveOfferBtn")) $("saveOfferBtn").textContent = isEditing ? "Update Offer" : "Save Offer";
+  if ($("cancelEditBtn")) $("cancelEditBtn").style.display = isEditing ? "inline-block" : "none";
+}
+
+function populateForm(offer = {}) {
+  const flight = firstItem(offer.flights || offer.flightOptions);
+  const hotel = firstItem(offer.hotels || offer.hotelOptions);
+
+  setValue("clientName", offer.clientName);
+  setValue("clientPhone", offer.clientPhone);
+  setValue("destination", offer.destination);
+  setValue("travelDates", offer.travelDates);
+  setValue("guests", offer.guests);
+  setValue("status", offer.status || "draft");
+  setValue("currency", offer.currency || "EUR");
+
+  setValue("flightAirline", flight.airline);
+  setValue("flightRoute", flight.route || offer.flightRoute);
+  setValue("flightDeparture", flight.departure);
+  setValue("flightArrival", flight.arrival);
+  setValue("flightBaggage", flight.baggage);
+  setValue("flightNotes", flight.notes);
+
+  setValue("hotelName", hotel.name || offer.hotel);
+  setValue("hotelStars", hotel.stars);
+  setValue("hotelArea", hotel.area);
+  setValue("hotelDistance", hotel.distance);
+  setValue("hotelRoom", hotel.room);
+  setValue("hotelMeal", hotel.meal);
+  setValue("hotelRoomsLeft", hotel.roomsLeft);
+  setValue("hotelDescription", hotel.description);
+  setValue("hotelImages", Array.isArray(hotel.images) ? hotel.images.join("\n") : "");
+
+  setValue("destinationDescription", offer.destinationDescription);
+  setValue("notes", offer.notes);
+  setValue("flightPrice", Number(offer.flightPrice || flight.price || 0).toFixed(2));
+  setValue("hotelPrice", Number(offer.hotelPrice || hotel.price || 0).toFixed(2));
+  setValue("transferPrice", Number(offer.transferPrice || 0).toFixed(2));
+  setValue("markupPercent", Number(offer.markupPercent || 0).toFixed(2));
+  setValue("finalPrice", offer.finalOverride ? Number(offer.finalPrice || 0).toFixed(2) : "");
+  setValue("validForDays", offer.validForDays || 1);
+  setValue("customValidUntil", "");
+
+  calculatePricing();
+}
+
+async function editOffer(id) {
+  try {
+    const data = await fetchJson(`/api/offers/${id}`);
+    populateForm(data.offer || {});
+    setEditMode(id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (error) {
+    alert(`Edit failed: ${error.message}`);
+  }
+}
+
+function cancelEdit() {
+  setEditMode(null);
+  clearForm();
 }
 
 async function importData() {
@@ -236,16 +344,20 @@ async function uploadFlightImage() {
   try {
     const formData = new FormData();
     formData.append("image", file);
+    formData.append("destination", $("destination")?.value || "");
 
     const data = await fetchJson("/api/import-image", {
       method: "POST",
       body: formData
     });
 
+console.log("FLIGHT OCR DATA:", data);
+
     const f = data.flight || {};
 
     if ($("flightAirline")) $("flightAirline").value = f.airline || "";
     if ($("flightRoute")) $("flightRoute").value = f.route || "";
+    if ($("mainFlightRoute")) $("mainFlightRoute").value = f.route || "";
     if ($("flightDeparture")) $("flightDeparture").value = f.departure || "";
     if ($("flightArrival")) $("flightArrival").value = f.arrival || "";
     if ($("flightBaggage")) $("flightBaggage").value = f.baggage || "";
@@ -306,6 +418,31 @@ async function uploadHotelImage() {
 function collectForm() {
   calculatePricing();
 
+const destinationValue = $("destination")?.value.trim() || "";
+
+const flightForValidation = {
+  route: $("flightRoute")?.value.trim() || "",
+  airline: $("flightAirline")?.value.trim() || "",
+  departure: $("flightDeparture")?.value.trim() || "",
+  arrival: $("flightArrival")?.value.trim() || ""
+};
+
+const hotelForValidation = {
+  name: $("hotelName")?.value.trim() || "",
+  area: $("hotelArea")?.value.trim() || "",
+  description: $("hotelDescription")?.value.trim() || ""
+};
+
+const formValidationWarnings = [];
+
+if (!destinationMatchesFlight(destinationValue, flightForValidation)) {
+  formValidationWarnings.push("Flight mismatch");
+}
+
+if (!destinationMatchesHotel(destinationValue, hotelForValidation)) {
+  formValidationWarnings.push("Hotel mismatch");
+}
+
   return {
     clientName: $("clientName")?.value.trim() || "",
     clientPhone: $("clientPhone")?.value.trim() || "",
@@ -343,26 +480,66 @@ function collectForm() {
     finalPrice: $("finalPrice")?.value ? Number($("finalPrice").value) : "",
 
     validForDays: Number($("validForDays")?.value || 1),
-    customValidUntil: $("customValidUntil")?.value || ""
+    customValidUntil: $("customValidUntil")?.value || "",
+    validationWarnings: formValidationWarnings
   };
 }
 
 async function saveOffer() {
   const payload = collectForm();
 
+  const destinationValue = payload.destination || "";
+
+  const flightForValidation = {
+    route: payload.flightRoute || "",
+    airline: payload.flightAirline || "",
+    departure: payload.flightDeparture || "",
+    arrival: payload.flightArrival || ""
+  };
+
+  const hotelForValidation = {
+    name: payload.hotelName || payload.hotel || "",
+    area: payload.hotelArea || "",
+    description: payload.hotelDescription || ""
+  };
+
+const flightText = JSON.stringify(flightForValidation).toLowerCase();
+const hotelText = JSON.stringify(hotelForValidation).toLowerCase();
+
+  const validationWarnings = [];
+
+ if (
+  flightText &&
+  !flightText.includes("needs review") &&
+  !destinationMatchesFlight(destinationValue, flightForValidation)
+) {
+  validationWarnings.push("Flight mismatch");
+}
+
+if (
+  hotelText &&
+  !hotelText.includes("needs review") &&
+  !destinationMatchesHotel(destinationValue, hotelForValidation)
+) {
+  validationWarnings.push("Hotel mismatch");
+}
+
+  payload.validationWarnings = validationWarnings;
+console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
+
   if (!payload.destination) {
     alert("Destination is required.");
     return;
   }
-
   try {
-    const result = await fetchJson("/api/offers", {
-      method: "POST",
+    const result = await fetchJson(editingOfferId ? `/api/offers/${editingOfferId}` : "/api/offers", {
+      method: editingOfferId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
 
-    alert(`Offer saved: ${result.offer.id}`);
+    alert(editingOfferId ? `Offer updated: ${result.offer.id}` : `Offer saved: ${result.offer.id}`);
+    setEditMode(null);
 
     await loadStats();
     await loadOffers();
@@ -374,6 +551,8 @@ async function saveOffer() {
 }
 
 function clearForm() {
+  if (editingOfferId) setEditMode(null);
+
   const ids = [
     "clientName",
     "clientPhone",
@@ -426,12 +605,85 @@ function bindPricingEvents() {
   });
 }
 
-window.importData = importData;
-window.uploadFlightImage = uploadFlightImage;
-window.uploadHotelImage = uploadHotelImage;
-window.saveOffer = saveOffer;
-window.clearForm = clearForm;
-window.setStatus = setStatus;
+function normalizeText(value = "") {
+  return String(value || "").toLowerCase();
+}
+
+function destinationMatchesFlight(destination, flight = {}) {
+  const d = normalizeText(destination);
+  const text = normalizeText(JSON.stringify(flight));
+
+  if (d.includes("rome") || d.includes("рим")) {
+    return text.includes("rome") || text.includes("roma") || text.includes("рим") || text.includes("fco") || text.includes("fiumicino");
+  }
+
+  if (d.includes("tokyo") || d.includes("токио")) {
+    return text.includes("tokyo") || text.includes("nrt") || text.includes("hnd") || text.includes("akihabara");
+  }
+
+  if (d.includes("barcelona") || d.includes("барселона")) {
+    return text.includes("barcelona") || text.includes("bcn");
+  }
+
+  if (d.includes("bari") || d.includes("бари")) {
+    return text.includes("bari") || text.includes("bri");
+  }
+
+  return true;
+}
+
+function destinationMatchesHotel(destination, hotel = {}) {
+  const d = normalizeText(destination);
+  const text = normalizeText(JSON.stringify(hotel));
+
+  if (d.includes("rome") || d.includes("рим")) {
+    return text.includes("rome") || text.includes("roma") || text.includes("рим") || text.includes("fiumicino") || text.includes("fco");
+  }
+
+  if (d.includes("tokyo") || d.includes("токио")) {
+    return text.includes("tokyo") || text.includes("akihabara") || text.includes("shinjuku") || text.includes("ginza");
+  }
+
+  if (d.includes("barcelona") || d.includes("барселона")) {
+    return text.includes("barcelona") || text.includes("bcn");
+  }
+
+  if (d.includes("bari") || d.includes("бари")) {
+    return text.includes("bari");
+  }
+
+  return true;
+}
+
+function confirmMismatchWarnings(destination, flight, hotel) {
+  const warnings = [];
+
+  if (!destinationMatchesFlight(destination, flight)) {
+    warnings.push("⚠ Полетът може да не съвпада с избраната дестинация.");
+  }
+
+  if (!destinationMatchesHotel(destination, hotel)) {
+    warnings.push("⚠ Хотелът може да не съвпада с избраната дестинация.");
+  }
+
+  if (!warnings.length) return true;
+
+  return confirm(
+    `${warnings.join("\n")}\n\n` +
+    `Destination: ${destination || "-"}\n` +
+    `Flight: ${flight?.route || "-"}\n` +
+    `Hotel: ${hotel?.name || "-"}\n\n` +
+    `Да продължа ли въпреки това?`
+  );
+}
+
+function getDestinationValue() {
+  return (
+    $("destination")?.value ||
+    document.querySelector('[name="destination"]')?.value ||
+    ""
+  ).trim();
+}
 
 async function autoBuildOffer() {
   try {
@@ -451,6 +703,7 @@ async function autoBuildOffer() {
     // 1) Import flight screenshot
     const flightForm = new FormData();
     flightForm.append("image", flightFile);
+    flightForm.append("destination", $("destination")?.value || "");
 
     const flightData = await fetchJson("/api/import-image", {
       method: "POST",
@@ -468,16 +721,48 @@ async function autoBuildOffer() {
     if ($("flightPrice")) $("flightPrice").value = Number(f.price || 0).toFixed(2);
 
     // 2) Import hotel screenshot
-    const hotelForm = new FormData();
-    hotelForm.append("image", hotelFile);
+  const hotelForm = new FormData();
 
-    const hotelData = await fetchJson("/api/import-hotel-image", {
-      method: "POST",
-      body: hotelForm
-    });
+hotelForm.append("image", hotelFile);
+hotelForm.append("destination", $("destination")?.value || "");
+
+const hotelData = await fetchJson("/api/import-hotel-image", {
+  method: "POST",
+  body: hotelForm
+});
 
     const h = hotelData.hotel || {};
 
+console.log("AUTO HOTEL DATA:", h);
+
+const selectedDestination = getDestinationValue();
+
+const validationWarnings = [];
+
+if (!destinationMatchesFlight(selectedDestination, f)) {
+  validationWarnings.push("Flight mismatch");
+}
+
+if (!destinationMatchesHotel(selectedDestination, h)) {
+  validationWarnings.push("Hotel mismatch");
+}
+
+window.currentValidationWarnings = validationWarnings;
+
+if (validationWarnings.length) {
+  const shouldContinue = confirm(
+    `⚠ Възможно е несъответствие в офертата.\n\n` +
+    `Destination: ${selectedDestination || "-"}\n` +
+    `Flight: ${f?.route || "-"}\n` +
+    `Hotel: ${h?.name || "-"}\n\n` +
+    `Да продължа ли въпреки това?`
+  );
+
+  if (!shouldContinue) {
+    alert("AUTO BUILD stopped. Please check flight/hotel screenshots.");
+    return;
+  }
+}
     if ($("hotelName")) $("hotelName").value = h.name || $("hotelName").value || "";
     if ($("hotelStars")) $("hotelStars").value = h.stars || $("hotelStars").value || "";
     if ($("hotelArea")) $("hotelArea").value = h.area || h.location || $("hotelArea").value || "";
@@ -494,12 +779,23 @@ async function autoBuildOffer() {
     // 3) Auto destination text
     const destination = $("destination")?.value || "";
     const hotelName = $("hotelName")?.value || "";
+    const destinationKey = destination.toLowerCase();
+    const destinationName = destination.trim() || "Дестинацията";
+    const hotelType = "citybreak";
+    const hotelHighlights = (window.HOTEL_TAGS?.[hotelType] || [])
+      .map(item => `• ${item}`)
+      .join("\n");
 
-    if ($("destinationDescription") && !$("destinationDescription").value) {
+    if ($("destinationDescription")) {
+      const baseDescription =
+        window.DESTINATION_DESCRIPTIONS?.[destinationKey] ||
+        `${destinationName} е внимателно подбрана дестинация за комфортно и запомнящо се пътуване.`;
+
       $("destinationDescription").value =
-        `${destination} е внимателно подбрана дестинация за комфортно и запомнящо се пътуване. ` +
-        `Офертата комбинира удобен полет, подходящ хотел${hotelName ? ` (${hotelName})` : ""} ` +
-        `и ясна крайна цена, без скрити вътрешни разбивки за клиента.`;
+        `${baseDescription.trim()}\n\n` +
+        `Офертата комбинира удобен полет, ${hotelName ? `хотел ${hotelName}` : "подбран хотел"} ` +
+        `и ясна крайна цена, без скрити вътрешни разбивки за клиента.` +
+        (hotelHighlights ? `\n\nХотелът предлага:\n${hotelHighlights}` : "");
     }
 
     // 4) Auto notes
@@ -518,11 +814,40 @@ async function autoBuildOffer() {
   }
 }
 
+window.importData = importData;
+window.uploadFlightImage = uploadFlightImage;
+window.uploadHotelImage = uploadHotelImage;
 window.autoBuildOffer = autoBuildOffer;
+window.saveOffer = saveOffer;
+window.clearForm = clearForm;
+window.setStatus = setStatus;
+window.logout = logout;
+window.editOffer = editOffer;
+window.cancelEdit = cancelEdit;
 
 window.addEventListener("DOMContentLoaded", async () => {
-  bindPricingEvents();
-  calculatePricing();
-  await loadStats();
-  await loadOffers();
+  try {
+    await loadCurrentUser();
+  } catch (e) {
+    console.error("LOAD USER ERROR:", e);
+  }
+
+  try {
+    bindPricingEvents();
+    calculatePricing();
+  } catch (e) {
+    console.error("INIT FORM ERROR:", e);
+  }
+
+  try {
+    await loadStats();
+  } catch (e) {
+    console.error("LOAD STATS ERROR:", e);
+  }
+
+  try {
+    await loadOffers();
+  } catch (e) {
+    console.error("LOAD OFFERS ERROR:", e);
+  }
 });

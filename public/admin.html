@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>2L1P Neural Travel · Admin V7.3</title>
+  <title>2L1P Neural Travel · Admin V8</title>
 
   <style>
     * { box-sizing: border-box; }
@@ -51,6 +51,27 @@
       border-radius: 10px;
       font-size: 13px;
       font-weight: bold;
+    }
+
+    .session {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .session-user {
+      color: #cbd5e1;
+      font-size: 13px;
+    }
+
+    .session button {
+      width: auto;
+      background: #334155;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 13px;
     }
 
     .wrap {
@@ -237,10 +258,14 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <h1>2L1P Neural Travel · Admin V7.3</h1>
+        <h1>2L1P Neural Travel · Admin V8</h1>
         <p>Admin = вътрешни цени. Client Offer = само крайна цена.</p>
       </div>
-      <a href="/admin">Open Admin Dashboard</a>
+      <div class="session">
+        <span id="currentUser" class="session-user">Loading user...</span>
+        <a href="/admin">Dashboard</a>
+        <button type="button" class="secondary" onclick="logout()">Logout</button>
+      </div>
     </div>
   </header>
 
@@ -248,8 +273,9 @@
     <div class="layout">
       <section>
         <div class="card">
-          <h2>Create Offer</h2>
+          <h2 id="formTitle">Create Offer</h2>
           <p class="muted">Вътрешните цени остават тук. Клиентът вижда само Final Price.</p>
+          <div id="editBanner" class="note" style="display:none;"></div>
 
           <div class="row">
             <div>
@@ -276,7 +302,7 @@
           <div class="row">
             <div>
               <label>Guests</label>
-              <input id="guests" value="2 adults" />
+              <input id="guests" value="2 възрастни" />
             </div>
             <div>
               <label>Status</label>
@@ -319,25 +345,6 @@
     GT63 AUTO BUILD OFFER
   </button>
 </div>
-
-          <div class="divider"></div>
-
-          <h3>Import URLs</h3>
-          <div class="row">
-            <div>
-              <label>Flight URL</label>
-              <input id="flightUrl" placeholder="Paste flight URL" />
-            </div>
-            <div>
-              <label>Hotel URL</label>
-              <input id="hotelUrl" placeholder="Paste hotel URL" />
-            </div>
-          </div>
-
-          <div class="actions">
-            <button type="button" onclick="importData()">Import URL Data</button>
-          </div>
-          <div class="note">URL import is fallback only. Use screenshots for real flight/hotel data.</div>
 
           <div class="divider"></div>
 
@@ -489,7 +496,8 @@
           <textarea id="notes" placeholder="Client-facing notes..."></textarea>
 
           <div class="actions">
-            <button type="button" class="success" onclick="saveOffer()">Save Offer</button>
+            <button id="saveOfferBtn" type="button" class="success" onclick="saveOffer()">Save Offer</button>
+            <button id="cancelEditBtn" type="button" class="secondary" onclick="cancelEdit()" style="display:none;">Cancel Edit</button>
             <button type="button" class="secondary" onclick="clearForm()">Clear</button>
           </div>
         </div>
@@ -518,6 +526,7 @@
     </div>
   </main>
 
+  <script src="/data/descriptions.js"></script>
   <script src="/admin.js"></script>
 </body>
 </html>

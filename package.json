@@ -1,6 +1,6 @@
 {
-  "name": "2l1p-neural-travel-v7",
-  "version": "7.3.0",
+  "name": "2l1p-neural-travel-v8",
+  "version": "8.0.0",
   "description": "2L1P Neural Travel - Offer Engine",
   "main": "server.js",
   "scripts": {
@@ -12,6 +12,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "multer": "^1.4.5-lts.1",
-    "puppeteer": "^24.7.1"
+    "puppeteer": "^24.7.1",
+    "tesseract.js": "^7.0.0"
   }
 }
