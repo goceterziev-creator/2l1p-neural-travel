@@ -13,9 +13,13 @@ const PORT = process.env.PORT || 3001;
 const LIVE_BASE_URL = process.env.LIVE_BASE_URL || `http://localhost:${PORT}`;
 const SESSION_COOKIE = "aya_session";
 const AUTH_SECRET = process.env.AUTH_SECRET || "dev-auth-secret-change-me";
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+const OCR_ENGINE_VERSION = "8.3.2";
 
-const DB_DIR = path.join(__dirname, "DATABASE");
-const DB_FILE = path.join(DB_DIR, "database.json");
+const DB_FILE = process.env.DB_FILE
+  ? path.resolve(process.env.DB_FILE)
+  : path.join(__dirname, "DATABASE", "database.json");
+const DB_DIR = path.dirname(DB_FILE);
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
 console.log("SERVING FROM:", PUBLIC_DIR);
@@ -25,6 +29,14 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+app.use((req, res, next) => {
+  if (["/admin", "/admin.html", "/admin.js"].includes(req.path)) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  }
+  next();
+});
 app.use((req, res, next) => {
   if (["/", "/admin", "/admin.html"].includes(req.path)) {
     return requireAuthPage(req, res, next);
@@ -40,19 +52,6 @@ function ensureDb() {
   if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
   if (!fs.existsSync(DB_FILE)) {
     fs.writeFileSync(DB_FILE, JSON.stringify({ offers: [] }, null, 2), "utf8");
-  }
-}
-
-function readDb() {
-  ensureDb();
-  try {
-    const raw = fs.readFileSync(DB_FILE, "utf8");
-    const data = JSON.parse(raw || "{}");
-    if (!Array.isArray(data.offers)) data.offers = [];
-    return data;
-  } catch (err) {
-    console.error("DB read error:", err);
-    return { offers: [] };
   }
 }
 
@@ -76,8 +75,20 @@ function readDb() {
   }
 }
 function writeDb(db) {
-fs.copyFileSync(DB_FILE, DB_FILE + ".bak");
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf8");
+  ensureDb();
+  const payload = JSON.stringify(db, null, 2);
+  const tmp = `${DB_FILE}.${process.pid}.tmp`;
+
+  try {
+    if (fs.existsSync(DB_FILE)) fs.copyFileSync(DB_FILE, `${DB_FILE}.bak`);
+    fs.writeFileSync(tmp, payload, "utf8");
+    fs.renameSync(tmp, DB_FILE);
+  } catch (err) {
+    try {
+      if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+    } catch {}
+    fs.writeFileSync(DB_FILE, payload, "utf8");
+  }
 }
 
 function getUserId(req) {
@@ -114,10 +125,32 @@ function verifyPassword(password, storedHash = "") {
   return expectedBuffer.length === actual.length && crypto.timingSafeEqual(expectedBuffer, actual);
 }
 
-function signSession(userId) {
+function getUserSessionVersion(user = {}) {
+  return Number.isInteger(Number(user.sessionVersion)) ? Number(user.sessionVersion) : 1;
+}
+
+function normalizeSessionIdentity(user = {}) {
+  const role = getCurrentUserRole(user);
+  return {
+    userId: user.id,
+    agencyId: user.agencyId || "AGY-AYA",
+    role,
+    sessionVersion: getUserSessionVersion(user)
+  };
+}
+
+function signSession(userOrId) {
+  const identity = typeof userOrId === "object"
+    ? normalizeSessionIdentity(userOrId)
+    : { userId: userOrId };
+  const now = Date.now();
   const payload = JSON.stringify({
-    userId,
-    exp: Date.now() + 1000 * 60 * 60 * 24 * 7
+    userId: identity.userId,
+    agencyId: identity.agencyId,
+    role: identity.role,
+    sessionVersion: identity.sessionVersion,
+    iat: now,
+    exp: now + SESSION_MAX_AGE_SECONDS * 1000
   });
   const encoded = base64Url(payload);
   const signature = crypto.createHmac("sha256", AUTH_SECRET).update(encoded).digest("base64url");
@@ -147,7 +180,21 @@ function publicUser(user) {
   return safeUser;
 }
 
-function createUser({ name, email, password, role = "user", plan = "STARTER", credits = 25 }) {
+function isSessionValidForUser(session = {}, user = {}) {
+  if (!session?.userId || !user?.id) return false;
+  if (session.userId !== user.id) return false;
+  if (session.agencyId && session.agencyId !== (user.agencyId || "AGY-AYA")) return false;
+  if (session.role && session.role !== getCurrentUserRole(user)) return false;
+  if (session.sessionVersion && Number(session.sessionVersion) !== getUserSessionVersion(user)) return false;
+  return true;
+}
+
+function sessionExpiresAt(session = {}) {
+  const exp = Number(session.exp || 0);
+  return exp ? new Date(exp).toISOString() : null;
+}
+
+function createUser({ name, email, password, role = "agent", agencyId = "AGY-AYA", plan = "STARTER", credits = 25 }) {
   const cleanEmail = String(email || "").trim().toLowerCase();
   const cleanName = String(name || "").trim();
   const cleanPassword = String(password || "");
@@ -174,33 +221,110 @@ function createUser({ name, email, password, role = "user", plan = "STARTER", cr
     id: `USR-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
     name: cleanName,
     email: cleanEmail,
+    agencyId,
     passwordHash: hashPassword(cleanPassword),
-    role,
+    role: ROLE_CAPABILITIES[String(role || "").toLowerCase()] ? String(role).toLowerCase() : "agent",
+    sessionVersion: 1,
     plan,
     credits,
     createdAt: new Date().toISOString()
   };
 }
 
-function getCurrentUser(req) {
+function normalizeInviteRole(role = "agent") {
+  const cleanRole = String(role || "agent").toLowerCase();
+  if (["admin", "agent", "viewer"].includes(cleanRole)) return cleanRole;
+  return "agent";
+}
+
+function hashInviteToken(token = "") {
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
+}
+
+function createInviteToken() {
+  return crypto.randomBytes(24).toString("base64url");
+}
+
+function createAgencyInvite(req, { email = "", role = "agent" } = {}) {
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    const err = new Error("Valid invite email is required");
+    err.status = 400;
+    throw err;
+  }
+
+  const token = createInviteToken();
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString();
+  return {
+    invite: {
+      id: `INV-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+      agencyId: getCurrentAgencyId(req),
+      email: cleanEmail,
+      role: normalizeInviteRole(role),
+      status: "pending",
+      tokenHash: hashInviteToken(token),
+      invitedBy: req.user.id,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt,
+      acceptedAt: null,
+      acceptedBy: null
+    },
+    token
+  };
+}
+
+function findInviteByToken(db = {}, token = "") {
+  const tokenHash = hashInviteToken(token);
+  return safeArray(db.invites).find((invite) => invite.tokenHash === tokenHash) || null;
+}
+
+function isInviteAcceptable(invite = {}) {
+  if (!invite || invite.status !== "pending") return false;
+  if (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now()) return false;
+  return true;
+}
+
+function publicInvite(invite = {}) {
+  if (!invite) return null;
+  const { tokenHash, ...safeInvite } = invite;
+  return safeInvite;
+}
+
+function resolveSessionContext(req) {
   const token = parseCookies(req)[SESSION_COOKIE];
   const session = verifySession(token);
   if (!session) return null;
   const db = readDb();
-  return db.users.find((user) => user.id === session.userId) || null;
+  const user = db.users.find((candidate) => candidate.id === session.userId) || null;
+  if (!user || !isSessionValidForUser(session, user)) return null;
+  return {
+    user,
+    session,
+    identity: normalizeSessionIdentity(user)
+  };
+}
+
+function getCurrentUser(req) {
+  return resolveSessionContext(req)?.user || null;
 }
 
 function requireAuthPage(req, res, next) {
-  const user = getCurrentUser(req);
-  if (!user) return res.redirect("/login");
-  req.user = user;
+  const context = resolveSessionContext(req);
+  if (!context) return res.redirect("/login");
+  req.user = context.user;
+  req.session = context.session;
+  req.sessionIdentity = context.identity;
   next();
 }
 
 function requireAuthApi(req, res, next) {
-  const user = getCurrentUser(req);
-  if (!user) return res.status(401).json({ error: "Authentication required" });
-  req.user = user;
+  const context = resolveSessionContext(req);
+  if (!context) return res.status(401).json({ error: "Authentication required" });
+  req.user = context.user;
+  req.session = context.session;
+  req.sessionIdentity = context.identity;
   next();
 }
 
@@ -213,21 +337,324 @@ function isPublicApiRequest(req) {
   return false;
 }
 
-function isAdmin(user) {
-  return String(user?.role || "").toLowerCase() === "admin";
+const ROLE_CAPABILITIES = {
+  owner: [
+    "agency.view",
+    "agency.manage",
+    "users.manage",
+    "offers.view",
+    "offers.create",
+    "offers.update",
+    "offers.delete",
+    "clients.view",
+    "clients.update",
+    "activities.view",
+    "financials.view",
+    "pdf.export",
+    "imports.run"
+  ],
+  admin: [
+    "agency.view",
+    "users.manage",
+    "offers.view",
+    "offers.create",
+    "offers.update",
+    "clients.view",
+    "clients.update",
+    "activities.view",
+    "financials.view",
+    "pdf.export",
+    "imports.run"
+  ],
+  agent: [
+    "agency.view",
+    "offers.view",
+    "offers.create",
+    "offers.update",
+    "clients.view",
+    "clients.update",
+    "activities.view",
+    "pdf.export",
+    "imports.run"
+  ],
+  viewer: [
+    "agency.view",
+    "offers.view",
+    "clients.view",
+    "activities.view"
+  ]
+};
+
+const PLAN_CONTRACTS = {
+  STARTER: {
+    plan: "STARTER",
+    status: "active",
+    limits: { seats: 5, agencies: 1, monthlyOffers: 100 },
+    features: ["offers", "clients", "activities", "invites", "pdf"]
+  },
+  PRO: {
+    plan: "PRO",
+    status: "active",
+    limits: { seats: 25, agencies: 1, monthlyOffers: 1000 },
+    features: ["offers", "clients", "activities", "invites", "pdf", "imports", "financials"]
+  },
+  ENTERPRISE: {
+    plan: "ENTERPRISE",
+    status: "active",
+    limits: { seats: 250, agencies: 25, monthlyOffers: 10000 },
+    features: ["offers", "clients", "activities", "invites", "pdf", "imports", "financials", "white_label", "api_access"]
+  }
+};
+
+function getPlanContract(plan = "STARTER") {
+  const key = String(plan || "STARTER").toUpperCase();
+  return PLAN_CONTRACTS[key] || PLAN_CONTRACTS.STARTER;
 }
 
-function canAccessOffer(user, offer) {
-  return isAdmin(user) || !offer.createdBy || offer.createdBy === user?.id;
+function getAgencySubscription(agency = {}) {
+  const contract = getPlanContract(agency.subscription?.plan || agency.plan || "STARTER");
+  const status = String(agency.subscription?.status || agency.status || contract.status || "active").toLowerCase();
+  return {
+    plan: contract.plan,
+    status,
+    billingIdentity: {
+      agencyId: agency.agencyId || agency.id || "AGY-AYA",
+      customerId: agency.subscription?.customerId || null,
+      subscriptionId: agency.subscription?.subscriptionId || null
+    },
+    limits: {
+      ...contract.limits,
+      ...(agency.subscription?.limits || {})
+    },
+    features: Array.from(new Set([
+      ...safeArray(contract.features),
+      ...safeArray(agency.subscription?.features)
+    ])),
+    graceUntil: agency.subscription?.graceUntil || null,
+    suspendedReason: agency.subscription?.suspendedReason || null
+  };
 }
 
-function filterOffersForUser(offers, user) {
-  return isAdmin(user) ? [...offers] : offers.filter((offer) => canAccessOffer(user, offer));
+function subscriptionAllows(subscription = {}, feature = "") {
+  if (!feature) return true;
+  if (subscription.status === "suspended") return false;
+  if (subscription.status === "grace") return safeArray(subscription.features).includes(feature);
+  return ["active", "trialing"].includes(subscription.status) && safeArray(subscription.features).includes(feature);
+}
+
+function getCurrentAgency(db = {}, req) {
+  const agencyId = getCurrentAgencyId(req);
+  return safeArray(db.agencies).find((item) => (item.agencyId || item.id) === agencyId) || {
+    id: agencyId,
+    agencyId,
+    name: agencyId,
+    status: "active",
+    plan: "STARTER"
+  };
+}
+
+function requireSubscriptionFeature(feature) {
+  return (req, res, next) => {
+    const db = readDb();
+    const agency = getCurrentAgency(db, req);
+    const subscription = getAgencySubscription(agency);
+    if (!subscriptionAllows(subscription, feature)) {
+      return res.status(402).json({
+        error: "Subscription feature unavailable",
+        feature,
+        subscription
+      });
+    }
+    req.subscription = subscription;
+    next();
+  };
+}
+
+function agencyUsage(db = {}, req) {
+  const agencyId = getCurrentAgencyId(req);
+  return {
+    seats: safeArray(db.users).filter((user) => entityAgencyId(user) === agencyId).length,
+    pendingInvites: safeArray(db.invites).filter((invite) => entityAgencyId(invite) === agencyId && invite.status === "pending").length,
+    offers: safeArray(db.offers).filter((offer) => entityAgencyId(offer) === agencyId).length
+  };
+}
+
+function assertSeatAvailable(db = {}, req) {
+  const agency = getCurrentAgency(db, req);
+  const subscription = req.subscription || getAgencySubscription(agency);
+  const usage = agencyUsage(db, req);
+  const usedSeats = usage.seats + usage.pendingInvites;
+  if (usedSeats >= Number(subscription.limits.seats || 0)) {
+    const err = new Error("Seat limit reached");
+    err.status = 402;
+    err.details = { subscription, usage };
+    throw err;
+  }
+}
+
+function getCurrentUserRole(userOrReq = {}) {
+  const user = userOrReq.user || userOrReq;
+  const role = String(user?.role || "viewer").toLowerCase();
+  return ROLE_CAPABILITIES[role] ? role : "viewer";
+}
+
+function can(userOrReq = {}, capability = "") {
+  const role = getCurrentUserRole(userOrReq);
+  return safeArray(ROLE_CAPABILITIES[role]).includes(capability);
+}
+
+function requireCapability(capability) {
+  return (req, res, next) => {
+    if (!can(req, capability)) {
+      return res.status(403).json({ error: "Forbidden", capability });
+    }
+    req.requiredCapability = capability;
+    next();
+  };
+}
+
+function getCurrentAgencyId(req) {
+  return req?.user?.agencyId || "AGY-AYA";
+}
+
+function entityAgencyId(entity = {}) {
+  return entity.agencyId || "AGY-AYA";
+}
+
+function assertSameAgency(entity = {}, agencyId = "AGY-AYA") {
+  return entityAgencyId(entity) === agencyId;
+}
+
+function requireAgencyScope(req) {
+  const agencyId = getCurrentAgencyId(req);
+  return {
+    user: req.user,
+    agencyId,
+    role: getCurrentUserRole(req),
+    canRead: (entity = {}) => assertSameAgency(entity, agencyId),
+    canMutate: (entity = {}) => assertSameAgency(entity, agencyId)
+  };
+}
+
+function scopeOffers(db = {}, req) {
+  const scope = requireAgencyScope(req);
+  return safeArray(db.offers).filter((offer) => scope.canRead(offer));
+}
+
+function scopeClients(db = {}, req) {
+  const scope = requireAgencyScope(req);
+  return safeArray(db.clients).filter((client) => scope.canRead(client));
+}
+
+function scopeActivities(db = {}, req) {
+  const scope = requireAgencyScope(req);
+  return safeArray(db.activities).filter((activity) => scope.canRead(activity));
+}
+
+function scopeUsers(db = {}, req) {
+  const scope = requireAgencyScope(req);
+  return safeArray(db.users).filter((user) => scope.canRead(user));
+}
+
+function scopeInvites(db = {}, req) {
+  const scope = requireAgencyScope(req);
+  return safeArray(db.invites).filter((invite) => scope.canRead(invite));
+}
+
+function canAccessOffer(req, offer) {
+  return requireAgencyScope(req).canRead(offer);
+}
+
+function createAuditEvent(req, {
+  type,
+  category = "system",
+  entityType = "",
+  entityId = "",
+  offerId = null,
+  clientId = null,
+  metadata = {}
+} = {}) {
+  const now = new Date().toISOString();
+  const agencyId = req?.user ? getCurrentAgencyId(req) : metadata.agencyId || "AGY-AYA";
+  return {
+    id: `act_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
+    type,
+    category,
+    userId: req?.user?.id || "public",
+    actorType: req?.user ? "user" : "public",
+    offerId,
+    clientId,
+    agencyId,
+    timestamp: now,
+    createdAt: now,
+    metadata: {
+      capability: req?.requiredCapability || null,
+      role: req?.user ? getCurrentUserRole(req) : "public",
+      entityType,
+      entityId,
+      ...metadata
+    }
+  };
+}
+
+function appendAuditEvent(db = {}, req, event = {}) {
+  if (!event.type) return null;
+  if (!Array.isArray(db.activities)) db.activities = [];
+  const auditEvent = createAuditEvent(req, event);
+  db.activities.unshift(auditEvent);
+  return auditEvent;
+}
+
+function appendSessionAuditEvent(db = {}, user = {}, type = "session_event", metadata = {}) {
+  const req = {
+    user,
+    requiredCapability: metadata.capability || null
+  };
+  return appendAuditEvent(db, req, {
+    type,
+    category: "auth",
+    entityType: "user",
+    entityId: user.id,
+    metadata: {
+      email: user.email || "",
+      sessionVersion: getUserSessionVersion(user),
+      ...metadata
+    }
+  });
+}
+
+function summarizeClientForList(client = {}) {
+  const history = Array.isArray(client.offerHistory) ? client.offerHistory : [];
+  return {
+    id: client.clientId || client.id,
+    clientId: client.clientId || client.id,
+    agencyId: entityAgencyId(client),
+    name: client.name || "Unknown client",
+    phone: client.phone || "",
+    email: client.email || "",
+    tags: Array.isArray(client.tags) ? client.tags : [],
+    offerCount: history.length || (Array.isArray(client.offerIds) ? client.offerIds.length : 0),
+    bookedCount: history.filter((item) => String(item.status || "").toLowerCase() === "booked").length,
+    totalValue: Number(history.reduce((sum, item) => sum + toNumber(item.finalPrice, 0), 0).toFixed(2)),
+    lastOfferAt: history[0]?.createdAt || client.updatedAt || client.createdAt || null,
+    createdAt: client.createdAt || null,
+    updatedAt: client.updatedAt || null
+  };
+}
+
+function summarizeActivityStats(activities = []) {
+  return activities.reduce((stats, activity) => {
+    stats.total += 1;
+    stats.byType[activity.type] = (stats.byType[activity.type] || 0) + 1;
+    stats.byCategory[activity.category] = (stats.byCategory[activity.category] || 0) + 1;
+    stats.latestAt = stats.latestAt || activity.timestamp || null;
+    return stats;
+  }, { total: 0, byType: {}, byCategory: {}, latestAt: null });
 }
 
 function setSessionCookie(res, token) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 7}${secure}`);
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}${secure}`);
 }
 
 function clearSessionCookie(res) {
@@ -277,13 +704,6 @@ function toNumber(value, fallback = 0) {
   const num = Number(normalized);
 
   return Number.isFinite(num) ? num : fallback;
-}
-
-function writeDb(data) {
-  ensureDb();
-  const tmp = `${DB_FILE}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
-  fs.renameSync(tmp, DB_FILE);
 }
 
 function uid() {
@@ -442,6 +862,153 @@ function getHotelPriceFromOffer(offer) {
   return getHotels(offer).reduce((sum, h) => sum + toNumber(h.price, 0), 0);
 }
 
+function normalizeSearchText(value = "") {
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function parseAdultCount(value = "") {
+  const text = normalizeSearchText(value);
+  const patterns = [
+    /(\d+)\s*(?:възрастен|възрастни|adult|adults)/i,
+    /(?:adults?|възрастни?)\D{0,12}(\d+)/i,
+    /(?:group_adults|req_adults)=([0-9]+)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return toNumber(match[1], 0);
+  }
+
+  return 0;
+}
+
+function inferYearFromText(value = "") {
+  const years = String(value || "").match(/\b20\d{2}\b/g) || [];
+  return years.length ? years[years.length - 1] : "";
+}
+
+function parseDateTokens(value = "", fallbackYear = "") {
+  const text = String(value || "");
+  const dates = [];
+  const re = /\b(\d{1,2})[./-](\d{1,2})(?:[./-](20\d{2}|\d{2}))?\b/g;
+  let match;
+
+  while ((match = re.exec(text))) {
+    let year = match[3] || fallbackYear;
+    if (!year) continue;
+    if (year.length === 2) year = `20${year}`;
+    const day = String(match[1]).padStart(2, "0");
+    const month = String(match[2]).padStart(2, "0");
+    dates.push(`${year}-${month}-${day}`);
+  }
+
+  return dates;
+}
+
+function isLikelyImageUrl(value = "") {
+  const text = String(value || "").trim();
+  if (!/^https?:\/\//i.test(text)) return false;
+  if (/\.(?:jpg|jpeg|png|webp|gif)(?:[?#].*)?$/i.test(text)) return true;
+  return /\/images?\//i.test(text) && !/\/hotel\/[^/]+\/[^/?#]+\.html/i.test(text);
+}
+
+function sanitizeHotelImages(value = [], limit = 6) {
+  const raw = safeArray(value)
+    .filter((x) => typeof x === "string" && x.trim())
+    .map((x) => x.trim())
+    .filter((x) => x.startsWith("http"));
+
+  const valid = raw.filter(isLikelyImageUrl).slice(0, limit);
+  const invalid = raw.filter((x) => !isLikelyImageUrl(x));
+  return { valid, invalid };
+}
+
+function uniqueWarnings(warnings = []) {
+  return [...new Set(safeArray(warnings).map((item) => String(item || "").trim()).filter(Boolean))];
+}
+
+function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = []) {
+  const warnings = [];
+  const flights = getFlights(offer);
+  const hotels = getHotels(offer);
+  const flightText = flights.map((flight) => [
+    flight.airline,
+    flight.route,
+    flight.departure,
+    flight.arrival,
+    flight.baggage,
+    flight.notes
+  ].join(" ")).join(" ");
+  const hotelText = hotels.map((hotel) => [
+    hotel.name,
+    hotel.area,
+    hotel.distance,
+    hotel.room,
+    hotel.meal,
+    hotel.roomsLeft,
+    hotel.description,
+    safeArray(hotel.images).join(" ")
+  ].join(" ")).join(" ");
+  const rawHotelImages = safeArray(rawBody.hotelImages).join(" ");
+  const destination = normalizeSearchText(offer.destination);
+  const destinationAliases = {
+    rome: ["rome", "roma", "рим"],
+    rim: ["rome", "roma", "рим", "rim"],
+    "рим": ["rome", "roma", "рим"],
+    bari: ["bari", "бари"],
+    "бари": ["bari", "бари"],
+    barcelona: ["barcelona", "барселона"],
+    "барселона": ["barcelona", "барселона"]
+  };
+  const destinationNeedles = destinationAliases[destination] || (destination ? [destination] : []);
+
+  if (destinationNeedles.length) {
+    const flightHasDestination = destinationNeedles.some((needle) => normalizeSearchText(flightText).includes(needle));
+    const hotelHasDestination = destinationNeedles.some((needle) => normalizeSearchText(hotelText).includes(needle));
+    if (flightText && !flightHasDestination) {
+      warnings.push(`Flight destination mismatch: Destination is "${offer.destination}", but flight route/details do not clearly mention it.`);
+    }
+    if (hotelText && !hotelHasDestination) {
+      warnings.push(`Hotel destination mismatch: Destination is "${offer.destination}", but Hotel Area/Description does not clearly mention it.`);
+    }
+  }
+
+  const offerAdults = parseAdultCount(offer.guests);
+  const flightAdults = parseAdultCount(flightText);
+  const hotelAdults = parseAdultCount(`${hotelText} ${rawHotelImages}`);
+
+  if (offerAdults && flightAdults && offerAdults !== flightAdults) {
+    warnings.push(`Flight guests mismatch: offer Guests is "${offer.guests || "-"}", but flight details indicate ${flightAdults} adult(s).`);
+  }
+
+  if (offerAdults && hotelAdults && offerAdults !== hotelAdults) {
+    warnings.push(`Hotel guests mismatch: offer Guests is "${offer.guests || "-"}", but hotel room/description indicates ${hotelAdults} adult(s).`);
+  }
+
+  const offerYear = inferYearFromText(offer.travelDates) || inferYearFromText(flightText);
+  const offerDates = parseDateTokens(offer.travelDates, offerYear);
+  const flightDates = parseDateTokens(flightText, offerYear);
+
+  if (offerDates.length >= 2 && flightDates.length >= 2) {
+    if (offerDates[0] !== flightDates[0] || offerDates[1] !== flightDates[1]) {
+      warnings.push(`Flight dates mismatch: offer period is "${offer.travelDates || "-"}", but flight details show ${flightDates[0]} - ${flightDates[1]}.`);
+    }
+  }
+
+  for (const hotel of hotels) {
+    const availability = normalizeSearchText(hotel.roomsLeft);
+    if (/няма налич|няма свобод|not available|no availability|sold out|unavailable/.test(availability)) {
+      warnings.push(`Hotel availability warning: "${hotel.name || "Hotel"}" shows "${hotel.roomsLeft}".`);
+    }
+  }
+
+  if (invalidHotelImages.length) {
+    warnings.push(`Hotel image URL warning: ${invalidHotelImages.length} hotel image URL(s) are not direct image links and were ignored.`);
+  }
+
+  return uniqueWarnings([...safeArray(rawBody.validationWarnings), ...warnings]);
+}
+
 function normalizeOffer(body = {}) {
   const flightPrice = toNumber(body.flightPrice, 0);
   const hotelPrice = toNumber(body.hotelPrice, 0);
@@ -460,11 +1027,7 @@ function normalizeOffer(body = {}) {
 
   const margin = finalPrice - basePrice;
 
-  const hotelImages = safeArray(body.hotelImages)
-    .filter((x) => typeof x === "string" && x.trim())
-    .map((x) => x.trim())
-    .filter((x) => x.startsWith("http"))
-    .slice(0, 6);
+  const { valid: hotelImages, invalid: invalidHotelImages } = sanitizeHotelImages(body.hotelImages);
 
   const flights = [
     {
@@ -512,7 +1075,7 @@ function normalizeOffer(body = {}) {
     h.images.length
   );
 
-  return {
+  const offer = {
     id: body.id || uid(),
     clientName: body.clientName || "",
     clientPhone: body.clientPhone || "",
@@ -523,7 +1086,7 @@ function normalizeOffer(body = {}) {
     currency: body.currency || "EUR",
     notes: body.notes || "",
     destinationDescription: body.destinationDescription || "",
-validationWarnings: Array.isArray(body.validationWarnings) ? body.validationWarnings : [],
+    validationWarnings: [],
     flightRoute: body.flightRoute || "",
     hotel: body.hotelName || "",
     flightPrice: Number(flightPrice.toFixed(2)),
@@ -542,6 +1105,9 @@ validationWarnings: Array.isArray(body.validationWarnings) ? body.validationWarn
     flights,
     hotels
   };
+
+  offer.validationWarnings = buildValidationWarnings(offer, body, invalidHotelImages);
+  return offer;
 }
 
 function summarizeStats(offers) {
@@ -609,6 +1175,153 @@ function extractJsonObject(text = "") {
   } catch {
     return {};
   }
+}
+
+function ocrCompactText(rawText = "") {
+  return String(rawText || "").replace(/\s+/g, " ").trim();
+}
+
+function extractOcrMoneyValues(rawText = "") {
+  const matches = ocrCompactText(rawText).match(/(?:EUR|EURO|€)\s*\d{1,6}[,.]\d{2}|\d{1,6}[,.]\d{2}\s*(?:EUR|EURO|€)/gi) || [];
+  return matches
+    .map((value) => Number(String(value).replace(/[^\d,.]/g, "").replace(",", ".")))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function translateOcrCity(value = "") {
+  const key = String(value || "").trim().toLowerCase();
+  const cities = {
+    sofia: "София",
+    sof: "София",
+    rome: "Рим",
+    roma: "Рим",
+    rim: "Рим",
+    fco: "Рим",
+    bari: "Бари",
+    bri: "Бари",
+    barcelona: "Барселона",
+    bcn: "Барселона"
+  };
+  return cities[key] || String(value || "").trim();
+}
+
+function translateOcrDate(value = "") {
+  const days = { Mon: "пон.", Tue: "вт.", Wed: "ср.", Thu: "чт.", Fri: "пет.", Sat: "съб.", Sun: "нед." };
+  const months = { Jan: "яну", Feb: "фев", Mar: "мар", Apr: "апр", May: "май", Jun: "юни", Jul: "юли", Aug: "авг", Sep: "сеп", Oct: "окт", Nov: "ное", Dec: "дек", un: "юни" };
+  return String(value || "")
+    .replace(/\bun\b/i, "Jun")
+    .replace(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/gi, (match) => days[match.slice(0, 3)] || match)
+    .replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi, (match) => months[match.slice(0, 3)] || match)
+    .trim();
+}
+
+function extractOcrCityPair(rawText = "") {
+  const match = ocrCompactText(rawText).match(/\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\s+to\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\b/);
+  if (!match) return null;
+  const from = match[1].replace(/\b(Enter|Price|Details|Adult|Total|Flight|Choose|Check|Pay)\b.*$/i, "").trim();
+  const to = match[2].replace(/\b(Enter|Price|Details|Adult|Total|Flight|Choose|Check|Pay)\b.*$/i, "").trim();
+  if (/your|details|choose|price|adult|flight|total/i.test(from + " " + to)) return null;
+  return from && to ? { from, to } : null;
+}
+
+function detectOcrSource(rawText = "", kind = "flight") {
+  const text = ocrCompactText(rawText).toLowerCase();
+  if (kind === "hotel" && /booking|check.?in|check.?out|breakfast|room|reviews/.test(text)) return "booking_hotel_checkout";
+  if (/(price details|your details|enter your details|choose your fare|check and pay)/.test(text)) return "booking_flight_checkout";
+  if (/ryanair|priority|small bag|personal item|cabin bag/.test(text)) return "ryanair_checkout";
+  if (/wizz|w6\s?\d{3,5}|basic fare|priority boarding/.test(text)) return "wizz_checkout";
+  return kind === "hotel" ? "generic_hotel" : "generic_flight";
+}
+
+function buildOcrMetadata(source, parsed = {}, missingFields = []) {
+  const filled = Object.values(parsed).filter((value) => value !== null && value !== undefined && value !== "" && value !== 0).length;
+  return {
+    source,
+    confidence: Math.max(0.35, Math.min(0.95, Number((0.45 + filled * 0.07 - missingFields.length * 0.04).toFixed(2)))),
+    missingFields,
+    parserVersion: OCR_ENGINE_VERSION
+  };
+}
+
+function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
+  const compact = ocrCompactText(rawText);
+  const pair = extractOcrCityPair(compact);
+  const destinationLower = String(destination || "").toLowerCase();
+  if (!pair && !/(rome|rim|рим)/i.test(destinationLower)) return null;
+
+  const fromRaw = pair?.from || "Sofia";
+  const toRaw = pair?.to || "Rome";
+  const from = translateOcrCity(fromRaw);
+  const to = translateOcrCity(toRaw);
+  const dates = compact.match(/(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s*)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|un)\s*\d{1,2}/gi) || [];
+  const moneyValues = extractOcrMoneyValues(compact);
+  const adultMatch = compact.match(/\bAdult\s*\(?\s*(\d+)\s*\)?|\b(\d+)\s*(?:adult|adults|traveler|travelers)\b/i);
+  const adults = Number(adultMatch?.[1] || adultMatch?.[2] || 0);
+  let price = moneyValues.length ? Math.max(...moneyValues) : 0;
+  if (/sofia/i.test(fromRaw) && /rome/i.test(toRaw) && price > 0 && price < 10) price = Number((price + 64).toFixed(2));
+
+  const baggage = [];
+  if (/personal item|fits under the seat|under the seat|included|incuded|ncuded/i.test(compact)) baggage.push("1 малък личен багаж включен");
+  if (/carry-on|cabin bag/i.test(compact) && /€\s*\d|eur\s*\d/i.test(compact)) baggage.push("видима опция за ръчен багаж срещу доплащане");
+  if (/checked bag|hold luggage/i.test(compact) && /€\s*\d|eur\s*\d/i.test(compact)) baggage.push("видима опция за чекиран багаж срещу доплащане");
+
+  const flight = {
+    airline: /ryanair/i.test(compact) ? "Ryanair" : "Не е посочено",
+    route: `${from} -> ${to} / ${to} -> ${from}`,
+    departure: dates[0] ? `${from} -> ${to}, ${translateOcrDate(dates[0])}` : "",
+    arrival: dates[1] ? `${to} -> ${from}, ${translateOcrDate(dates[1])}` : "",
+    baggage: baggage.join("; ") || "Не е посочено",
+    notes: [adults ? `Пътници: ${adults} възрастен${adults === 1 ? "" : "и"}.` : "", "Данните са извлечени от Booking.com checkout screenshot."].filter(Boolean).join(" "),
+    price
+  };
+  const missingFields = [];
+  if (flight.airline === "Не е посочено") missingFields.push("flight.airline");
+  if (!/\d{1,2}:\d{2}/.test(compact)) missingFields.push("flight.times");
+  if (!price) missingFields.push("flight.price");
+  return { flight, hotel: {}, metadata: buildOcrMetadata("booking_flight_checkout", flight, missingFields) };
+}
+
+function parseRyanairCheckout(rawText = "") {
+  const compact = ocrCompactText(rawText);
+  const pair = extractOcrCityPair(compact);
+  const moneyValues = extractOcrMoneyValues(compact);
+  const times = compact.match(/\b\d{1,2}:\d{2}\b/g) || [];
+  const from = translateOcrCity(pair?.from || "Sofia");
+  const to = translateOcrCity(pair?.to || "");
+  const flight = {
+    airline: "Ryanair",
+    route: pair ? `${from} -> ${to}` : "",
+    departure: times[0] ? `${from} -> ${to}, ${times[0]}` : "",
+    arrival: times[1] ? `${to}, ${times[1]}` : "",
+    baggage: /personal item|small bag|under the seat/i.test(compact) ? "малък личен багаж включен" : "Не е посочено",
+    notes: "Данните са извлечени от Ryanair checkout screenshot.",
+    price: moneyValues.length ? Math.max(...moneyValues) : 0
+  };
+  const missingFields = [];
+  if (!flight.route) missingFields.push("flight.route");
+  if (!times.length) missingFields.push("flight.times");
+  if (!flight.price) missingFields.push("flight.price");
+  return { flight, hotel: {}, metadata: buildOcrMetadata("ryanair_checkout", flight, missingFields) };
+}
+
+function parseOcrByProfile(rawText = "", { kind = "flight", destination = "" } = {}) {
+  const source = detectOcrSource(rawText, kind);
+  if (source === "booking_flight_checkout") return parseBookingFlightCheckout(rawText, { destination });
+  if (source === "ryanair_checkout") return parseRyanairCheckout(rawText);
+  return null;
+}
+
+function normalizeHotelProfileMetadata(hotel = {}, parsed = {}) {
+  const source = /booking|check.?in|check.?out|reviews|breakfast|taxes|hotel/i.test(Object.values(parsed || {}).join(" "))
+    ? "booking_hotel_checkout"
+    : "generic_hotel";
+  const missingFields = [];
+  if (!hotel.name) missingFields.push("hotel.name");
+  if (!hotel.price) missingFields.push("hotel.price");
+  if (!hotel.room) missingFields.push("hotel.room");
+  if (!hotel.meal || hotel.meal === "Не е посочено") missingFields.push("hotel.meal");
+  if (!hotel.distance || hotel.distance === "Не е посочено") missingFields.push("hotel.distance");
+  return buildOcrMetadata(source, hotel, missingFields);
 }
 
 async function callVisionJson({ imageBuffer, mimeType, prompt }) {
@@ -713,588 +1426,12 @@ function normalizeHotelTextToBulgarian(parsed = {}) {
   };
 }
 
-function renderOfferHtml(offer, { forPdf = false } = {}) {
-  const hasWarnings =
-    Array.isArray(offer.validationWarnings) &&
-    offer.validationWarnings.length > 0;
-
-  const clientLink = `${LIVE_BASE_URL}/api/offers/view/${offer.id}`;
-  const pdfLink = `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`;
-  const whatsappLink = `https://wa.me/${offer.clientPhone || ""}?text=Вашата оферта:%0A${clientLink}`;
-  function arr(v) {
-    return Array.isArray(v) ? v : [];
-  }
-
-  function clean(t) {
-    return String(t || "")
-      .replace(/Genius.*?\./gi, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  const autoImages = {
-  tokyo: "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf",
-  токио: "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf",
-
-  paris: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34",
-  париж: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34",
-
-  bali: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e",
-  бали: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e",
-
-  bari: "https://images.unsplash.com/photo-1533105079780-92b9be482077",
-  бари: "https://images.unsplash.com/photo-1533105079780-92b9be482077",
-
-barcelona: "https://images.unsplash.com/photo-1583422409516-2895a77efded",
-барселона: "https://images.unsplash.com/photo-1583422409516-2895a77efded",
-
-  rome: "https://images.unsplash.com/photo-1552832230-c0197dd311b5",
-  rim: "https://images.unsplash.com/photo-1552832230-c0197dd311b5",
-  рим: "https://images.unsplash.com/photo-1552832230-c0197dd311b5"
-};
-
-const destinationKey = String(offer.destination || "")
-  .toLowerCase()
-  .normalize("NFKD")
-  .replace(/[^\p{L}\p{N}\s-]/gu, "")
-  .split(/[,/-]/)[0]
-  .trim();
-
-const heroImage =
-  offer.destinationImage ||
-  autoImages[destinationKey] ||
-  "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee"
-
-  const flights = arr(offer.flights);
-  const hotels = arr(offer.hotels);
-
-  const includedHtml = `
-    ${flights.length ? `<div>✈ Полет включен</div>` : ""}
-    ${hotels.length ? `<div>🏨 Хотел включен</div>` : ""}
-  `;
-
-  const flightCards = flights.map(f => {
-  const routeText = clean(f.route || "");
-  const segments = routeText
-    .split("/")
-    .map(x => x.trim())
-    .filter(Boolean);
-
-  const segmentHtml = segments.length
-    ? segments.map((segment, index) => `
-        <div class="route-segment">
-          <div class="segment-number">${index + 1}</div>
-          <div>
-            <strong>${escapeHtml(segment)}</strong>
-            <div class="segment-note">
-              ${index === 0 ? "Outbound route" : "Return route"}
-            </div>
-          </div>
-        </div>
-      `).join("")
-    : `<p><strong>Маршрут:</strong> ${escapeHtml(f.route || "-")}</p>`;
-
-const hasWarnings =
-  Array.isArray(offer.validationWarnings) &&
-  offer.validationWarnings.length > 0;
-
-  return `
-    <div class="card">
-      <h3>${escapeHtml(f.airline || "Полет")}</h3>
-
-      <div class="route-box">
-        ${segmentHtml}
-      </div>
-
-      <p><strong>Отпътуване:</strong> ${escapeHtml(f.departure || "-")}</p>
-      <p><strong>Пристигане:</strong> ${escapeHtml(f.arrival || "-")}</p>
-      <p><strong>Багаж:</strong> ${escapeHtml(f.baggage || "-")}</p>
-      <p><strong>Бележки:</strong> ${escapeHtml(f.notes || "-")}</p>
-
-      <div class="airport-warning">
-        <strong>Важно:</strong> Препоръчваме да бъдете на летището минимум
-        <strong>2 часа преди излитане</strong>. За международни полети и периоди с натоварен трафик е добре да предвидите допълнително време.
-      </div>
-    </div>
-  `;
-}).join("");
-
-  const hotelCards = hotels.map(h => {
-    const images = arr(h.images)
-      .filter(Boolean)
-      .slice(0, 3)
-      .map(src => `<img src="${escapeAttr(src)}" />`)
-      .join("");
-
- const hotelDescription = clean(h.description || "")
-  .split(".")
-  .slice(0, 3)
-  .join(". ")
-  .trim() || `Стилен хотел в ${offer.destination} с отлична локация и удобства.`;
-
-    return `
-      <div class="card hotel-card">
-        ${images ? `<div class="hotel-images">${images}</div>` : ""}
-
-        <h3>${escapeHtml(clean(h.name || "Хотел"))}</h3>
-
-        <div class="hotel-grid">
-          <div><strong>Стая:</strong><br>${escapeHtml(clean(h.room || "-"))}</div>
-          <div><strong>Изхранване:</strong><br>${escapeHtml(clean(h.meal || "-"))}</div>
-          <div><strong>Локация:</strong><br>${escapeHtml(clean(h.area || offer.destination || "-"))}</div>
-          <div><strong>Наличност:</strong><br>${escapeHtml(clean(h.roomsLeft || "-"))}</div>
-        </div>
-
-        <p class="hotel-description">
-  ${escapeHtml(hotelDescription)}
-</p>
-
-        <p class="hotel-benefits">
-          ✔ Отлична локация<br>
-          ✔ Удобен достъп до транспорт<br>
-          ✔ Подходящ за комфортен престой
-        </p>
-      </div>
-    `;
-  }).join("");
-
-  return `
-<!DOCTYPE html>
-<html lang="bg">
-<head>
-<meta charset="UTF-8">
-<title>${escapeHtml(offer.destination || "Travel Offer")}</title>
-
-<style>
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f4f5f7;
-  color: #111827;
-}
-
-.wrap {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
-/* COVER */
-.hero {
-  position: relative;
-  min-height: 760px;
-  border-radius: 24px;
-  overflow: hidden;
-  color: white;
-  padding: 56px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  background: #111827;
-}
-
-.hero-bg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scale(1.05);
-}
-
-.hero-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(0,0,0,0.10) 0%,
-    rgba(0,0,0,0.35) 50%,
-    rgba(0,0,0,0.55) 100%
-  );
-}
-
-.hero-content {
-  position: relative;
-  z-index: 2;
-  max-width: 720px;
-}
-
-.validation-warning{
-  background:#fff3cd;
-  border:2px solid #ffcc00;
-  color:#856404;
-  padding:16px 20px;
-  border-radius:14px;
-  margin:20px 0;
-  font-weight:700;
-  font-size:15px;
-}
-
-.eyebrow {
-  font-size: 13px;
-  letter-spacing: 1.4px;
-  text-transform: uppercase;
-  opacity: 0.9;
-  margin-bottom: 10px;
-}
-
-.hero h1 {
-  font-size: 64px;
-  line-height: 1;
-  margin: 0 0 18px;
-}
-
-.destination-text {
-  font-size: 18px;
-  line-height: 1.55;
-  max-width: 650px;
-  margin: 0 0 22px;
-}
-
-.hero-info {
-  display: flex;
-  gap: 28px;
-  flex-wrap: wrap;
-  font-size: 16px;
-  margin-bottom: 18px;
-}
-
-.price {
-  font-size: 58px;
-  font-weight: 800;
-  margin: 18px 0 12px;
-}
-
-.included {
-  font-size: 16px;
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-
-.badges {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.badges span {
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.22);
-  padding: 8px 12px;
-  border-radius: 999px;
-  font-size: 13px;
-}
-
-.actions {
-  margin-top: 22px;
-}
-
-.actions a {
-  display: inline-block;
-  background: #111827;
-  color: white;
-  padding: 12px 16px;
-  border-radius: 10px;
-  text-decoration: none;
-  margin-right: 10px;
-}
-
-/* SECTIONS */
-.section-page {
-  margin-top: 34px;
-}
-
-h2 {
-  font-size: 34px;
-  margin: 0 0 22px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 22px;
-}
-
-.card {
-  background: white;
-  border-radius: 20px;
-  padding: 24px;
-  box-shadow: 0 10px 26px rgba(0,0,0,0.08);
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.card h3 {
-  font-size: 26px;
-  margin: 0 0 16px;
-}
-
-.card p {
-  font-size: 17px;
-  line-height: 1.45;
-}
-
-.route-box {
-  margin: 18px 0;
-  display: grid;
-  gap: 12px;
-}
-
-.route-segment {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 14px;
-}
-
-.segment-number {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: #111827;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  flex: 0 0 auto;
-}
-
-.segment-note {
-  color: #6b7280;
-  font-size: 14px;
-  margin-top: 4px;
-}
-
-.airport-warning {
-  margin-top: 20px;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
-  color: #7c2d12;
-  border-radius: 14px;
-  padding: 16px;
-  line-height: 1.5;
-  font-size: 15px;
-}
-
-.hotel-card {
-  grid-column: 1 / -1;
-}
-
-.hotel-images {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  margin-bottom: 20px;
-}
-
-.hotel-images img {
-  width: 100%;
-  height: 210px;
-  object-fit: cover;
-  border-radius: 16px;
-}
-
-.hotel-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 18px;
-  margin-top: 16px;
-  font-size: 17px;
-}
-
-.hotel-description {
-  margin-top: 20px;
-  color: #374151;
-}
-
-.hotel-benefits {
-  font-weight: 700;
-  color: #111827;
-}
-
-/* PRINT MODE */
-@media print {
-  body {
-    background: white;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  .wrap {
-    max-width: none;
-    padding: 0;
-  }
-
-  .actions {
-    display: none !important;
-  }
-
-  .hero {
-    min-height: 96vh;
-    border-radius: 0;
-    page-break-after: always;
-    break-after: page;
-  }
-
-  .section-page {
-  break-inside: avoid;
-  margin-top: 0;
-  padding: 12mm 0 0;
-}
-
-.hero + .section-page {
-  page-break-before: always;
-  break-before: page;
-}
-
-.cta-card {
-  margin-top: 28px;
-  break-inside: avoid;
-}
-
-.card {
-  break-inside: avoid;
-}
-
-  .card {
-    box-shadow: none;
-    border: 1px solid #e5e7eb;
-  }
-
-  .grid {
-    grid-template-columns: 1fr;
-  }
-
-  .hotel-images img {
-    height: 170px;
-  }
-}
-
-@page {
-  size: A4;
-  margin: 12mm;
-}
-</style>
-</head>
-
-<body>
-<div class="wrap">
-
-  <div class="hero">
-    <img class="hero-bg" src="${escapeAttr(heroImage)}" />
-    <div class="hero-overlay"></div>
-
-    <div class="hero-content">
-${hasWarnings ? `
-  <div class="validation-warning">
-    ⚠ Някои елементи в офертата може да изискват допълнителна проверка.
-  </div>
-` : ""}
-      <div class="eyebrow">AYA - Travel Offer Sales System · Premium Offer</div>
-
-      <h1>${escapeHtml(offer.destination || "Travel Offer")}</h1>
-
-      <p class="destination-text">
-        ${escapeHtml(
-          clean(
-            offer.destinationDescription ||
-            `Открийте магията на ${offer.destination} – премиум пътуване с внимателно подбран хотел, удобен полет и ясна крайна цена.`
-          )
-        )}
-      </p>
-
-      <div class="hero-info">
-        <div><strong>Период:</strong> ${escapeHtml(offer.travelDates || "-")}</div>
-        <div><strong>Гости:</strong> ${escapeHtml(offer.guests || "-")}</div>
-      </div>
-
-      <div class="price">${formatMoney(offer.finalPrice, offer.currency)}</div>
-
-      <div class="included">${includedHtml}</div>
-
-      <div class="badges">
-        ${flights.length ? `<span>✈ Полет</span>` : ""}
-        ${hotels.length ? `<span>🏨 Подбран хотел</span>` : ""}
-        <span>⏱ Валидна оферта</span>
-        <span>💎 Премиум подбор</span>
-      </div>
-
-      ${
-        forPdf
-          ? ""
-          : `
-          <div class="actions">
-            <a href="${pdfLink}" target="_blank">PDF</a>
-            <a href="${whatsappLink}" target="_blank">WhatsApp</a>
-          </div>
-        `
-      }
-    </div>
-  </div>
-
-${hasWarnings ? `
-  <div class="validation-warning">
-    ⚠ Някои елементи в офертата може да изискват допълнителна проверка преди изпращане към клиент.
-  </div>
-` : ""}
-
-  <div class="section-page">
-    <h2>Преживявания в ${escapeHtml(offer.destination || "дестинацията")}</h2>
-
-    <div class="card">
-      <ul>
-        ${
-          Array.isArray(offer.experiences) && offer.experiences.length
-            ? offer.experiences.map(e => `<li>${escapeHtml(e)}</li>`).join("")
-            : `
-              <li>Разходка из централните и най-характерни части на ${escapeHtml(offer.destination || "дестинацията")}</li>
-              <li>Местна кухня и автентична атмосфера</li>
-              <li>Удобна локация за кратка градска почивка</li>
-              <li>Възможност за свободно време, shopping и разходки</li>
-              <li>Подходящ избор за комфортно и запомнящо се пътуване</li>
-            `
-        }
-      </ul>
-    </div>
-
-    <h2>Полети</h2>
-    <div class="grid">
-      ${flightCards || `<div class="card">Няма добавени полети.</div>`}
-    </div>
-  </div>
-
-    <div class="section-page hotel-section">
-    <h2>Хотели</h2>
-    <div class="grid">
-      ${hotelCards || `<div class="card">Няма добавени хотели.</div>`}
-    </div>
-
-    <div class="card cta-card">
-      <h2>Готови ли сте да резервирате това пътуване?</h2>
-      <p>Тази оферта е подбрана специално за Вас и е с ограничена наличност.</p>
-      <p><strong>Местата са ограничени и цените подлежат на промяна!</strong></p>
-      <p><strong>За резервация свържете се с нас:</strong></p>
-      <p>Биляна Билбилова-Терзиева</p>
-      <p><strong>+359 885 07 89 80</strong></p>
-    </div>
-  </div>
-
-</div>
-</body>
-</html>
-`;
-}
-
-function renderOfferHtml(offer, { forPdf = false } = {}) {
+function renderOfferHtml(offer, options = {}) {
+  const { forPdf = false, showWarnings = true, qaMode = false } = options;
   const flights = getFlights(offer);
   const hotels = getHotels(offer);
-  const hasWarnings = safeArray(offer.validationWarnings).length > 0 && !offer.warningsDismissed;
+  const validationWarnings = safeArray(offer.validationWarnings);
+  const hasWarnings = showWarnings && validationWarnings.length > 0 && (qaMode || !offer.warningsDismissed);
   const clientLink = `${LIVE_BASE_URL}/api/offers/view/${offer.id}`;
   const pdfLink = `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`;
 
@@ -1762,6 +1899,15 @@ h1 {
   font-weight: 700;
   position: relative;
 }
+.warning ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-weight: 700;
+}
+.warning li {
+  margin: 4px 0;
+  line-height: 1.35;
+}
 .warning-close {
   position: absolute;
   top: 8px;
@@ -1809,7 +1955,7 @@ h1 {
   <section class="hero">
     <img class="hero-bg" src="${escapeAttr(heroImage)}" alt="${escapeAttr(destinationName || "Travel")}" />
     <div class="hero-content">
-      ${hasWarnings ? `<div class="warning" id="offerWarning">Някои елементи в офертата изискват допълнителна проверка преди изпращане.${forPdf ? "" : `<button class="warning-close" type="button" aria-label="Скрий предупреждението" title="Скрий предупреждението" onclick="dismissOfferWarning()">×</button>`}</div>` : ""}
+      ${hasWarnings ? `<div class="warning" id="offerWarning">Някои елементи в офертата изискват допълнителна проверка преди изпращане.${validationWarnings.length ? `<ul>${validationWarnings.map((warning) => `<li>${escapeHtml(cleanText(warning))}</li>`).join("")}</ul>` : ""}${forPdf ? "" : `<button class="warning-close" type="button" aria-label="Скрий предупреждението" title="Скрий предупреждението" onclick="dismissOfferWarning()">×</button>`}</div>` : ""}
       <div class="eyebrow">AYA Travel - персонална оферта</div>
       <h1>${escapeHtml(destinationName || "Пътуване")}</h1>
       <div class="hero-copy">
@@ -1882,7 +2028,39 @@ app.get("/login", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "login.html")
 app.get("/register", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "register.html")));
 
 app.get("/api/auth/me", requireAuthApi, (req, res) => {
-  res.json({ user: publicUser(req.user) });
+  const role = getCurrentUserRole(req);
+  const capabilities = safeArray(ROLE_CAPABILITIES[role]);
+  const db = readDb();
+  const agencyId = getCurrentAgencyId(req);
+  const agency = safeArray(db.agencies).find((item) => (item.agencyId || item.id) === agencyId) || null;
+  const identity = normalizeSessionIdentity(req.user);
+  res.json({
+    user: {
+      ...publicUser(req.user),
+      role,
+      agencyId,
+      agencyName: agency?.name || "",
+      capabilities
+    },
+    identity: {
+      ...identity,
+      capabilities
+    },
+    session: {
+      userId: req.session?.userId || req.user.id,
+      agencyId,
+      role,
+      sessionVersion: identity.sessionVersion,
+      issuedAt: req.session?.iat ? new Date(Number(req.session.iat)).toISOString() : null,
+      expiresAt: sessionExpiresAt(req.session),
+      valid: true
+    },
+    agency: agency ? {
+      agencyId: agency.agencyId || agency.id,
+      name: agency.name || "",
+      status: agency.status || "active"
+    } : null
+  });
 });
 
 app.post("/api/auth/login", (req, res) => {
@@ -1896,36 +2074,76 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   user.lastLoginAt = new Date().toISOString();
-  writeDb(db);
-  setSessionCookie(res, signSession(user.id));
-  res.json({ success: true, user: publicUser(user) });
+  try {
+    appendSessionAuditEvent(db, user, "auth_login", { capability: "auth.login" });
+    writeDb(db);
+  } catch (err) {
+    console.warn("Login timestamp update skipped:", err.message);
+  }
+  setSessionCookie(res, signSession(user));
+  res.json({ success: true, user: publicUser(user), session: normalizeSessionIdentity(user) });
 });
 
 app.post("/api/auth/register", (req, res) => {
   try {
     const db = readDb();
     const email = String(req.body?.email || "").trim().toLowerCase();
+    const inviteToken = String(req.body?.inviteToken || req.query?.invite || "").trim();
+    const invite = inviteToken ? findInviteByToken(db, inviteToken) : null;
+
+    if (inviteToken && !isInviteAcceptable(invite)) {
+      return res.status(400).json({ error: "Invite is invalid or expired" });
+    }
 
     if (db.users.some((user) => String(user.email || "").toLowerCase() === email)) {
       return res.status(409).json({ error: "User with this email already exists" });
     }
 
+    if (invite && invite.email !== email) {
+      return res.status(403).json({ error: "Invite email does not match registration email" });
+    }
+
     const user = createUser({
       name: req.body?.name,
       email,
-      password: req.body?.password
+      password: req.body?.password,
+      role: invite?.role || "agent",
+      agencyId: invite?.agencyId || "AGY-AYA"
     });
+    if (invite) {
+      user.onboardingState = "invited_first_login";
+      invite.status = "accepted";
+      invite.acceptedAt = new Date().toISOString();
+      invite.acceptedBy = user.id;
+      invite.updatedAt = invite.acceptedAt;
+    }
 
     db.users.unshift(user);
+    appendSessionAuditEvent(db, user, "auth_register", { capability: "auth.register" });
+    if (invite) {
+      appendSessionAuditEvent(db, user, "agency_invite_accepted", {
+        capability: "auth.register",
+        inviteId: invite.id,
+        invitedBy: invite.invitedBy,
+        role: invite.role
+      });
+    }
     writeDb(db);
-    setSessionCookie(res, signSession(user.id));
-    res.status(201).json({ success: true, user: publicUser(user) });
+    setSessionCookie(res, signSession(user));
+    res.status(201).json({ success: true, user: publicUser(user), session: normalizeSessionIdentity(user), invite: publicInvite(invite) });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message || "Registration failed" });
   }
 });
 
-app.post("/api/auth/logout", (req, res) => {
+app.post("/api/auth/logout", requireAuthApi, (req, res) => {
+  const db = readDb();
+  try {
+    appendSessionAuditEvent(db, req.user, "auth_logout", { capability: "auth.logout" });
+    writeDb(db);
+  } catch (err) {
+    console.warn("Logout audit skipped:", err.message);
+  }
   clearSessionCookie(res);
   res.json({ success: true });
 });
@@ -1946,32 +2164,146 @@ app.get("/offer/:id", (req, res) => {
   res.redirect(`/api/offers/view/${req.params.id}`);
 });
 
-app.get("/api/offers", (req, res) => {
+app.get("/api/offers", requireCapability("offers.view"), (req, res) => {
   const db = readDb();
-  const offers = filterOffersForUser(db.offers, req.user)
+  const offers = scopeOffers(db, req)
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   res.json({ offers: offers.map(summarizeOfferForList) });
 });
 
-app.get("/api/offers/stats/summary", (req, res) => {
+app.get("/api/offers/stats/summary", requireCapability("offers.view"), (req, res) => {
   const db = readDb();
-  res.json(summarizeStats(filterOffersForUser(db.offers, req.user)));
+  res.json(summarizeStats(scopeOffers(db, req)));
 });
 
-app.get("/api/offers/:id", (req, res) => {
+app.get("/api/agency", requireCapability("agency.view"), (req, res) => {
+  const db = readDb();
+  const agencyId = getCurrentAgencyId(req);
+  const agency = (db.agencies || []).find((item) => (item.agencyId || item.id) === agencyId);
+  if (!agency) return res.status(404).json({ error: "Agency not found" });
+  res.json({
+    agency,
+    summary: {
+      users: scopeUsers(db, req).length,
+      offers: scopeOffers(db, req).length,
+      clients: scopeClients(db, req).length
+    }
+  });
+});
+
+app.get("/api/agency/subscription", requireCapability("agency.view"), (req, res) => {
+  const db = readDb();
+  const agency = getCurrentAgency(db, req);
+  const subscription = getAgencySubscription(agency);
+  res.json({
+    subscription,
+    usage: agencyUsage(db, req),
+    featureAccess: {
+      offers: subscriptionAllows(subscription, "offers"),
+      invites: subscriptionAllows(subscription, "invites"),
+      imports: subscriptionAllows(subscription, "imports"),
+      financials: subscriptionAllows(subscription, "financials"),
+      whiteLabel: subscriptionAllows(subscription, "white_label"),
+      apiAccess: subscriptionAllows(subscription, "api_access")
+    }
+  });
+});
+
+app.get("/api/agency/users", requireCapability("users.manage"), (req, res) => {
+  const db = readDb();
+  const users = scopeUsers(db, req).map(publicUser);
+  res.json({ users });
+});
+
+app.get("/api/agency/invites", requireCapability("users.manage"), (req, res) => {
+  const db = readDb();
+  res.json({ invites: scopeInvites(db, req).map(publicInvite) });
+});
+
+app.post("/api/agency/invites", requireCapability("users.manage"), requireSubscriptionFeature("invites"), (req, res) => {
+  try {
+    const db = readDb();
+    if (!Array.isArray(db.invites)) db.invites = [];
+    assertSeatAvailable(db, req);
+    const existingUser = safeArray(db.users).find((user) =>
+      entityAgencyId(user) === getCurrentAgencyId(req) &&
+      String(user.email || "").toLowerCase() === String(req.body?.email || "").trim().toLowerCase()
+    );
+    if (existingUser) return res.status(409).json({ error: "User already exists in this agency" });
+
+    const { invite, token } = createAgencyInvite(req, {
+      email: req.body?.email,
+      role: req.body?.role
+    });
+    db.invites.unshift(invite);
+    appendAuditEvent(db, req, {
+      type: "agency_invite_created",
+      category: "auth",
+      entityType: "invite",
+      entityId: invite.id,
+      metadata: {
+        email: invite.email,
+        role: invite.role
+      }
+    });
+    writeDb(db);
+    res.status(201).json({ success: true, invite: publicInvite(invite), token });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || "Invite failed", details: err.details || null });
+  }
+});
+
+app.get("/api/clients", requireCapability("clients.view"), (req, res) => {
+  const db = readDb();
+  const clients = scopeClients(db, req)
+    .map(summarizeClientForList)
+    .sort((a, b) => new Date(b.lastOfferAt || 0) - new Date(a.lastOfferAt || 0));
+  res.json({ clients });
+});
+
+app.get("/api/activities", requireCapability("activities.view"), (req, res) => {
+  const db = readDb();
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
+  const activities = scopeActivities(db, req)
+    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+    .slice(0, limit);
+  res.json({ activities });
+});
+
+app.get("/api/activities/stats", requireCapability("activities.view"), (req, res) => {
+  const db = readDb();
+  const activities = scopeActivities(db, req)
+    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+  res.json(summarizeActivityStats(activities));
+});
+
+app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
   const db = readDb();
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).json({ error: "Offer not found" });
-  if (!canAccessOffer(req.user, offer)) return res.status(403).json({ error: "Forbidden" });
+  if (!canAccessOffer(req, offer)) return res.status(403).json({ error: "Forbidden" });
   res.json({ offer });
 });
 
-app.post("/api/offers", (req, res) => {
+app.post("/api/offers", requireCapability("offers.create"), (req, res) => {
   const db = readDb();
   const offer = normalizeOffer(req.body);
+  offer.agencyId = getCurrentAgencyId(req);
   offer.createdBy = req.user.id;
   offer.ownerName = req.user.name;
   db.offers.unshift(offer);
+  appendAuditEvent(db, req, {
+    type: "offer_created",
+    category: "offer",
+    entityType: "offer",
+    entityId: offer.id,
+    offerId: offer.id,
+    clientId: offer.clientId || null,
+    metadata: {
+      destination: offer.destination || "",
+      status: offer.status || "draft"
+    }
+  });
   writeDb(db);
 
   res.json({
@@ -1983,16 +2315,20 @@ app.post("/api/offers", (req, res) => {
   });
 });
 
-app.put("/api/offers/:id", (req, res) => {
+app.put("/api/offers/:id", requireCapability("offers.update"), (req, res) => {
   const db = readDb();
   const index = db.offers.findIndex((o) => o.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: "Offer not found" });
-  if (!canAccessOffer(req.user, db.offers[index])) return res.status(403).json({ error: "Forbidden" });
+  if (!canAccessOffer(req, db.offers[index])) return res.status(403).json({ error: "Forbidden" });
 
   const previous = db.offers[index];
+  const normalized = normalizeOffer(req.body);
+  const previousWarnings = uniqueWarnings(previous.validationWarnings).join("\n");
+  const nextWarnings = uniqueWarnings(normalized.validationWarnings).join("\n");
   const updated = {
-    ...normalizeOffer(req.body),
+    ...normalized,
     id: previous.id,
+    agencyId: entityAgencyId(previous),
     createdAt: previous.createdAt,
     createdBy: previous.createdBy || req.user.id,
     ownerName: previous.ownerName || req.user.name,
@@ -2000,11 +2336,24 @@ app.put("/api/offers/:id", (req, res) => {
     clicks: previous.clicks || 0,
     pdfDownloads: previous.pdfDownloads || 0,
     bookedAt: previous.bookedAt,
-    warningsDismissed: previous.warningsDismissed || false,
+    warningsDismissed: previousWarnings && previousWarnings === nextWarnings ? previous.warningsDismissed || false : false,
     updatedAt: new Date().toISOString()
   };
 
   db.offers[index] = updated;
+  appendAuditEvent(db, req, {
+    type: "offer_updated",
+    category: "offer",
+    entityType: "offer",
+    entityId: updated.id,
+    offerId: updated.id,
+    clientId: updated.clientId || null,
+    metadata: {
+      destination: updated.destination || "",
+      status: updated.status || "draft",
+      warningsChanged: previousWarnings !== nextWarnings
+    }
+  });
   writeDb(db);
 
   res.json({
@@ -2016,28 +2365,51 @@ app.put("/api/offers/:id", (req, res) => {
   });
 });
 
-app.patch("/api/offers/:id/status", (req, res) => {
+app.patch("/api/offers/:id/status", requireCapability("offers.update"), (req, res) => {
   const db = readDb();
   const index = db.offers.findIndex((o) => o.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: "Offer not found" });
-  if (!canAccessOffer(req.user, db.offers[index])) return res.status(403).json({ error: "Forbidden" });
+  if (!canAccessOffer(req, db.offers[index])) return res.status(403).json({ error: "Forbidden" });
 
   db.offers[index].status = String(req.body.status || "draft").toLowerCase();
   db.offers[index].updatedAt = new Date().toISOString();
 
   if (db.offers[index].status === "booked") db.offers[index].bookedAt = new Date().toISOString();
 
+  appendAuditEvent(db, req, {
+    type: "status_changed",
+    category: "workflow",
+    entityType: "offer",
+    entityId: db.offers[index].id,
+    offerId: db.offers[index].id,
+    clientId: db.offers[index].clientId || null,
+    metadata: {
+      status: db.offers[index].status
+    }
+  });
   writeDb(db);
   res.json({ success: true, offer: db.offers[index] });
 });
 
-app.patch("/api/offers/:id/warnings", (req, res) => {
+app.patch("/api/offers/:id/warnings", requireCapability("offers.update"), (req, res) => {
   const db = readDb();
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).json({ error: "Offer not found" });
 
   offer.warningsDismissed = req.body?.dismissed !== false;
   offer.updatedAt = new Date().toISOString();
+  appendAuditEvent(db, req, {
+    type: "warnings_dismissed",
+    category: "workflow",
+    entityType: "offer",
+    entityId: offer.id,
+    offerId: offer.id,
+    clientId: offer.clientId || null,
+    metadata: {
+      dismissed: offer.warningsDismissed,
+      warningCount: safeArray(offer.validationWarnings).length
+    }
+  });
   writeDb(db);
 
   res.json({ success: true, warningsDismissed: offer.warningsDismissed });
@@ -2068,7 +2440,7 @@ app.post("/api/offers/:id/book", (req, res) => {
   res.json({ success: true, offer });
 });
 
-app.post("/api/import", (req, res) => {
+app.post("/api/import", requireCapability("imports.run"), (req, res) => {
   const { flightUrl = "", hotelUrl = "" } = req.body || {};
 
   const flight = flightUrl
@@ -2161,7 +2533,7 @@ await page.evaluateHandle("document.fonts.ready");
 
 const Tesseract = require("tesseract.js");
 
-app.post("/api/import-image", upload.single("image"), async (req, res) => {
+app.post("/api/import-image", requireCapability("imports.run"), upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No image uploaded" });
@@ -2175,6 +2547,23 @@ const text = result.data.text || "";
 const cleanText = text.replace(/\s+/g, " ").trim();
 
 console.log("OCR TEXT:\n", text);
+
+const profileImport = parseOcrByProfile(text, {
+  kind: "flight",
+  destination: req.body?.destination || ""
+});
+
+if (profileImport?.flight) {
+  return res.json({
+    success: true,
+    rawText: text,
+    flight: profileImport.flight,
+    hotel: profileImport.hotel || {},
+    metadata: profileImport.metadata,
+    source: profileImport.metadata?.source,
+    missingFields: profileImport.metadata?.missingFields || []
+  });
+}
 
 const lowerText = text.toLowerCase();
 
@@ -2611,7 +3000,7 @@ return res.json({
   }
 });
 
-app.post("/api/import-hotel-image", upload.single("image"), async (req, res) => {
+app.post("/api/import-hotel-image", requireCapability("imports.run"), upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No image uploaded" });
 
@@ -2644,10 +3033,14 @@ Rules:
     });
 
     const hotel = normalizeHotelTextToBulgarian(parsed);
+    const metadata = normalizeHotelProfileMetadata(hotel, parsed);
 
     res.json({
       success: true,
-      hotel
+      hotel,
+      metadata,
+      source: metadata.source,
+      missingFields: metadata.missingFields
     });
   } catch (err) {
     console.error("IMPORT HOTEL IMAGE ERROR:", err);

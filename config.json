@@ -1,0 +1,17 @@
+{
+  "liveBaseUrl": "",
+  "defaultMarkupPercent": 5,
+  "currencies": ["EUR", "BGN", "USD"],
+  "limits": {
+    "hotelImagesPerOffer": 3,
+    "maxOfferImages": 6
+  },
+  "features": {
+    "OCR_IMPORT": true,
+    "COMMUNITY_OFFERS": false,
+    "AI_REWRITE": false,
+    "ACTIVITY_TRACKING": true,
+    "CLIENTS": true,
+    "TEMPLATES": true
+  }
+}

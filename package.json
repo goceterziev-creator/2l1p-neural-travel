@@ -5,7 +5,13 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "smoke": "node scripts/smoke-test.js",
+    "visual-smoke": "node scripts/visual-smoke-v818.js",
+    "v9:check": "node scripts/v9-architecture-check.js",
+    "v9:boundary": "node scripts/v9-boundary-test.js",
+    "qa": "node scripts/run-qa.js && node scripts/v9-boundary-test.js",
+    "production:check": "node scripts/production-check.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
