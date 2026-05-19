@@ -488,6 +488,7 @@ The gate must check:
 - database agency/user/offer shape
 - PDF engine dependency sanity
 - auth/session production config
+- persistent data env for production
 - Render start command
 - canonical docs presence
 
@@ -501,3 +502,4 @@ Not allowed:
 - Treating local smoke pass as production readiness.
 - Production `AUTH_SECRET` fallback.
 - Missing database backup before beta deployment.
+- Production database stored only on ephemeral app filesystem.

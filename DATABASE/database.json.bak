@@ -215,10 +215,10 @@
       "markupPercent": 5,
       "finalPrice": 2560.93,
       "margin": 121.95,
-      "validUntil": "2026-05-15T22:46:04.376Z",
+      "validUntil": "2026-05-20T07:02:54.866Z",
       "createdAt": "2026-05-14T22:46:04.377Z",
-      "updatedAt": "2026-05-15T23:45:51.292Z",
-      "clientViewed": true,
+      "updatedAt": "2026-05-19T07:02:54.869Z",
+      "clientViewed": false,
       "bookedAt": null,
       "clicks": 0,
       "flights": [
@@ -249,11 +249,12 @@
           ]
         }
       ],
+      "agencyId": "AGY-AYA",
       "createdBy": "USR-1778543116891-a8d514",
       "ownerName": "GT63",
       "clientViews": 5,
-      "warningsDismissed": true,
-      "pdfDownloads": 2
+      "pdfDownloads": 3,
+      "warningsDismissed": true
     },
     {
       "id": "OFF-1778795484823-2ymqy",
@@ -598,7 +599,7 @@
       "margin": 53.97,
       "validUntil": "2026-05-15T04:25:27.350Z",
       "createdAt": "2026-05-14T04:25:27.350Z",
-      "updatedAt": "2026-05-19T06:05:55.129Z",
+      "updatedAt": "2026-05-19T06:06:21.116Z",
       "clientViewed": true,
       "bookedAt": null,
       "clicks": 0,
@@ -635,7 +636,7 @@
       "ownerName": "GT63",
       "agencyId": "AGY-AYA",
       "agencyName": "AYA Travel",
-      "clientViews": 4,
+      "clientViews": 5,
       "offerId": "OFF-1778732727350-5yp57",
       "userId": "USR-1778543116891-a8d514",
       "visibility": "private",
@@ -6904,6 +6905,27 @@
     }
   ],
   "activities": [
+    {
+      "id": "act_1779174174869_58a86e",
+      "type": "offer_updated",
+      "category": "offer",
+      "userId": "USR-1778543116891-a8d514",
+      "actorType": "user",
+      "offerId": "OFF-1778798764376-nyq5h",
+      "clientId": null,
+      "agencyId": "AGY-AYA",
+      "timestamp": "2026-05-19T07:02:54.869Z",
+      "createdAt": "2026-05-19T07:02:54.869Z",
+      "metadata": {
+        "capability": "offers.update",
+        "role": "agent",
+        "entityType": "offer",
+        "entityId": "OFF-1778798764376-nyq5h",
+        "destination": "Rome",
+        "status": "draft",
+        "warningsChanged": false
+      }
+    },
     {
       "id": "act_1779166412261_a0b929",
       "type": "offer_created",

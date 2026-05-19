@@ -300,6 +300,28 @@ async function main() {
     assert(adminUserIds.includes("V9-A-AGENT"), "Admin should see own agency users");
     assert(!adminUserIds.includes("V9-B-AGENT"), "Admin must not see cross-agency users");
 
+    const agentReset = await request("/api/admin/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: "V9-A-VIEWER", temporaryPassword: "temporary123" })
+    }, "V9-A-AGENT");
+    assert(agentReset.response.status === 403, `Agent password reset expected 403, got ${agentReset.response.status}`);
+
+    const crossAgencyReset = await request("/api/admin/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: "V9-B-AGENT", temporaryPassword: "temporary123" })
+    }, "V9-A-ADMIN");
+    assert(crossAgencyReset.response.status === 404, `Cross-agency password reset expected 404, got ${crossAgencyReset.response.status}`);
+
+    const adminReset = await request("/api/admin/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: "V9-A-VIEWER", temporaryPassword: "temporary123" })
+    }, "V9-A-ADMIN");
+    assert(adminReset.response.status === 200, `Admin password reset expected 200, got ${adminReset.response.status}: ${adminReset.text}`);
+    assert(adminReset.json?.passwordResetRequired === true, "Admin password reset must mark passwordResetRequired");
+
     const agentInvites = await request("/api/agency/invites", {}, "V9-A-AGENT");
     assert(agentInvites.response.status === 403, `Agent invites expected 403, got ${agentInvites.response.status}`);
 
@@ -333,6 +355,7 @@ async function main() {
         "Agency A cannot read or update Agency B offer",
         "Viewer cannot mutate offers",
         "Agent cannot manage agency users",
+        "Admin password reset is scoped and audited",
         "Admin can access own agency endpoints",
         "Subscription snapshot is scoped to agency",
         "Admin can create and list own agency invites",

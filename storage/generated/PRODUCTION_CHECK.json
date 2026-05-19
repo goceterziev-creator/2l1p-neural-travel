@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-19T01:00:12.012Z",
+  "generatedAt": "2026-05-19T07:29:59.321Z",
   "failedChecks": [],
   "checks": [
     {
@@ -22,6 +22,16 @@
       "name": "PORT compatible",
       "ok": true,
       "details": "development default"
+    },
+    {
+      "name": "persistent data env configured",
+      "ok": true,
+      "details": "set DB_FILE or DATA_DIR on Render persistent disk"
+    },
+    {
+      "name": "database outside project root in production",
+      "ok": true,
+      "details": "C:\\Users\\user\\Desktop\\2l1p-neural-travel-v8\\DATABASE\\database.json"
     },
     {
       "name": "directory DATABASE",
@@ -71,12 +81,12 @@
     {
       "name": "offers array present",
       "ok": true,
-      "details": "86"
+      "details": "87"
     },
     {
       "name": "activities array present",
       "ok": true,
-      "details": "170"
+      "details": "172"
     },
     {
       "name": "agency ids unique",

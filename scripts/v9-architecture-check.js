@@ -110,6 +110,7 @@ function checkServerBoundaryHelpers() {
   assert(/app\.get\("\/api\/agency\/users", requireCapability\("users\.manage"\)/.test(server), "/api/agency/users must require users.manage");
   assert(/app\.get\("\/api\/agency\/invites", requireCapability\("users\.manage"\)[\s\S]*scopeInvites\(db, req\)/.test(server), "/api/agency/invites must require users.manage and scopeInvites");
   assert(/app\.post\("\/api\/agency\/invites", requireCapability\("users\.manage"\), requireSubscriptionFeature\("invites"\)[\s\S]*assertSeatAvailable\(db, req\)[\s\S]*createAgencyInvite\(req/.test(server), "invite creation must require users.manage, subscription feature, seat check, and createAgencyInvite");
+  assert(/app\.post\("\/api\/admin\/reset-password", requireCapability\("users\.manage"\)[\s\S]*scopeUsers\(db, req\)[\s\S]*passwordResetRequired = true[\s\S]*sessionVersion[\s\S]*type: "admin_password_reset"/.test(server), "admin password reset must be scoped, require users.manage, invalidate sessions, and audit");
   assert(/app\.post\("\/api\/import-image", requireCapability\("imports\.run"\)/.test(server), "/api/import-image must require imports.run");
   assert(/req\.requiredCapability = capability;/.test(server), "requireCapability must attach capability to request context");
   assert(/app\.get\("\/api\/auth\/me", requireAuthApi[\s\S]*identity:[\s\S]*session:[\s\S]*agency:/.test(server), "/api/auth/me must return normalized identity/session/agency shape");
@@ -187,6 +188,7 @@ function checkBoundaryHarness() {
   assert(boundary.includes("/api/agency/users"), "boundary harness must test agency user management boundary");
   assert(boundary.includes("/api/agency/invites"), "boundary harness must test agency invite boundary");
   assert(boundary.includes("/api/agency/subscription"), "boundary harness must test agency subscription boundary");
+  assert(boundary.includes("/api/admin/reset-password"), "boundary harness must test admin password reset boundary");
   assert(boundary.includes("V9-INVITE-A"), "boundary harness must include agency invite fixtures");
   assert(boundary.includes("allOffers.flatMap"), "boundary harness must verify command source is scoped");
   assert(pkg.scripts?.["v9:boundary"] === "node scripts/v9-boundary-test.js", "package.json missing v9:boundary script");

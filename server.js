@@ -15,10 +15,11 @@ const SESSION_COOKIE = "aya_session";
 const AUTH_SECRET = process.env.AUTH_SECRET || "dev-auth-secret-change-me";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const OCR_ENGINE_VERSION = "8.3.2";
+const DATA_DIR = process.env.DATA_DIR || process.env.PERSISTENT_DATA_DIR || __dirname;
 
 const DB_FILE = process.env.DB_FILE
   ? path.resolve(process.env.DB_FILE)
-  : path.join(__dirname, "DATABASE", "database.json");
+  : path.join(DATA_DIR, "DATABASE", "database.json");
 const DB_DIR = path.dirname(DB_FILE);
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -2081,7 +2082,12 @@ app.post("/api/auth/login", (req, res) => {
     console.warn("Login timestamp update skipped:", err.message);
   }
   setSessionCookie(res, signSession(user));
-  res.json({ success: true, user: publicUser(user), session: normalizeSessionIdentity(user) });
+  res.json({
+    success: true,
+    user: publicUser(user),
+    session: normalizeSessionIdentity(user),
+    passwordResetRequired: Boolean(user.passwordResetRequired)
+  });
 });
 
 app.post("/api/auth/register", (req, res) => {
@@ -2151,6 +2157,46 @@ app.post("/api/auth/logout", requireAuthApi, (req, res) => {
 app.use("/api", (req, res, next) => {
   if (isPublicApiRequest(req)) return next();
   return requireAuthApi(req, res, next);
+});
+
+app.post("/api/admin/reset-password", requireCapability("users.manage"), (req, res) => {
+  const db = readDb();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const userId = String(req.body?.userId || "").trim();
+  const temporaryPassword = String(req.body?.temporaryPassword || req.body?.password || "");
+
+  if (temporaryPassword.length < 8) {
+    return res.status(400).json({ error: "Temporary password must be at least 8 characters" });
+  }
+
+  const target = scopeUsers(db, req).find((user) =>
+    (userId && user.id === userId) ||
+    (email && String(user.email || "").toLowerCase() === email)
+  );
+  if (!target) return res.status(404).json({ error: "User not found in current agency scope" });
+
+  target.passwordHash = hashPassword(temporaryPassword);
+  target.passwordResetRequired = true;
+  target.sessionVersion = getUserSessionVersion(target) + 1;
+  target.updatedAt = new Date().toISOString();
+  appendAuditEvent(db, req, {
+    type: "admin_password_reset",
+    category: "auth",
+    entityType: "user",
+    entityId: target.id,
+    metadata: {
+      email: target.email || "",
+      resetBy: req.user.id,
+      sessionVersion: target.sessionVersion
+    }
+  });
+  writeDb(db);
+
+  res.json({
+    success: true,
+    user: publicUser(target),
+    passwordResetRequired: true
+  });
 });
 
 app.get("/api/health", (req, res) => {

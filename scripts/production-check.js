@@ -2,11 +2,12 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
+const DATA_DIR = process.env.DATA_DIR || process.env.PERSISTENT_DATA_DIR || ROOT;
 const DB_FILE = process.env.DB_FILE
   ? path.resolve(process.env.DB_FILE)
-  : path.join(ROOT, "DATABASE", "database.json");
+  : path.join(DATA_DIR, "DATABASE", "database.json");
 const REQUIRED_DIRS = [
-  path.join(ROOT, "DATABASE"),
+  path.join(DATA_DIR, "DATABASE"),
   path.join(ROOT, "backups"),
   path.join(ROOT, "storage"),
   path.join(ROOT, "storage", "generated"),
@@ -33,11 +34,15 @@ function checkEnv() {
   const liveBaseUrl = process.env.LIVE_BASE_URL || "";
   const authSecret = process.env.AUTH_SECRET || "";
   const isProduction = nodeEnv === "production";
+  const hasPersistentDataEnv = Boolean(process.env.DB_FILE || process.env.DATA_DIR || process.env.PERSISTENT_DATA_DIR);
+  const dbInsideProjectRoot = path.relative(ROOT, DB_FILE) && !path.relative(ROOT, DB_FILE).startsWith("..") && !path.isAbsolute(path.relative(ROOT, DB_FILE));
 
   record("NODE_ENV present", Boolean(nodeEnv), nodeEnv);
   record("LIVE_BASE_URL configured", !isProduction || /^https:\/\//.test(liveBaseUrl), liveBaseUrl || "missing");
   record("AUTH_SECRET configured", !isProduction || (authSecret && authSecret !== "dev-auth-secret-change-me" && authSecret.length >= 32), isProduction ? "production secret required" : "development allowed");
   record("PORT compatible", Boolean(process.env.PORT || !isProduction), process.env.PORT || "development default");
+  record("persistent data env configured", !isProduction || hasPersistentDataEnv, hasPersistentDataEnv ? `DB=${DB_FILE}` : "set DB_FILE or DATA_DIR on Render persistent disk");
+  record("database outside project root in production", !isProduction || !dbInsideProjectRoot, DB_FILE);
 }
 
 function checkStorage() {

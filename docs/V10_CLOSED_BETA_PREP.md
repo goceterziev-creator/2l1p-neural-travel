@@ -47,6 +47,7 @@ Required env vars:
 - `NODE_ENV=production`
 - `AUTH_SECRET=<strong random secret, 32+ chars>`
 - `LIVE_BASE_URL=https://<real-domain>`
+- `DATA_DIR=<Render persistent disk mount>` or `DB_FILE=<persistent database path>`
 - `PORT` supplied by Render
 - `ADMIN_EMAIL=<owner email>`
 - `ADMIN_PASSWORD=<temporary bootstrap password>`
@@ -56,6 +57,7 @@ Rules:
 
 - Never use `dev-auth-secret-change-me` in production.
 - `LIVE_BASE_URL` must be HTTPS.
+- `DATABASE/database.json` must live on persistent storage, not the ephemeral app filesystem.
 - Bootstrap password must be changed after first production login.
 - Render start command must remain `node server.js`.
 
@@ -86,9 +88,16 @@ Closed beta requirement:
 
 Recommended minimum for beta:
 
-- Persistent disk mounted for `DATABASE/`, `backups/`, and `storage/`.
+- Persistent disk mounted and exposed through `DATA_DIR` or `DB_FILE`.
+- `DATABASE/database.json` stored under that persistent mount.
 - Manual backup before each deploy.
 - Manual restore test before inviting beta agencies.
+
+Render example:
+
+- attach persistent disk mounted at `/var/data`
+- set `DATA_DIR=/var/data`
+- keep `DB_FILE` unset unless a custom file path is required
 
 ## Backup Routine
 
@@ -164,6 +173,27 @@ Do not collect feedback on:
 - enterprise API
 
 Those belong after closed beta foundation stability.
+
+## Beta Password Recovery
+
+Closed beta uses manual admin reset only.
+
+Allowed:
+
+- `POST /api/admin/reset-password`
+- protected by `users.manage`
+- scoped to the current agency
+- writes audit event
+- invalidates existing sessions through `sessionVersion`
+- marks `passwordResetRequired`
+
+Not allowed during beta prep:
+
+- forgot password UI
+- email provider integration
+- magic links
+- OTP flows
+- public recovery endpoints
 
 ## Go / No-Go
 

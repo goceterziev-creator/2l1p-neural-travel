@@ -17,8 +17,8 @@
       "currency": "EUR",
       "finalPrice": 1000,
       "validationWarnings": [],
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z"
     },
     {
       "id": "V9-OFFER-B",
@@ -37,8 +37,68 @@
       "currency": "EUR",
       "finalPrice": 2000,
       "validationWarnings": [],
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z"
+    },
+    {
+      "id": "OFF-1779166412256-ntt15",
+      "clientName": "Petar Vazharov",
+      "clientPhone": "00359894842882",
+      "destination": "Rome",
+      "travelDates": "13.06 - 20.06",
+      "guests": "2 възрастни",
+      "status": "draft",
+      "currency": "EUR",
+      "notes": "Офертата е подбрана според наличните полетни и хотелски условия. Препоръчваме потвърждение възможно най-скоро, тъй като местата и цените подлежат на промяна.",
+      "destinationDescription": "Рим е класическа city break дестинация с история, архитектура и отлична атмосфера за семейно или романтично пътуване.\n\nПодбраната оферта комбинира удобен полет, хотел с добра локация и ясна крайна цена.\n\nПо време на престоя можете да посетите:\n• Колизеума\n• Ватикана\n• Фонтана ди Треви\n• Испанските стълби\n\nОфертата комбинира удобен полет, хотел Navona Little Home и ясна крайна цена, без скрити вътрешни разбивки за клиента.\n\nХотелът предлага:\n• на пешеходно разстояние от центъра\n• идеален за кратък престой\n• удобен достъп до забележителности",
+      "validationWarnings": [
+        "Flight destination mismatch: Destination is \"Rome\", but flight route/details do not clearly mention it.",
+        "Flight dates mismatch: offer period is \"13.06 - 20.06\", but flight details show 2026-12-27 - 2027-01-06."
+      ],
+      "flightRoute": "SOF → FCO / FCO → SOF",
+      "hotel": "Navona Little Home",
+      "flightPrice": 43.98,
+      "hotelPrice": 1200,
+      "transferPrice": 0,
+      "basePrice": 1243.98,
+      "markupPercent": 5,
+      "finalPrice": 1306.18,
+      "margin": 62.2,
+      "validUntil": "2026-05-20T04:53:32.256Z",
+      "createdAt": "2026-05-19T04:53:32.256Z",
+      "updatedAt": "2026-05-19T04:53:36.702Z",
+      "clientViewed": true,
+      "bookedAt": null,
+      "clicks": 0,
+      "flights": [
+        {
+          "airline": "Wizz Air",
+          "route": "SOF → FCO / FCO → SOF",
+          "departure": "SOF → FCO, 27.12.2026, 14:40 - 15:45, W6 4315",
+          "arrival": "FCO → SOF, 06.01.2027, 14:40 - 15:45",
+          "baggage": "Wizz Basic: включена малка чанта 40x30x20 см под седалката",
+          "notes": "Цената е извлечена от screenshot. Препоръчваме финална проверка на багажа, местата и условията преди резервация.",
+          "price": 43.98
+        }
+      ],
+      "hotels": [
+        {
+          "name": "Navona Little Home",
+          "stars": "",
+          "area": "Piazza del Paradiso, 66, Navona, Rome, Италия",
+          "distance": "",
+          "room": "Едноспален апартамент",
+          "meal": "",
+          "price": 1200,
+          "roomsLeft": "Ограничен брои стаи, 831 апартаменти вече са заети",
+          "description": "Прекрасно местоположение в Рим с 1 едноспален апартамент. Включва всички такси.",
+          "images": []
+        }
+      ],
+      "agencyId": "AGY-AYA",
+      "createdBy": "USR-1778543116891-a8d514",
+      "ownerName": "GT63",
+      "clientViews": 1
     },
     {
       "id": "OFF-1778829382852-odhcn",
@@ -195,9 +255,9 @@
       "markupPercent": 5,
       "finalPrice": 2560.93,
       "margin": 121.95,
-      "validUntil": "2026-05-15T22:46:04.376Z",
+      "validUntil": "2026-05-20T07:02:54.866Z",
       "createdAt": "2026-05-14T22:46:04.377Z",
-      "updatedAt": "2026-05-15T23:45:51.292Z",
+      "updatedAt": "2026-05-19T07:03:11.822Z",
       "clientViewed": true,
       "bookedAt": null,
       "clicks": 0,
@@ -229,11 +289,12 @@
           ]
         }
       ],
+      "agencyId": "AGY-AYA",
       "createdBy": "USR-1778543116891-a8d514",
       "ownerName": "GT63",
-      "clientViews": 5,
-      "warningsDismissed": true,
-      "pdfDownloads": 2
+      "clientViews": 6,
+      "pdfDownloads": 3,
+      "warningsDismissed": true
     },
     {
       "id": "OFF-1778795484823-2ymqy",
@@ -578,7 +639,7 @@
       "margin": 53.97,
       "validUntil": "2026-05-15T04:25:27.350Z",
       "createdAt": "2026-05-14T04:25:27.350Z",
-      "updatedAt": "2026-05-14T20:36:47.686Z",
+      "updatedAt": "2026-05-19T06:06:21.116Z",
       "clientViewed": true,
       "bookedAt": null,
       "clicks": 0,
@@ -615,7 +676,7 @@
       "ownerName": "GT63",
       "agencyId": "AGY-AYA",
       "agencyName": "AYA Travel",
-      "clientViews": 3,
+      "clientViews": 5,
       "offerId": "OFF-1778732727350-5yp57",
       "userId": "USR-1778543116891-a8d514",
       "visibility": "private",
@@ -5667,8 +5728,8 @@
       "role": "admin",
       "name": "V9 Admin A",
       "email": "v9-admin-a@example.test",
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z"
     },
     {
       "id": "V9-A-AGENT",
@@ -5676,8 +5737,8 @@
       "role": "agent",
       "name": "V9 Agent A",
       "email": "v9-agent-a@example.test",
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z"
     },
     {
       "id": "V9-A-VIEWER",
@@ -5685,8 +5746,11 @@
       "role": "viewer",
       "name": "V9 Viewer A",
       "email": "v9-viewer-a@example.test",
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:32.082Z",
+      "passwordHash": "f5c5a50c7a1ee928900e1a62daa5be33:6be01833de8eeffb5a046e5c2f249e3ba569668f04c20a764613a8503f9a8aa556fb2b470d9ffea77073c50543e3dd47f432c19e5c1c851211a551ed78796e32",
+      "passwordResetRequired": true,
+      "sessionVersion": 2
     },
     {
       "id": "V9-B-AGENT",
@@ -5694,8 +5758,8 @@
       "role": "agent",
       "name": "V9 Agent B",
       "email": "v9-agent-b@example.test",
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z"
     }
   ],
   "agencies": [
@@ -5726,8 +5790,8 @@
         "plan": "PRO",
         "status": "active"
       },
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z"
     },
     {
       "agencyId": "V9-AGENCY-B",
@@ -5739,8 +5803,8 @@
         "plan": "STARTER",
         "status": "active"
       },
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z"
     }
   ],
   "clients": [
@@ -5760,11 +5824,11 @@
           "offerId": "V9-OFFER-A",
           "status": "draft",
           "finalPrice": 1000,
-          "createdAt": "2026-05-19T00:49:46.685Z"
+          "createdAt": "2026-05-19T07:29:22.215Z"
         }
       ],
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z"
     },
     {
       "id": "V9-CLIENT-B",
@@ -5782,11 +5846,11 @@
           "offerId": "V9-OFFER-B",
           "status": "draft",
           "finalPrice": 2000,
-          "createdAt": "2026-05-19T00:49:46.685Z"
+          "createdAt": "2026-05-19T07:29:22.215Z"
         }
       ],
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z"
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z"
     },
     {
       "id": "client_502b45cca7d2",
@@ -6991,6 +7055,27 @@
   ],
   "activities": [
     {
+      "id": "act_1779175772083_4f17dd",
+      "type": "admin_password_reset",
+      "category": "auth",
+      "userId": "V9-A-ADMIN",
+      "actorType": "user",
+      "offerId": null,
+      "clientId": null,
+      "agencyId": "V9-AGENCY-A",
+      "timestamp": "2026-05-19T07:29:32.083Z",
+      "createdAt": "2026-05-19T07:29:32.083Z",
+      "metadata": {
+        "capability": "users.manage",
+        "role": "admin",
+        "entityType": "user",
+        "entityId": "V9-A-VIEWER",
+        "email": "v9-viewer-a@example.test",
+        "resetBy": "V9-A-ADMIN",
+        "sessionVersion": 2
+      }
+    },
+    {
       "id": "V9-ACT-A",
       "type": "offer_created",
       "category": "offer",
@@ -6999,8 +7084,8 @@
       "offerId": "V9-OFFER-A",
       "clientId": "V9-CLIENT-A",
       "agencyId": "V9-AGENCY-A",
-      "timestamp": "2026-05-19T00:49:46.685Z",
-      "createdAt": "2026-05-19T00:49:46.685Z",
+      "timestamp": "2026-05-19T07:29:22.215Z",
+      "createdAt": "2026-05-19T07:29:22.215Z",
       "metadata": {
         "entityType": "offer",
         "entityId": "V9-OFFER-A"
@@ -7015,11 +7100,52 @@
       "offerId": "V9-OFFER-B",
       "clientId": "V9-CLIENT-B",
       "agencyId": "V9-AGENCY-B",
-      "timestamp": "2026-05-19T00:49:46.685Z",
-      "createdAt": "2026-05-19T00:49:46.685Z",
+      "timestamp": "2026-05-19T07:29:22.215Z",
+      "createdAt": "2026-05-19T07:29:22.215Z",
       "metadata": {
         "entityType": "offer",
         "entityId": "V9-OFFER-B"
+      }
+    },
+    {
+      "id": "act_1779174174869_58a86e",
+      "type": "offer_updated",
+      "category": "offer",
+      "userId": "USR-1778543116891-a8d514",
+      "actorType": "user",
+      "offerId": "OFF-1778798764376-nyq5h",
+      "clientId": null,
+      "agencyId": "AGY-AYA",
+      "timestamp": "2026-05-19T07:02:54.869Z",
+      "createdAt": "2026-05-19T07:02:54.869Z",
+      "metadata": {
+        "capability": "offers.update",
+        "role": "agent",
+        "entityType": "offer",
+        "entityId": "OFF-1778798764376-nyq5h",
+        "destination": "Rome",
+        "status": "draft",
+        "warningsChanged": false
+      }
+    },
+    {
+      "id": "act_1779166412261_a0b929",
+      "type": "offer_created",
+      "category": "offer",
+      "userId": "USR-1778543116891-a8d514",
+      "actorType": "user",
+      "offerId": "OFF-1779166412256-ntt15",
+      "clientId": null,
+      "agencyId": "AGY-AYA",
+      "timestamp": "2026-05-19T04:53:32.261Z",
+      "createdAt": "2026-05-19T04:53:32.261Z",
+      "metadata": {
+        "capability": "offers.create",
+        "role": "agent",
+        "entityType": "offer",
+        "entityId": "OFF-1779166412256-ntt15",
+        "destination": "Rome",
+        "status": "draft"
       }
     },
     {
@@ -9908,9 +10034,9 @@
       "status": "pending",
       "tokenHash": "boundary-fixture-a",
       "invitedBy": "V9-A-ADMIN",
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z",
-      "expiresAt": "2026-05-19T01:49:46.691Z",
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z",
+      "expiresAt": "2026-05-19T08:29:22.225Z",
       "acceptedAt": null,
       "acceptedBy": null
     },
@@ -9922,9 +10048,9 @@
       "status": "pending",
       "tokenHash": "boundary-fixture-b",
       "invitedBy": "V9-B-AGENT",
-      "createdAt": "2026-05-19T00:49:46.685Z",
-      "updatedAt": "2026-05-19T00:49:46.685Z",
-      "expiresAt": "2026-05-19T01:49:46.691Z",
+      "createdAt": "2026-05-19T07:29:22.215Z",
+      "updatedAt": "2026-05-19T07:29:22.215Z",
+      "expiresAt": "2026-05-19T08:29:22.225Z",
       "acceptedAt": null,
       "acceptedBy": null
     }
