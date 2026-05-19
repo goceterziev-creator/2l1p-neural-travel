@@ -1,0 +1,162 @@
+{
+  "ok": true,
+  "generatedAt": "2026-05-19T01:00:12.012Z",
+  "failedChecks": [],
+  "checks": [
+    {
+      "name": "NODE_ENV present",
+      "ok": true,
+      "details": "development"
+    },
+    {
+      "name": "LIVE_BASE_URL configured",
+      "ok": true,
+      "details": "missing"
+    },
+    {
+      "name": "AUTH_SECRET configured",
+      "ok": true,
+      "details": "development allowed"
+    },
+    {
+      "name": "PORT compatible",
+      "ok": true,
+      "details": "development default"
+    },
+    {
+      "name": "directory DATABASE",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "directory backups",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "directory storage",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "directory storage\\generated",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "directory public",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "database file exists",
+      "ok": true,
+      "details": "C:\\Users\\user\\Desktop\\2l1p-neural-travel-v8\\DATABASE\\database.json"
+    },
+    {
+      "name": "database backup available",
+      "ok": true,
+      "details": "C:\\Users\\user\\Desktop\\2l1p-neural-travel-v8\\DATABASE\\database.json.bak"
+    },
+    {
+      "name": "agencies present",
+      "ok": true,
+      "details": "1"
+    },
+    {
+      "name": "users present",
+      "ok": true,
+      "details": "2"
+    },
+    {
+      "name": "offers array present",
+      "ok": true,
+      "details": "86"
+    },
+    {
+      "name": "activities array present",
+      "ok": true,
+      "details": "170"
+    },
+    {
+      "name": "agency ids unique",
+      "ok": true,
+      "details": "1"
+    },
+    {
+      "name": "users scoped to valid agencies",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "offers scoped to valid agencies",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "express dependency",
+      "ok": true,
+      "details": "^4.21.2"
+    },
+    {
+      "name": "puppeteer dependency",
+      "ok": true,
+      "details": "^24.7.1"
+    },
+    {
+      "name": "tesseract dependency",
+      "ok": true,
+      "details": "^7.0.0"
+    },
+    {
+      "name": "PDF engine require",
+      "ok": true,
+      "details": "puppeteer"
+    },
+    {
+      "name": "doc docs\\GT63_MASTER_HANDOVER_V9.md",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "doc docs\\QA_CHECKLIST.md",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "doc docs\\V9_MULTI_AGENCY_ARCHITECTURE.md",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "qa script present",
+      "ok": true,
+      "details": "node scripts/run-qa.js && node scripts/v9-boundary-test.js"
+    },
+    {
+      "name": "production check script present",
+      "ok": true,
+      "details": "node scripts/production-check.js"
+    },
+    {
+      "name": "v9 boundary script present",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "Render start command",
+      "ok": true,
+      "details": "node server.js"
+    },
+    {
+      "name": "config file present",
+      "ok": true,
+      "details": ""
+    },
+    {
+      "name": "public admin present",
+      "ok": true,
+      "details": ""
+    }
+  ]
+}
