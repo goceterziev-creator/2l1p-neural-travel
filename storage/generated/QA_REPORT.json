@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-19T07:29:20.740Z",
+  "generatedAt": "2026-05-19T18:22:02.484Z",
   "baseUrl": "http://localhost:3920",
   "writeQa": false,
   "failedChecks": [],
@@ -14,7 +14,7 @@
         "writeDbCount": 1,
         "ocrEngineVersion": "8.3.2"
       },
-      "timestamp": "2026-05-19T07:29:18.864Z"
+      "timestamp": "2026-05-19T18:21:57.973Z"
     },
     {
       "name": "database integrity",
@@ -23,17 +23,17 @@
         "schemaVersion": "8.3.3",
         "offers": 87,
         "clients": 4,
-        "activities": 172,
+        "activities": 173,
         "riskyOffers": 28,
         "invalidImages": 0
       },
-      "timestamp": "2026-05-19T07:29:18.934Z"
+      "timestamp": "2026-05-19T18:21:58.180Z"
     },
     {
       "name": "auth login",
       "status": "pass",
       "details": {},
-      "timestamp": "2026-05-19T07:29:19.856Z"
+      "timestamp": "2026-05-19T18:22:01.460Z"
     },
     {
       "name": "endpoint /api/health",
@@ -41,7 +41,7 @@
       "details": {
         "status": 200
       },
-      "timestamp": "2026-05-19T07:29:19.895Z"
+      "timestamp": "2026-05-19T18:22:01.511Z"
     },
     {
       "name": "endpoint /api/offers",
@@ -49,7 +49,7 @@
       "details": {
         "status": 200
       },
-      "timestamp": "2026-05-19T07:29:20.034Z"
+      "timestamp": "2026-05-19T18:22:01.686Z"
     },
     {
       "name": "endpoint /api/clients",
@@ -57,7 +57,7 @@
       "details": {
         "status": 200
       },
-      "timestamp": "2026-05-19T07:29:20.188Z"
+      "timestamp": "2026-05-19T18:22:01.883Z"
     },
     {
       "name": "endpoint /api/activities",
@@ -65,7 +65,7 @@
       "details": {
         "status": 200
       },
-      "timestamp": "2026-05-19T07:29:20.360Z"
+      "timestamp": "2026-05-19T18:22:02.060Z"
     },
     {
       "name": "endpoint /api/activities/stats",
@@ -73,7 +73,7 @@
       "details": {
         "status": 200
       },
-      "timestamp": "2026-05-19T07:29:20.534Z"
+      "timestamp": "2026-05-19T18:22:02.231Z"
     },
     {
       "name": "endpoint /api/agency",
@@ -81,13 +81,13 @@
       "details": {
         "status": 200
       },
-      "timestamp": "2026-05-19T07:29:20.733Z"
+      "timestamp": "2026-05-19T18:22:02.480Z"
     },
     {
       "name": "warning persistence",
       "status": "skip",
       "details": {},
-      "timestamp": "2026-05-19T07:29:20.735Z"
+      "timestamp": "2026-05-19T18:22:02.480Z"
     }
   ]
 }

@@ -666,6 +666,7 @@ function ensureDefaultUser() {
   const db = readDb();
   const email = String(process.env.ADMIN_EMAIL || "demo@aya.com").toLowerCase();
   const password = process.env.ADMIN_PASSWORD || "admin123";
+  const forceAdminPasswordReset = process.env.ADMIN_FORCE_PASSWORD_RESET === "true";
   const now = new Date().toISOString();
   let changed = false;
 
@@ -682,6 +683,8 @@ function ensureDefaultUser() {
       email,
       passwordHash: hashPassword(password),
       role: "admin",
+      agencyId: "AGY-AYA",
+      sessionVersion: 1,
       plan: "PRO",
       credits: 999,
       createdAt: now
@@ -692,6 +695,16 @@ function ensureDefaultUser() {
     admin.passwordHash = hashPassword(password);
     admin.role = admin.role || "admin";
     admin.updatedAt = now;
+    changed = true;
+  } else if (forceAdminPasswordReset) {
+    admin.passwordHash = hashPassword(password);
+    admin.passwordResetRequired = false;
+    admin.sessionVersion = getUserSessionVersion(admin) + 1;
+    admin.updatedAt = now;
+    appendSessionAuditEvent(db, admin, "bootstrap_admin_password_reset", {
+      capability: "bootstrap.admin",
+      source: "ADMIN_FORCE_PASSWORD_RESET"
+    });
     changed = true;
   }
 

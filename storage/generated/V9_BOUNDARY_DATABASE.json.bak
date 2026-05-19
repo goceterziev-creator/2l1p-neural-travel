@@ -17,8 +17,8 @@
       "currency": "EUR",
       "finalPrice": 1000,
       "validationWarnings": [],
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z"
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z"
     },
     {
       "id": "V9-OFFER-B",
@@ -37,8 +37,8 @@
       "currency": "EUR",
       "finalPrice": 2000,
       "validationWarnings": [],
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z"
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z"
     },
     {
       "id": "OFF-1779166412256-ntt15",
@@ -5672,6 +5672,18 @@
   ],
   "users": [
     {
+      "id": "USR-1779189753604-932231",
+      "name": "Goce Terziev",
+      "email": "gotebibi@gmail.com",
+      "agencyId": "AGY-AYA",
+      "passwordHash": "bc5b93b1728e3da073725c5cf6ce8352:8a7f7eac44f7070abecc050cbebcf9a79fc9cf4f4b5a596e3ef3d2c35fb602525cf070d2812f4060fa6813bbb004e51ce96d7f823dc1f7d5fd6663a179d731f5",
+      "role": "agent",
+      "sessionVersion": 1,
+      "plan": "STARTER",
+      "credits": 25,
+      "createdAt": "2026-05-19T11:22:33.749Z"
+    },
+    {
       "id": "USR-1778543116891-a8d514",
       "name": "GT63",
       "email": "goce_terziev@abv.bg",
@@ -5728,8 +5740,8 @@
       "role": "admin",
       "name": "V9 Admin A",
       "email": "v9-admin-a@example.test",
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z"
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z"
     },
     {
       "id": "V9-A-AGENT",
@@ -5737,8 +5749,8 @@
       "role": "agent",
       "name": "V9 Agent A",
       "email": "v9-agent-a@example.test",
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z"
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z"
     },
     {
       "id": "V9-A-VIEWER",
@@ -5746,9 +5758,9 @@
       "role": "viewer",
       "name": "V9 Viewer A",
       "email": "v9-viewer-a@example.test",
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:32.082Z",
-      "passwordHash": "f5c5a50c7a1ee928900e1a62daa5be33:6be01833de8eeffb5a046e5c2f249e3ba569668f04c20a764613a8503f9a8aa556fb2b470d9ffea77073c50543e3dd47f432c19e5c1c851211a551ed78796e32",
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:23.636Z",
+      "passwordHash": "718be30accccb40e2d45dd00a2222f5b:4f2054475ef96a7b436d915cdbc5616fdb24680bbf427846e55661bb0cbf25becfc467916830093e8a31001466ba06de259d5534bf6c7f5feed781b7b8ebf90b",
       "passwordResetRequired": true,
       "sessionVersion": 2
     },
@@ -5758,8 +5770,8 @@
       "role": "agent",
       "name": "V9 Agent B",
       "email": "v9-agent-b@example.test",
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z"
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z"
     }
   ],
   "agencies": [
@@ -5790,8 +5802,8 @@
         "plan": "PRO",
         "status": "active"
       },
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z"
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z"
     },
     {
       "agencyId": "V9-AGENCY-B",
@@ -5803,8 +5815,8 @@
         "plan": "STARTER",
         "status": "active"
       },
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z"
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z"
     }
   ],
   "clients": [
@@ -5824,11 +5836,11 @@
           "offerId": "V9-OFFER-A",
           "status": "draft",
           "finalPrice": 1000,
-          "createdAt": "2026-05-19T07:29:22.215Z"
+          "createdAt": "2026-05-19T18:22:08.747Z"
         }
       ],
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z"
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z"
     },
     {
       "id": "V9-CLIENT-B",
@@ -5846,11 +5858,11 @@
           "offerId": "V9-OFFER-B",
           "status": "draft",
           "finalPrice": 2000,
-          "createdAt": "2026-05-19T07:29:22.215Z"
+          "createdAt": "2026-05-19T18:22:08.747Z"
         }
       ],
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z"
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z"
     },
     {
       "id": "client_502b45cca7d2",
@@ -7055,7 +7067,7 @@
   ],
   "activities": [
     {
-      "id": "act_1779175772083_4f17dd",
+      "id": "act_1779214943638_e39d25",
       "type": "admin_password_reset",
       "category": "auth",
       "userId": "V9-A-ADMIN",
@@ -7063,8 +7075,8 @@
       "offerId": null,
       "clientId": null,
       "agencyId": "V9-AGENCY-A",
-      "timestamp": "2026-05-19T07:29:32.083Z",
-      "createdAt": "2026-05-19T07:29:32.083Z",
+      "timestamp": "2026-05-19T18:22:23.638Z",
+      "createdAt": "2026-05-19T18:22:23.638Z",
       "metadata": {
         "capability": "users.manage",
         "role": "admin",
@@ -7084,8 +7096,8 @@
       "offerId": "V9-OFFER-A",
       "clientId": "V9-CLIENT-A",
       "agencyId": "V9-AGENCY-A",
-      "timestamp": "2026-05-19T07:29:22.215Z",
-      "createdAt": "2026-05-19T07:29:22.215Z",
+      "timestamp": "2026-05-19T18:22:08.747Z",
+      "createdAt": "2026-05-19T18:22:08.747Z",
       "metadata": {
         "entityType": "offer",
         "entityId": "V9-OFFER-A"
@@ -7100,11 +7112,31 @@
       "offerId": "V9-OFFER-B",
       "clientId": "V9-CLIENT-B",
       "agencyId": "V9-AGENCY-B",
-      "timestamp": "2026-05-19T07:29:22.215Z",
-      "createdAt": "2026-05-19T07:29:22.215Z",
+      "timestamp": "2026-05-19T18:22:08.747Z",
+      "createdAt": "2026-05-19T18:22:08.747Z",
       "metadata": {
         "entityType": "offer",
         "entityId": "V9-OFFER-B"
+      }
+    },
+    {
+      "id": "act_1779189753750_153694",
+      "type": "auth_register",
+      "category": "auth",
+      "userId": "USR-1779189753604-932231",
+      "actorType": "user",
+      "offerId": null,
+      "clientId": null,
+      "agencyId": "AGY-AYA",
+      "timestamp": "2026-05-19T11:22:33.750Z",
+      "createdAt": "2026-05-19T11:22:33.750Z",
+      "metadata": {
+        "capability": "auth.register",
+        "role": "agent",
+        "entityType": "user",
+        "entityId": "USR-1779189753604-932231",
+        "email": "gotebibi@gmail.com",
+        "sessionVersion": 1
       }
     },
     {
@@ -10034,9 +10066,9 @@
       "status": "pending",
       "tokenHash": "boundary-fixture-a",
       "invitedBy": "V9-A-ADMIN",
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z",
-      "expiresAt": "2026-05-19T08:29:22.225Z",
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z",
+      "expiresAt": "2026-05-19T19:22:08.760Z",
       "acceptedAt": null,
       "acceptedBy": null
     },
@@ -10048,9 +10080,9 @@
       "status": "pending",
       "tokenHash": "boundary-fixture-b",
       "invitedBy": "V9-B-AGENT",
-      "createdAt": "2026-05-19T07:29:22.215Z",
-      "updatedAt": "2026-05-19T07:29:22.215Z",
-      "expiresAt": "2026-05-19T08:29:22.225Z",
+      "createdAt": "2026-05-19T18:22:08.747Z",
+      "updatedAt": "2026-05-19T18:22:08.747Z",
+      "expiresAt": "2026-05-19T19:22:08.760Z",
       "acceptedAt": null,
       "acceptedBy": null
     }

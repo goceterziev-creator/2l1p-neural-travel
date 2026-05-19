@@ -217,8 +217,8 @@
       "margin": 121.95,
       "validUntil": "2026-05-20T07:02:54.866Z",
       "createdAt": "2026-05-14T22:46:04.377Z",
-      "updatedAt": "2026-05-19T07:02:54.869Z",
-      "clientViewed": false,
+      "updatedAt": "2026-05-19T07:03:11.822Z",
+      "clientViewed": true,
       "bookedAt": null,
       "clicks": 0,
       "flights": [
@@ -252,7 +252,7 @@
       "agencyId": "AGY-AYA",
       "createdBy": "USR-1778543116891-a8d514",
       "ownerName": "GT63",
-      "clientViews": 5,
+      "clientViews": 6,
       "pdfDownloads": 3,
       "warningsDismissed": true
     },

@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-19T07:29:59.321Z",
+  "generatedAt": "2026-05-19T18:23:07.942Z",
   "failedChecks": [],
   "checks": [
     {
@@ -32,6 +32,11 @@
       "name": "database outside project root in production",
       "ok": true,
       "details": "C:\\Users\\user\\Desktop\\2l1p-neural-travel-v8\\DATABASE\\database.json"
+    },
+    {
+      "name": "bootstrap admin reset disabled",
+      "ok": true,
+      "details": "disabled"
     },
     {
       "name": "directory DATABASE",
@@ -76,7 +81,7 @@
     {
       "name": "users present",
       "ok": true,
-      "details": "2"
+      "details": "3"
     },
     {
       "name": "offers array present",
@@ -86,7 +91,7 @@
     {
       "name": "activities array present",
       "ok": true,
-      "details": "172"
+      "details": "173"
     },
     {
       "name": "agency ids unique",

@@ -53,12 +53,19 @@ Required env vars:
 - `ADMIN_PASSWORD=<temporary bootstrap password>`
 - `ADMIN_NAME=<owner name>`
 
+Optional emergency bootstrap:
+
+- `ADMIN_FORCE_PASSWORD_RESET=true`
+
+Use this only once when a persistent beta DB already contains the bootstrap admin but the password is unknown. Remove it immediately after successful login and redeploy.
+
 Rules:
 
 - Never use `dev-auth-secret-change-me` in production.
 - `LIVE_BASE_URL` must be HTTPS.
 - `DATABASE/database.json` must live on persistent storage, not the ephemeral app filesystem.
 - Bootstrap password must be changed after first production login.
+- `ADMIN_FORCE_PASSWORD_RESET=true` must not stay enabled after recovery.
 - Render start command must remain `node server.js`.
 
 ## Domain / LIVE_BASE_URL
@@ -194,6 +201,15 @@ Not allowed during beta prep:
 - magic links
 - OTP flows
 - public recovery endpoints
+
+Bootstrap recovery:
+
+If the only admin cannot log in, temporarily set:
+
+- `ADMIN_FORCE_PASSWORD_RESET=true`
+- `ADMIN_PASSWORD=<new temporary password>`
+
+Redeploy, log in, then remove `ADMIN_FORCE_PASSWORD_RESET` and redeploy again.
 
 ## Go / No-Go
 

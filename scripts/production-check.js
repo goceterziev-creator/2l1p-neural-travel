@@ -36,6 +36,7 @@ function checkEnv() {
   const isProduction = nodeEnv === "production";
   const hasPersistentDataEnv = Boolean(process.env.DB_FILE || process.env.DATA_DIR || process.env.PERSISTENT_DATA_DIR);
   const dbInsideProjectRoot = path.relative(ROOT, DB_FILE) && !path.relative(ROOT, DB_FILE).startsWith("..") && !path.isAbsolute(path.relative(ROOT, DB_FILE));
+  const forceAdminPasswordReset = process.env.ADMIN_FORCE_PASSWORD_RESET === "true";
 
   record("NODE_ENV present", Boolean(nodeEnv), nodeEnv);
   record("LIVE_BASE_URL configured", !isProduction || /^https:\/\//.test(liveBaseUrl), liveBaseUrl || "missing");
@@ -43,6 +44,7 @@ function checkEnv() {
   record("PORT compatible", Boolean(process.env.PORT || !isProduction), process.env.PORT || "development default");
   record("persistent data env configured", !isProduction || hasPersistentDataEnv, hasPersistentDataEnv ? `DB=${DB_FILE}` : "set DB_FILE or DATA_DIR on Render persistent disk");
   record("database outside project root in production", !isProduction || !dbInsideProjectRoot, DB_FILE);
+  record("bootstrap admin reset disabled", !isProduction || !forceAdminPasswordReset, forceAdminPasswordReset ? "remove ADMIN_FORCE_PASSWORD_RESET after recovery" : "disabled");
 }
 
 function checkStorage() {
