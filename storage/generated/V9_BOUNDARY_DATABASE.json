@@ -17,8 +17,8 @@
       "currency": "EUR",
       "finalPrice": 1000,
       "validationWarnings": [],
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z"
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z"
     },
     {
       "id": "V9-OFFER-B",
@@ -37,8 +37,8 @@
       "currency": "EUR",
       "finalPrice": 2000,
       "validationWarnings": [],
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z"
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z"
     },
     {
       "id": "OFF-1779166412256-ntt15",
@@ -5740,8 +5740,8 @@
       "role": "admin",
       "name": "V9 Admin A",
       "email": "v9-admin-a@example.test",
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z"
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z"
     },
     {
       "id": "V9-A-AGENT",
@@ -5749,8 +5749,8 @@
       "role": "agent",
       "name": "V9 Agent A",
       "email": "v9-agent-a@example.test",
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z"
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z"
     },
     {
       "id": "V9-A-VIEWER",
@@ -5758,9 +5758,9 @@
       "role": "viewer",
       "name": "V9 Viewer A",
       "email": "v9-viewer-a@example.test",
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:23.636Z",
-      "passwordHash": "718be30accccb40e2d45dd00a2222f5b:4f2054475ef96a7b436d915cdbc5616fdb24680bbf427846e55661bb0cbf25becfc467916830093e8a31001466ba06de259d5534bf6c7f5feed781b7b8ebf90b",
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:54.281Z",
+      "passwordHash": "23f8a7605c903f756a5d4ad65e280b34:12e6704d11bd3c3741b57c1fdacf5e62807018a2b7bcbcee53457844b4ad1d89ec10f25f7b30eaf7528e7445926cc8346c5a7abc2276ffc081f4b4afdbe7e148",
       "passwordResetRequired": true,
       "sessionVersion": 2
     },
@@ -5770,8 +5770,8 @@
       "role": "agent",
       "name": "V9 Agent B",
       "email": "v9-agent-b@example.test",
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z"
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z"
     }
   ],
   "agencies": [
@@ -5802,8 +5802,8 @@
         "plan": "PRO",
         "status": "active"
       },
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z"
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z"
     },
     {
       "agencyId": "V9-AGENCY-B",
@@ -5815,8 +5815,8 @@
         "plan": "STARTER",
         "status": "active"
       },
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z"
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z"
     }
   ],
   "clients": [
@@ -5836,11 +5836,11 @@
           "offerId": "V9-OFFER-A",
           "status": "draft",
           "finalPrice": 1000,
-          "createdAt": "2026-05-19T18:22:08.747Z"
+          "createdAt": "2026-05-20T04:23:50.952Z"
         }
       ],
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z"
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z"
     },
     {
       "id": "V9-CLIENT-B",
@@ -5858,11 +5858,11 @@
           "offerId": "V9-OFFER-B",
           "status": "draft",
           "finalPrice": 2000,
-          "createdAt": "2026-05-19T18:22:08.747Z"
+          "createdAt": "2026-05-20T04:23:50.952Z"
         }
       ],
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z"
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z"
     },
     {
       "id": "client_502b45cca7d2",
@@ -7067,7 +7067,7 @@
   ],
   "activities": [
     {
-      "id": "act_1779214944053_573777",
+      "id": "act_1779251034538_761a72",
       "type": "agency_invite_created",
       "category": "auth",
       "userId": "V9-A-ADMIN",
@@ -7075,18 +7075,18 @@
       "offerId": null,
       "clientId": null,
       "agencyId": "V9-AGENCY-A",
-      "timestamp": "2026-05-19T18:22:24.053Z",
-      "createdAt": "2026-05-19T18:22:24.053Z",
+      "timestamp": "2026-05-20T04:23:54.538Z",
+      "createdAt": "2026-05-20T04:23:54.538Z",
       "metadata": {
         "capability": "users.manage",
         "role": "agent",
         "entityType": "invite",
-        "entityId": "INV-1779214944052-126420",
+        "entityId": "INV-1779251034537-914384",
         "email": "new-agent-a@example.test"
       }
     },
     {
-      "id": "act_1779214943638_e39d25",
+      "id": "act_1779251034282_76b767",
       "type": "admin_password_reset",
       "category": "auth",
       "userId": "V9-A-ADMIN",
@@ -7094,8 +7094,8 @@
       "offerId": null,
       "clientId": null,
       "agencyId": "V9-AGENCY-A",
-      "timestamp": "2026-05-19T18:22:23.638Z",
-      "createdAt": "2026-05-19T18:22:23.638Z",
+      "timestamp": "2026-05-20T04:23:54.282Z",
+      "createdAt": "2026-05-20T04:23:54.282Z",
       "metadata": {
         "capability": "users.manage",
         "role": "admin",
@@ -7115,8 +7115,8 @@
       "offerId": "V9-OFFER-A",
       "clientId": "V9-CLIENT-A",
       "agencyId": "V9-AGENCY-A",
-      "timestamp": "2026-05-19T18:22:08.747Z",
-      "createdAt": "2026-05-19T18:22:08.747Z",
+      "timestamp": "2026-05-20T04:23:50.952Z",
+      "createdAt": "2026-05-20T04:23:50.952Z",
       "metadata": {
         "entityType": "offer",
         "entityId": "V9-OFFER-A"
@@ -7131,8 +7131,8 @@
       "offerId": "V9-OFFER-B",
       "clientId": "V9-CLIENT-B",
       "agencyId": "V9-AGENCY-B",
-      "timestamp": "2026-05-19T18:22:08.747Z",
-      "createdAt": "2026-05-19T18:22:08.747Z",
+      "timestamp": "2026-05-20T04:23:50.952Z",
+      "createdAt": "2026-05-20T04:23:50.952Z",
       "metadata": {
         "entityType": "offer",
         "entityId": "V9-OFFER-B"
@@ -10078,16 +10078,16 @@
   "updatedAt": "2026-05-14T22:26:09.137Z",
   "invites": [
     {
-      "id": "INV-1779214944052-126420",
+      "id": "INV-1779251034537-914384",
       "agencyId": "V9-AGENCY-A",
       "email": "new-agent-a@example.test",
       "role": "agent",
       "status": "pending",
-      "tokenHash": "7a93f9496b67abc6027bc91448e533c4686ef1b98a36b29d265e2ce036d9aa52",
+      "tokenHash": "d5db5ed46eba2f013e7e0e88b4956d7bf0f8a6a0015084b5899079e4cd6468e8",
       "invitedBy": "V9-A-ADMIN",
-      "createdAt": "2026-05-19T18:22:24.052Z",
-      "updatedAt": "2026-05-19T18:22:24.052Z",
-      "expiresAt": "2026-05-26T18:22:24.052Z",
+      "createdAt": "2026-05-20T04:23:54.537Z",
+      "updatedAt": "2026-05-20T04:23:54.537Z",
+      "expiresAt": "2026-05-27T04:23:54.537Z",
       "acceptedAt": null,
       "acceptedBy": null
     },
@@ -10099,9 +10099,9 @@
       "status": "pending",
       "tokenHash": "boundary-fixture-a",
       "invitedBy": "V9-A-ADMIN",
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z",
-      "expiresAt": "2026-05-19T19:22:08.760Z",
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z",
+      "expiresAt": "2026-05-20T05:23:50.956Z",
       "acceptedAt": null,
       "acceptedBy": null
     },
@@ -10113,9 +10113,9 @@
       "status": "pending",
       "tokenHash": "boundary-fixture-b",
       "invitedBy": "V9-B-AGENT",
-      "createdAt": "2026-05-19T18:22:08.747Z",
-      "updatedAt": "2026-05-19T18:22:08.747Z",
-      "expiresAt": "2026-05-19T19:22:08.760Z",
+      "createdAt": "2026-05-20T04:23:50.952Z",
+      "updatedAt": "2026-05-20T04:23:50.952Z",
+      "expiresAt": "2026-05-20T05:23:50.956Z",
       "acceptedAt": null,
       "acceptedBy": null
     }

@@ -47,7 +47,6 @@ app.use((req, res, next) => {
 app.use(express.static(PUBLIC_DIR));
 
 ensureDb();
-ensureDefaultUser();
 
 function ensureDb() {
   if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
@@ -710,6 +709,8 @@ function ensureDefaultUser() {
 
   if (changed) writeDb(db);
 }
+
+ensureDefaultUser();
 
 function toNumber(value, fallback = 0) {
   if (value === null || value === undefined || value === "") return fallback;
