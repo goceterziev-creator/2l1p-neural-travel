@@ -1342,7 +1342,7 @@ function normalizeHotelProfileMetadata(hotel = {}, parsed = {}) {
 async function callVisionJson({ imageBuffer, mimeType, prompt }) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    const err = new Error("Missing OPENAI_API_KEY in .env.local");
+    const err = new Error("Missing OPENAI_API_KEY. Add it in Railway Variables to enable AI hotel screenshot import.");
     err.status = 500;
     throw err;
   }
@@ -2238,9 +2238,7 @@ app.get("/api/offers/stats/summary", requireCapability("offers.view"), (req, res
 
 app.get("/api/agency", requireCapability("agency.view"), (req, res) => {
   const db = readDb();
-  const agencyId = getCurrentAgencyId(req);
-  const agency = (db.agencies || []).find((item) => (item.agencyId || item.id) === agencyId);
-  if (!agency) return res.status(404).json({ error: "Agency not found" });
+  const agency = getCurrentAgency(db, req);
   res.json({
     agency,
     summary: {
