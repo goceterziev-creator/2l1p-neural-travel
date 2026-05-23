@@ -967,9 +967,9 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
   const rawHotelImages = safeArray(rawBody.hotelImages).join(" ");
   const destination = normalizeSearchText(offer.destination);
   const destinationAliases = {
-    rome: ["rome", "roma", "рим"],
-    rim: ["rome", "roma", "рим", "rim"],
-    "рим": ["rome", "roma", "рим"],
+    rome: ["rome", "roma", "рим", "fco", "fiumicino"],
+    rim: ["rome", "roma", "рим", "rim", "fco", "fiumicino"],
+    "рим": ["rome", "roma", "рим", "fco", "fiumicino"],
     bari: ["bari", "бари"],
     "бари": ["bari", "бари"],
     barcelona: ["barcelona", "барселона"],
