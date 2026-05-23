@@ -2823,7 +2823,11 @@ function detectTokyoFlight(rawText) {
 const tokyoFlight = detectTokyoFlight(text);
 
 if (tokyoFlight) {
-  const flightPrice = Number(tokyoFlight.price || 0);
+  const flightPrice =
+    extractLabeledFlightPrice(text || cleanText || "") ||
+    extractFlightPriceFromText(text || cleanText || "") ||
+    Number(tokyoFlight.price || 0);
+
   console.log("FLIGHT IMPORT RESPONSE:", {
     flightAirline: tokyoFlight.airline,
     flightRoute: tokyoFlight.route,
@@ -2833,14 +2837,23 @@ if (tokyoFlight) {
   return res.json({
     success: true,
     rawText: text,
+
     flightPrice,
+    price: flightPrice,
+    extractedPrice: flightPrice,
+
     flightAirline: tokyoFlight.airline,
     flightRoute: tokyoFlight.route,
     flightDeparture: tokyoFlight.departure,
     flightArrival: tokyoFlight.arrival,
     flightBaggage: tokyoFlight.baggage,
     flightNotes: tokyoFlight.notes,
-    flight: tokyoFlight,
+
+    flight: {
+      ...tokyoFlight,
+      price: flightPrice
+    },
+
     hotel: {}
   });
 }
