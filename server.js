@@ -1061,9 +1061,6 @@ const flightPrice = toNumber(body.flightPrice, 0);
 
   const { valid: hotelImages, invalid: invalidHotelImages } = sanitizeHotelImages(body.hotelImages);
 
-  const inputFlights = Array.isArray(body.flights) ? body.flights : [];
-const inputHotels = Array.isArray(body.hotels) ? body.hotels : [];
-
 const flights = inputFlights.length
   ? inputFlights.map(f => ({
       airline: f.airline || "",
