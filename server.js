@@ -3017,33 +3017,52 @@ if (!flight.notes || /imported from screenshot/i.test(flight.notes)) {
 
 // ===== GT63 ROUTE NORMALIZER =====
 const routeHint = String(req.body?.destination || "").toLowerCase();
+const routeText = cleanText.toLowerCase();
 
 if (
   routeHint.includes("rome") ||
-  routeHint.includes("рим") ||
-  cleanText.toLowerCase().includes("fco") ||
-  cleanText.toLowerCase().includes("fiumicino")
+  routeHint.includes("roma") ||
+  routeHint.includes("rim") ||
+  routeHint.includes("\u0440\u0438\u043c") ||
+  routeHint.includes("\u0420\u0438\u043c") ||
+  routeText.includes("fco") ||
+  routeText.includes("fiumicino") ||
+  routeText.includes("rome") ||
+  routeText.includes("roma")
 ) {
-  flight.airline = "Wizz Air";
-  flight.route = "SOF → FCO / FCO → SOF";
+  const hasRyanair = routeText.includes("ryanair");
+  const hasWizz = routeText.includes("wizz") || /\bw6\s?\d{3,5}\b/i.test(cleanText);
+  flight.airline = hasRyanair && hasWizz
+    ? "Ryanair + Wizz Air"
+    : hasRyanair
+    ? "Ryanair"
+    : hasWizz
+    ? "Wizz Air"
+    : "Airline needs review";
+  flight.route = "SOF -> FCO / FCO -> SOF";
 
   const times = text.match(/\d{1,2}:\d{2}/g) || [];
-  const flightNumbers = cleanText.match(/\bW6\s?\d{3,4}\b/gi) || [];
-  const outboundNumber = flightNumbers[0]?.replace(/\s+/g, " ") || "";
-  const inboundNumber = flightNumbers[1]?.replace(/\s+/g, " ") || "";
+  const wizzNumbers = cleanText.match(/\bW6\s?\d{3,5}\b/gi) || [];
+  const ryanairNumbers = cleanText.match(/\bFR\s?\d{3,5}\b/gi) || [];
+  const outboundNumber = (ryanairNumbers[0] || wizzNumbers[0] || "").replace(/\s+/g, " ");
+  const inboundNumber = (wizzNumbers[0] || wizzNumbers[1] || ryanairNumbers[1] || "").replace(/\s+/g, " ");
 
   if (times[0] && times[1]) {
-    flight.departure = `SOF → FCO, 27.12.2026, ${times[0]} - ${times[1]}${outboundNumber ? `, ${outboundNumber}` : ""}`;
+    flight.departure = `SOF -> FCO${hasRyanair ? ", Ryanair" : ""}, ${times[0]} - ${times[1]}${outboundNumber ? `, ${outboundNumber}` : ""}`;
+  } else if (!flight.departure || flight.departure === "Departure needs review") {
+    flight.departure = `SOF -> FCO${hasRyanair ? ", Ryanair" : ""}`;
   }
 
   if (times[2] && times[3]) {
-    flight.arrival = `FCO → SOF, 06.01.2027, ${times[2]} - ${times[3]}${inboundNumber ? `, ${inboundNumber}` : ""}`;
-  } else if (times[1] && !flight.arrival) {
-    flight.arrival = `FCO → SOF ${times[1]}`;
+    flight.arrival = `FCO -> SOF${hasWizz ? ", Wizz Air" : ""}, ${times[2]} - ${times[3]}${inboundNumber ? `, ${inboundNumber}` : ""}`;
+  } else if (times[1] && (!flight.arrival || flight.arrival === "Arrival needs review")) {
+    flight.arrival = `FCO -> SOF${hasWizz ? ", Wizz Air" : ""}, ${times[1]}`;
+  } else if (!flight.arrival || flight.arrival === "Arrival needs review") {
+    flight.arrival = `FCO -> SOF${hasWizz ? ", Wizz Air" : ""}`;
   }
 
-  flight.baggage = "Wizz Basic: включена малка чанта 40x30x20 см под седалката";
-  flight.notes = "Цената е извлечена от screenshot. Препоръчваме финална проверка на багажа, местата и условията преди резервация.";
+  flight.baggage = "Small cabin/personal item included according to airline conditions; verify baggage before booking.";
+  flight.notes = "Mixed-carrier Rome route normalized from screenshot. Confirm flight times, baggage, seats and fare rules before booking.";
 }
 
 return res.json({
