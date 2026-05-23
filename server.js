@@ -3047,9 +3047,9 @@ if (hotelNameMatch) hotel.name = hotelNameMatch[1];
 const starsMatch = cleanText.match(/(\d)\s?(?:star|stars|★)/i);
 if (starsMatch) hotel.stars = starsMatch[1];
 
-if (priceMatches?.length) {
-  const lastPrice = priceMatches[priceMatches.length - 1];
-  hotel.price = Number(lastPrice.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+const moneyValues = extractOcrMoneyValues(rawText || ocrText || text || cleanText || "");
+if (moneyValues.length) {
+  hotel.price = Math.max(...moneyValues);
 }
 
 hotel.name = hotel.name || "Detected hotel";
