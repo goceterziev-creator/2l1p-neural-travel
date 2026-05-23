@@ -1471,6 +1471,15 @@ function renderOfferHtml(offer, options = {}) {
       .trim();
   }
 
+  function clientSafeFlightText(value = "", fallback = "-") {
+    const text = cleanText(value);
+    if (!text || /needs review/i.test(text)) return fallback;
+    if (/small cabin\/personal item included according to airline conditions/i.test(text)) {
+      return "\u041C\u0430\u043B\u044A\u043A \u0441\u0430\u043B\u043E\u043D\u0435\u043D/\u043B\u0438\u0447\u0435\u043D \u0431\u0430\u0433\u0430\u0436 \u0441\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u0438\u0442\u0435.";
+    }
+    return text;
+  }
+
   function destinationKey(value = "") {
     return String(value || "")
       .toLowerCase()
@@ -1497,12 +1506,13 @@ function renderOfferHtml(offer, options = {}) {
   }
 
   function airlineName(value = "") {
-    const raw = cleanText(value);
+    const raw = clientSafeFlightText(value, "");
+    if (/ryanair/i.test(raw) && /wizz/i.test(raw)) return "Ryanair + Wizz Air";
     if (/wizz/i.test(raw)) return "Wizz Air";
     if (/ryanair/i.test(raw)) return "Ryanair";
     if (/turkish/i.test(raw)) return "Turkish Airlines";
     if (/lufthansa/i.test(raw)) return "Lufthansa";
-    return raw || "Полет";
+    return raw || "\u0410\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F \u0437\u0430 \u043F\u043E\u0442\u0432\u044A\u0440\u0436\u0434\u0435\u043D\u0438\u0435";
   }
 
   function normalizeDestinationText(value = "") {
@@ -1577,9 +1587,9 @@ function renderOfferHtml(offer, options = {}) {
         </div>
 
         <div class="detail-grid">
-          <div><strong>Отиване</strong><br>${escapeHtml(cleanText(flight.departure || "-"))}</div>
-          <div><strong>Връщане</strong><br>${escapeHtml(cleanText(flight.arrival || "-"))}</div>
-          <div><strong>Багаж</strong><br>${escapeHtml(cleanText(flight.baggage || "Според условията на авиокомпанията"))}</div>
+          <div><strong>Отиване</strong><br>${escapeHtml(clientSafeFlightText(flight.departure, "-"))}</div>
+          <div><strong>Връщане</strong><br>${escapeHtml(clientSafeFlightText(flight.arrival, "-"))}</div>
+          <div><strong>Багаж</strong><br>${escapeHtml(clientSafeFlightText(flight.baggage, "Според условията на авиокомпанията"))}</div>
           <div><strong>Препоръка</strong><br>Бъдете на летището поне 2 часа преди излитане.</div>
         </div>
 
