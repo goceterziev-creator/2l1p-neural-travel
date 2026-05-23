@@ -1096,7 +1096,7 @@ function normalizeOffer(body = {}) {
     clientPhone: body.clientPhone || "",
     destination: body.destination || "",
     travelDates: body.travelDates || "",
-    guests: body.guests || "",
+    guests: normalizeGuestsText(body.guests),
     status: String(body.status || "draft").toLowerCase(),
     currency: body.currency || "EUR",
     notes: body.notes || "",
@@ -1201,6 +1201,26 @@ function extractOcrMoneyValues(rawText = "") {
   return matches
     .map((value) => Number(String(value).replace(/[^\d,.]/g, "").replace(",", ".")))
     .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+function extractLabeledFlightPrice(rawText = "") {
+  const text = ocrCompactText(rawText);
+  const match =
+    text.match(/\bFLIGHTS?\s*([0-9]{1,6}[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)/i) ||
+    text.match(/\bTOTAL\s*([0-9]{1,6}[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)/i) ||
+    text.match(/(?:\u20ac|EUR|EURO)\s*([0-9]{1,6}[,.][0-9]{2})\b/i);
+
+  if (!match) return 0;
+  const value = Number(String(match[1] || "").replace(",", "."));
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function normalizeGuestsText(value = "") {
+  return String(value || "")
+    .replace(/\u0432\u044A\u0437\u0440\u0430\u0441\u0442\u043D\u043D\u0438/gi, "\u0432\u044A\u0437\u0440\u0430\u0441\u0442\u043D\u0438")
+    .replace(/vazrastnni/gi, "vazrastni")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function translateOcrCity(value = "") {
@@ -2824,9 +2844,12 @@ if (baggageMatch) {
 }
 
 // 💰 Flight price
+const labeledFlightPrice = extractLabeledFlightPrice(cleanText);
 const priceMatches = cleanText.match(/\d{1,4}(?:[\.,]\d{2})?\s?(?:\u20ac|eur)|(?:\u20ac|eur)\s?\d{1,4}(?:[\.,]\d{2})?/gi);
 
-if (priceMatches?.length) {
+if (labeledFlightPrice > 0) {
+  flight.price = labeledFlightPrice;
+} else if (priceMatches?.length) {
   const prices = priceMatches
     .map(p => Number(p.replace(/[^\d,\.]/g, "").replace(",", ".")))
     .filter(n => !Number.isNaN(n));
