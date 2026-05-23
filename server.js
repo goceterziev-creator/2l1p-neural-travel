@@ -1215,6 +1215,18 @@ function extractLabeledFlightPrice(rawText = "") {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+function extractFlightPriceFromText(rawText = "") {
+  const labeled = extractLabeledFlightPrice(rawText);
+  if (labeled > 0) return labeled;
+
+  const matches = ocrCompactText(rawText).match(/\d{1,4}(?:[\.,]\d{2})?\s?(?:\u20ac|eur)|(?:\u20ac|eur)\s?\d{1,4}(?:[\.,]\d{2})?/gi) || [];
+  const prices = matches
+    .map((value) => Number(String(value).replace(/[^\d,.]/g, "").replace(",", ".")))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  return prices.length ? Math.max(...prices) : 0;
+}
+
 function normalizeGuestsText(value = "") {
   return String(value || "")
     .replace(/\u0432\u044A\u0437\u0440\u0430\u0441\u0442\u043D\u043D\u0438/gi, "\u0432\u044A\u0437\u0440\u0430\u0441\u0442\u043D\u0438")
@@ -2642,9 +2654,22 @@ const profileImport = parseOcrByProfile(text, {
 });
 
 if (profileImport?.flight) {
+  const flightPrice = Number(profileImport.flight.price || 0);
+  console.log("FLIGHT IMPORT RESPONSE:", {
+    flightAirline: profileImport.flight.airline,
+    flightRoute: profileImport.flight.route,
+    flightPrice
+  });
   return res.json({
     success: true,
     rawText: text,
+    flightPrice,
+    flightAirline: profileImport.flight.airline,
+    flightRoute: profileImport.flight.route,
+    flightDeparture: profileImport.flight.departure,
+    flightArrival: profileImport.flight.arrival,
+    flightBaggage: profileImport.flight.baggage,
+    flightNotes: profileImport.flight.notes,
     flight: profileImport.flight,
     hotel: profileImport.hotel || {},
     metadata: profileImport.metadata,
@@ -2677,18 +2702,34 @@ if (
     ? `BCN → SOF, 26.06.2026 → 27.06.2026, ${timeMatches[2]} - ${timeMatches[3]}${inboundNumber ? `, ${inboundNumber}` : ""}`
     : "";
 
+  const flightPrice = 398;
+  const flight = {
+    airline: "Wizz Air",
+    route: "SOF → BCN / BCN → SOF",
+    departure: outbound,
+    arrival: inbound,
+    baggage: "Малка чанта включена",
+    notes: "Регистриран багаж от €36/крак",
+    price: flightPrice
+  };
+
+  console.log("FLIGHT IMPORT RESPONSE:", {
+    flightAirline: flight.airline,
+    flightRoute: flight.route,
+    flightPrice
+  });
+
   return res.json({
     success: true,
     rawText: text,
-    flight: {
-      airline: "Wizz Air",
-      route: "SOF → BCN / BCN → SOF",
-      departure: outbound,
-      arrival: inbound,
-      baggage: "Малка чанта включена",
-      notes: "Регистриран багаж от €36/крак",
-      price: 398
-    },
+    flightPrice,
+    flightAirline: flight.airline,
+    flightRoute: flight.route,
+    flightDeparture: flight.departure,
+    flightArrival: flight.arrival,
+    flightBaggage: flight.baggage,
+    flightNotes: flight.notes,
+    flight,
     hotel: {}
   });
 }
@@ -2782,9 +2823,23 @@ function detectTokyoFlight(rawText) {
 const tokyoFlight = detectTokyoFlight(text);
 
 if (tokyoFlight) {
+  const flightPrice = Number(tokyoFlight.price || 0);
+  console.log("FLIGHT IMPORT RESPONSE:", {
+    flightAirline: tokyoFlight.airline,
+    flightRoute: tokyoFlight.route,
+    flightPrice
+  });
+
   return res.json({
     success: true,
     rawText: text,
+    flightPrice,
+    flightAirline: tokyoFlight.airline,
+    flightRoute: tokyoFlight.route,
+    flightDeparture: tokyoFlight.departure,
+    flightArrival: tokyoFlight.arrival,
+    flightBaggage: tokyoFlight.baggage,
+    flightNotes: tokyoFlight.notes,
     flight: tokyoFlight,
     hotel: {}
   });
@@ -2793,9 +2848,24 @@ if (tokyoFlight) {
 const forcedFlight = normalizeFlightFromDestination(req.body?.destination, text);
 
 if (forcedFlight) {
+  const flightPrice = Number(forcedFlight.price || extractFlightPriceFromText(cleanText) || 0);
+  forcedFlight.price = flightPrice;
+  console.log("FLIGHT IMPORT RESPONSE:", {
+    flightAirline: forcedFlight.airline,
+    flightRoute: forcedFlight.route,
+    flightPrice
+  });
+
   return res.json({
     success: true,
     rawText: text,
+    flightPrice,
+    flightAirline: forcedFlight.airline,
+    flightRoute: forcedFlight.route,
+    flightDeparture: forcedFlight.departure,
+    flightArrival: forcedFlight.arrival,
+    flightBaggage: forcedFlight.baggage,
+    flightNotes: forcedFlight.notes,
     flight: forcedFlight,
     hotel: {}
   });
@@ -2844,19 +2914,9 @@ if (baggageMatch) {
 }
 
 // 💰 Flight price
-const labeledFlightPrice = extractLabeledFlightPrice(cleanText);
-const priceMatches = cleanText.match(/\d{1,4}(?:[\.,]\d{2})?\s?(?:\u20ac|eur)|(?:\u20ac|eur)\s?\d{1,4}(?:[\.,]\d{2})?/gi);
-
-if (labeledFlightPrice > 0) {
-  flight.price = labeledFlightPrice;
-} else if (priceMatches?.length) {
-  const prices = priceMatches
-    .map(p => Number(p.replace(/[^\d,\.]/g, "").replace(",", ".")))
-    .filter(n => !Number.isNaN(n));
-
-  if (prices.length) {
-    flight.price = Math.max(...prices);
-  }
+const parsedFlightPrice = extractFlightPriceFromText(cleanText);
+if (parsedFlightPrice > 0) {
+  flight.price = parsedFlightPrice;
 }
 
 // ===== GT63 FLIGHT CLEANUP / SANITIZER =====
@@ -3098,9 +3158,22 @@ if (
   flight.notes = "Mixed-carrier Rome route normalized from screenshot. Confirm flight times, baggage, seats and fare rules before booking.";
 }
 
+console.log("FLIGHT IMPORT RESPONSE:", {
+  flightAirline: flight.airline,
+  flightRoute: flight.route,
+  flightPrice: Number(flight.price || 0)
+});
+
 return res.json({
   success: true,
   rawText: text,
+  flightPrice: Number(flight.price || 0),
+  flightAirline: flight.airline,
+  flightRoute: flight.route,
+  flightDeparture: flight.departure,
+  flightArrival: flight.arrival,
+  flightBaggage: flight.baggage,
+  flightNotes: flight.notes,
   flight,
   hotel
 });

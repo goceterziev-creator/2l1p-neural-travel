@@ -2026,6 +2026,12 @@ async function uploadFlightImage() {
     console.log("FLIGHT OCR DATA:", data);
 
     const f = data.flight || {};
+    const flightPrice = getImportedFlightPrice(data, f);
+    console.log("FLIGHT IMPORT RESPONSE:", {
+      flightAirline: f.airline,
+      flightRoute: f.route,
+      flightPrice
+    });
     const selectedDestination = getDestinationValue();
 
     if (!destinationMatchesFlight(selectedDestination, f)) {
@@ -2045,7 +2051,7 @@ async function uploadFlightImage() {
     if ($("flightArrival")) $("flightArrival").value = f.arrival || "";
     if ($("flightBaggage")) $("flightBaggage").value = f.baggage || "";
     if ($("flightNotes")) $("flightNotes").value = f.notes || "";
-    if ($("flightPrice")) $("flightPrice").value = Number(f.price || 0).toFixed(2);
+    setValue("flightPrice", flightPrice.toFixed(2));
 
     calculatePricing();
     alert("Flight screenshot imported successfully.");
@@ -2053,6 +2059,18 @@ async function uploadFlightImage() {
     console.error("Flight image import failed:", error);
     alert(`Error: ${error.message}`);
   }
+}
+
+function getImportedFlightPrice(data = {}, flight = {}) {
+  return Number(
+    data.flightPrice ??
+    data.price ??
+    data.extractedPrice ??
+    flight.flightPrice ??
+    flight.price ??
+    flight.extractedPrice ??
+    0
+  ) || 0;
 }
 
 async function uploadHotelImage() {
@@ -2573,6 +2591,12 @@ async function autoBuildOffer() {
     });
 
     const f = flightData.flight || {};
+    const flightPrice = getImportedFlightPrice(flightData, f);
+    console.log("AUTO FLIGHT IMPORT RESPONSE:", {
+      flightAirline: f.airline,
+      flightRoute: f.route,
+      flightPrice
+    });
 
     // 2) Import hotel screenshot
   const hotelForm = new FormData();
@@ -2636,7 +2660,7 @@ if (validationWarnings.length) {
     if ($("flightArrival")) $("flightArrival").value = f.arrival || "";
     if ($("flightBaggage")) $("flightBaggage").value = f.baggage || "";
     if ($("flightNotes")) $("flightNotes").value = f.notes || "";
-    if ($("flightPrice")) $("flightPrice").value = Number(f.price || 0).toFixed(2);
+    setValue("flightPrice", flightPrice.toFixed(2));
 
     if ($("hotelName")) $("hotelName").value = h.name || $("hotelName").value || "";
     if ($("hotelStars")) $("hotelStars").value = h.stars || $("hotelStars").value || "";
