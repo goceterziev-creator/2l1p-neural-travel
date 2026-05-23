@@ -24,6 +24,43 @@ const WORKSPACE_LAZY_FLAGS = {
   overview: "instant"
 };
 
+let flights = [];
+let hotels = [];
+
+function addFlight(flight = {}) {
+  flights.push({
+    airline: flight.airline || "",
+    route: flight.route || "",
+    departure: flight.departure || "",
+    arrival: flight.arrival || "",
+    baggage: flight.baggage || "",
+    notes: flight.notes || "",
+    price: Number(flight.price || 0)
+  });
+
+  renderFlightCards();
+  updateAutoPrice();
+}
+
+function addHotel(hotel = {}) {
+  hotels.push({
+    name: hotel.name || "",
+    stars: hotel.stars || "",
+    area: hotel.area || "",
+    distance: hotel.distance || "",
+    room: hotel.room || "",
+    meal: hotel.meal || "",
+    price: Number(hotel.price || 0),
+    roomsLeft: hotel.roomsLeft || "",
+    description: hotel.description || "",
+    images: hotel.images || [],
+    selected: hotels.length === 0
+  });
+
+  renderHotelCards();
+  updateAutoPrice();
+}
+
 function readNavigationState() {
   try {
     return JSON.parse(localStorage.getItem(NAV_STATE_KEY) || "{}") || {};
@@ -2234,6 +2271,9 @@ async function saveOffer() {
   }
 
   const payload = collectForm();
+
+payload.flights = flights;
+payload.hotels = hotels;
 
   const destinationValue = payload.destination || "";
 

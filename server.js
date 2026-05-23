@@ -1025,7 +1025,24 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
 }
 
 function normalizeOffer(body = {}) {
-  const flightPrice = toNumber(body.flightPrice, 0);
+const inputFlights = Array.isArray(body.flights) ? body.flights : [];
+const inputHotels = Array.isArray(body.hotels) ? body.hotels : [];
+
+const calculatedFlightPrice = inputFlights.length
+  ? inputFlights.reduce((sum, f) => sum + toNumber(f.price, 0), 0)
+  : toNumber(body.flightPrice, 0);
+
+const selectedHotelInput =
+  inputHotels.find(h => h.selected) ||
+  inputHotels[0] ||
+  null;
+
+const calculatedHotelPrice = selectedHotelInput
+  ? toNumber(selectedHotelInput.price, 0)
+  : toNumber(body.hotelPrice, 0);
+
+  
+const flightPrice = toNumber(body.flightPrice, 0);
   const hotelPrice = toNumber(body.hotelPrice, 0);
   const transferPrice = toNumber(body.transferPrice, 0);
 
@@ -1044,51 +1061,68 @@ function normalizeOffer(body = {}) {
 
   const { valid: hotelImages, invalid: invalidHotelImages } = sanitizeHotelImages(body.hotelImages);
 
-  const flights = [
-    {
-      airline: body.flightAirline || "",
-      route: body.flightRoute || "",
-      departure: body.flightDeparture || "",
-      arrival: body.flightArrival || "",
-      baggage: body.flightBaggage || "",
-      notes: body.flightNotes || "",
-      price: flightPrice
-    }
-  ].filter((f) =>
-    f.airline ||
-    f.route ||
-    f.departure ||
-    f.arrival ||
-    f.baggage ||
-    f.notes ||
-    toNumber(f.price, 0) > 0
-  );
+  const inputFlights = Array.isArray(body.flights) ? body.flights : [];
+const inputHotels = Array.isArray(body.hotels) ? body.hotels : [];
 
-  const hotels = [
-    {
-      name: body.hotelName || "",
-      stars: body.hotelStars || "",
-      area: body.hotelArea || "",
-      distance: body.hotelDistance || "",
-      room: body.hotelRoom || "",
-      meal: body.hotelMeal || "",
-      price: hotelPrice,
-      roomsLeft: body.hotelRoomsLeft || "",
-      description: body.hotelDescription || "",
-      images: hotelImages
-    }
-  ].filter((h) =>
-    h.name ||
-    h.stars ||
-    h.area ||
-    h.distance ||
-    h.room ||
-    h.meal ||
-    toNumber(h.price, 0) > 0 ||
-    h.roomsLeft ||
-    h.description ||
-    h.images.length
-  );
+const flights = inputFlights.length
+  ? inputFlights.map(f => ({
+      airline: f.airline || "",
+      route: f.route || "",
+      departure: f.departure || "",
+      arrival: f.arrival || "",
+      baggage: f.baggage || "",
+      notes: f.notes || "",
+      price: toNumber(f.price, 0)
+    })).filter(f =>
+      f.airline || f.route || f.departure || f.arrival || f.baggage || f.notes || toNumber(f.price, 0) > 0
+    )
+  : [
+      {
+        airline: body.flightAirline || "",
+        route: body.flightRoute || "",
+        departure: body.flightDeparture || "",
+        arrival: body.flightArrival || "",
+        baggage: body.flightBaggage || "",
+        notes: body.flightNotes || "",
+        price: flightPrice
+      }
+    ].filter(f =>
+      f.airline || f.route || f.departure || f.arrival || f.baggage || f.notes || toNumber(f.price, 0) > 0
+    );
+
+const hotels = inputHotels.length
+  ? inputHotels.map((h, index) => ({
+      name: h.name || "",
+      stars: h.stars || "",
+      area: h.area || "",
+      distance: h.distance || "",
+      room: h.room || "",
+      meal: h.meal || "",
+      price: toNumber(h.price, 0),
+      roomsLeft: h.roomsLeft || "",
+      description: h.description || "",
+      images: sanitizeHotelImages(h.images || []).valid,
+      selected: Boolean(h.selected || index === 0)
+    })).filter(h =>
+      h.name || h.stars || h.area || h.distance || h.room || h.meal || toNumber(h.price, 0) > 0 || h.roomsLeft || h.description || h.images.length
+    )
+  : [
+      {
+        name: body.hotelName || "",
+        stars: body.hotelStars || "",
+        area: body.hotelArea || "",
+        distance: body.hotelDistance || "",
+        room: body.hotelRoom || "",
+        meal: body.hotelMeal || "",
+        price: hotelPrice,
+        roomsLeft: body.hotelRoomsLeft || "",
+        description: body.hotelDescription || "",
+        images: hotelImages,
+        selected: true
+      }
+    ].filter(h =>
+      h.name || h.stars || h.area || h.distance || h.room || h.meal || toNumber(h.price, 0) > 0 || h.roomsLeft || h.description || h.images.length
+    );
 
   const offer = {
     id: body.id || uid(),
