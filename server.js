@@ -2824,36 +2824,26 @@ const tokyoFlight = detectTokyoFlight(text);
 
 if (tokyoFlight) {
   const flightPrice =
-    extractLabeledFlightPrice(text || cleanText || "") ||
-    extractFlightPriceFromText(text || cleanText || "") ||
+    extractLabeledFlightPrice(text || "") ||
+    extractFlightPriceFromText(text || "") ||
     Number(tokyoFlight.price || 0);
-
-  console.log("FLIGHT IMPORT RESPONSE:", {
-    flightAirline: tokyoFlight.airline,
-    flightRoute: tokyoFlight.route,
-    flightPrice
-  });
 
   return res.json({
     success: true,
     rawText: text,
-
     flightPrice,
     price: flightPrice,
     extractedPrice: flightPrice,
-
     flightAirline: tokyoFlight.airline,
     flightRoute: tokyoFlight.route,
     flightDeparture: tokyoFlight.departure,
     flightArrival: tokyoFlight.arrival,
     flightBaggage: tokyoFlight.baggage,
     flightNotes: tokyoFlight.notes,
-
     flight: {
       ...tokyoFlight,
       price: flightPrice
     },
-
     hotel: {}
   });
 }
@@ -3060,7 +3050,7 @@ if (hotelNameMatch) hotel.name = hotelNameMatch[1];
 const starsMatch = cleanText.match(/(\d)\s?(?:star|stars|★)/i);
 if (starsMatch) hotel.stars = starsMatch[1];
 
-const moneyValues = extractOcrMoneyValues(rawText || ocrText || text || cleanText || "");
+const moneyValues = extractOcrMoneyValues(text || "");
 if (moneyValues.length) {
   hotel.price = Math.max(...moneyValues);
 }
