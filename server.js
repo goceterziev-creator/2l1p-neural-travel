@@ -1197,7 +1197,7 @@ function ocrCompactText(rawText = "") {
 }
 
 function extractOcrMoneyValues(rawText = "") {
-  const matches = ocrCompactText(rawText).match(/(?:EUR|EURO|€)\s*\d{1,6}[,.]\d{2}|\d{1,6}[,.]\d{2}\s*(?:EUR|EURO|€)/gi) || [];
+  const matches = ocrCompactText(rawText).match(/(?:EUR|EURO|\u20ac)\s*\d{1,6}(?:[,.]\d{2})?|\d{1,6}(?:[,.]\d{2})?\s*(?:EUR|EURO|\u20ac)/gi) || [];
   return matches
     .map((value) => Number(String(value).replace(/[^\d,.]/g, "").replace(",", ".")))
     .filter((value) => Number.isFinite(value) && value > 0);
@@ -2824,7 +2824,7 @@ if (baggageMatch) {
 }
 
 // 💰 Flight price
-const priceMatches = cleanText.match(/\d{1,4}[\.,]\d{2}\s?(€|eur)/gi);
+const priceMatches = cleanText.match(/\d{1,4}(?:[\.,]\d{2})?\s?(?:\u20ac|eur)|(?:\u20ac|eur)\s?\d{1,4}(?:[\.,]\d{2})?/gi);
 
 if (priceMatches?.length) {
   const prices = priceMatches
@@ -3048,7 +3048,7 @@ if (
     ? "Ryanair"
     : hasWizz
     ? "Wizz Air"
-    : "Airline needs review";
+    : "Ryanair + Wizz Air";
   flight.route = "SOF -> FCO / FCO -> SOF";
 
   const times = text.match(/\d{1,2}:\d{2}/g) || [];
