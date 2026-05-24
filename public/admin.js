@@ -2166,6 +2166,7 @@ async function uploadHotelImage() {
   try {
     const formData = new FormData();
     formData.append("image", file);
+    formData.append("destination", $("destination")?.value || "");
 
     const data = await fetchJson("/api/import-hotel-image", {
       method: "POST",

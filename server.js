@@ -1464,6 +1464,45 @@ async function callVisionJson({ imageBuffer, mimeType, prompt }) {
   return extractJsonObject(outputText);
 }
 
+async function findHotelImageWithSerpApi(hotelName = "", destination = "") {
+  const apiKey = process.env.SERPAPI_KEY;
+  const name = String(hotelName || "").trim();
+  if (!apiKey || !name) return "";
+
+  try {
+    const query = [name, destination, "hotel exterior room"]
+      .map((part) => String(part || "").trim())
+      .filter(Boolean)
+      .join(" ");
+
+    const url = new URL("https://serpapi.com/search.json");
+    url.searchParams.set("engine", "google_images");
+    url.searchParams.set("q", query);
+    url.searchParams.set("api_key", apiKey);
+
+    const fetchOptions = {};
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+      fetchOptions.signal = AbortSignal.timeout(8000);
+    }
+
+    const response = await fetch(url, fetchOptions);
+    if (!response.ok) {
+      console.warn("SerpAPI hotel image lookup failed:", response.status);
+      return "";
+    }
+
+    const data = await response.json();
+    const candidates = safeArray(data?.images_results)
+      .flatMap((item) => [item?.original, item?.thumbnail])
+      .filter((src) => typeof src === "string" && /^https?:\/\//i.test(src));
+
+    return candidates.find(isLikelyImageUrl) || "";
+  } catch (error) {
+    console.warn("SerpAPI hotel image lookup skipped:", error.message);
+    return "";
+  }
+}
+
 function normalizeHotelTextToBulgarian(parsed = {}) {
   const mealMap = new Map([
     ["breakfast included", "Включена закуска"],
@@ -3420,6 +3459,13 @@ Rules:
     });
 
     const hotel = normalizeHotelTextToBulgarian(parsed);
+    const imageUrl = await findHotelImageWithSerpApi(
+      hotel.name,
+      hotel.area || req.body?.destination || ""
+    );
+    if (imageUrl) {
+      hotel.images = [imageUrl];
+    }
     const metadata = normalizeHotelProfileMetadata(hotel, parsed);
 
     res.json({
