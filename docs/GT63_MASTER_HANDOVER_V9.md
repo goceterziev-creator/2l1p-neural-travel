@@ -357,6 +357,9 @@ Planned:
 ## V10
 Closed Beta SaaS
 
+Status:
+ACTIVE
+
 Target:
 2-5 real agencies
 
@@ -366,6 +369,8 @@ Focus:
 - trust
 - audit
 - scoped multi-agency runtime
+- beta demo package
+- real agency discovery
 
 Precondition:
 - npm run qa
@@ -373,6 +378,13 @@ Precondition:
 
 Runbook:
 - docs/V10_CLOSED_BETA_PREP.md
+- docs/V10_BETA_DEMO_PACKAGE.md
+
+Current V10 layers:
+- V10.3 Luxury PDF Brochure = PASS
+- V10.4 Hotel Image Resolver = PASS
+- V10.5 WhatsApp QR CTA = PASS
+- V10.6 Beta Demo Package = ACTIVE
 
 ---
 

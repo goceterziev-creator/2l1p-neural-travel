@@ -171,6 +171,28 @@ Collect feedback on:
 - confusing disabled actions
 - missing audit/history context
 
+## Demo Package
+
+Use:
+
+- `docs/V10_BETA_DEMO_PACKAGE.md`
+
+Before contacting agencies, prepare:
+
+- one canonical production offer URL
+- one generated PDF
+- one short demo script
+- one agency discovery checklist
+- one list of real workflow blockers to observe
+
+Demo rule:
+
+- show the finished PDF first
+- then show the screenshot-to-offer workflow
+- do not sell future features
+- do not implement every requested idea immediately
+- patch only beta workflow blockers
+
 Do not collect feedback on:
 
 - billing UI
