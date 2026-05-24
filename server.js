@@ -1530,6 +1530,13 @@ function renderOfferHtml(offer, options = {}) {
     "рим": "https://images.unsplash.com/photo-1552832230-c0197dd311b5"
   };
 
+  const autoHotelImages = {
+    rome: "https://images.unsplash.com/photo-1566073771259-6a8506099945",
+    rim: "https://images.unsplash.com/photo-1566073771259-6a8506099945",
+    "рим": "https://images.unsplash.com/photo-1566073771259-6a8506099945",
+    default: "https://images.unsplash.com/photo-1566073771259-6a8506099945"
+  };
+
   function cleanText(value = "") {
     return String(value || "")
       .replace(/Genius.*?\./gi, "")
@@ -1630,8 +1637,29 @@ function renderOfferHtml(offer, options = {}) {
     offer.destinationImage ||
     autoImages[destinationKey(offer.destination)] ||
     "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee";
+  const hotelFallbackImage =
+    autoHotelImages[destinationKey(offer.destination)] ||
+    autoHotelImages.default;
 
   const heroParagraphs = splitDescription(offer.destinationDescription);
+  const tripHighlights = [
+    {
+      title: "\u041F\u043E\u0434\u0431\u0440\u0430\u043D \u043C\u0430\u0440\u0448\u0440\u0443\u0442",
+      text: flights.length > 1
+        ? "\u041D\u044F\u043A\u043E\u043B\u043A\u043E \u043F\u043E\u043B\u0435\u0442\u0430 \u0441\u0430 \u043A\u043E\u043C\u0431\u0438\u043D\u0438\u0440\u0430\u043D\u0438 \u0432 \u044F\u0441\u0435\u043D \u043F\u044A\u0442\u043D\u0438\u0447\u0435\u0441\u043A\u0438 \u043F\u043B\u0430\u043D."
+        : "\u041F\u043E\u043B\u0435\u0442\u044A\u0442 \u0435 \u043F\u043E\u0434\u0431\u0440\u0430\u043D \u0441\u043F\u043E\u0440\u0435\u0434 \u0434\u0430\u0442\u0438\u0442\u0435 \u0438 \u0431\u044E\u0434\u0436\u0435\u0442\u0430."
+    },
+    {
+      title: "\u0425\u043E\u0442\u0435\u043B\u0441\u043A\u0438 \u0438\u0437\u0431\u043E\u0440",
+      text: hotels.length > 1
+        ? "\u0412\u0438\u0436\u0434\u0430\u0442\u0435 \u0441\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435 \u043C\u0435\u0436\u0434\u0443 \u043F\u0440\u0435\u043C\u0438\u0443\u043C \u0438 \u043F\u043E-\u0438\u043A\u043E\u043D\u043E\u043C\u0438\u0447\u043D\u0430 \u043E\u043F\u0446\u0438\u044F."
+        : "\u0425\u043E\u0442\u0435\u043B\u044A\u0442 \u0435 \u043F\u043E\u0434\u0431\u0440\u0430\u043D \u0437\u0430 \u0443\u0434\u043E\u0431\u0435\u043D \u0438 \u0441\u043F\u043E\u043A\u043E\u0435\u043D \u043F\u0440\u0435\u0441\u0442\u043E\u0439."
+    },
+    {
+      title: "\u042F\u0441\u043D\u0430 \u043A\u0440\u0430\u0439\u043D\u0430 \u0446\u0435\u043D\u0430",
+      text: "\u041A\u043B\u0438\u0435\u043D\u0442\u044A\u0442 \u0432\u0438\u0436\u0434\u0430 \u0441\u0430\u043C\u043E \u0444\u0438\u043D\u0430\u043B\u043D\u0430\u0442\u0430 \u0446\u0435\u043D\u0430 \u0438 \u043A\u043B\u044E\u0447\u043E\u0432\u0438\u0442\u0435 \u0443\u0441\u043B\u043E\u0432\u0438\u044F."
+    }
+  ];
 
   const included = [
     flights.length ? "Полет включен" : "",
@@ -1675,7 +1703,9 @@ function renderOfferHtml(offer, options = {}) {
   const orderedHotels = hotels.slice().sort((a, b) => Number(Boolean(b.selected)) - Number(Boolean(a.selected)));
 
   const hotelCards = orderedHotels.map((hotel, index) => {
-    const images = safeArray(hotel.images).filter(Boolean).slice(0, 3);
+    const providedImages = safeArray(hotel.images).filter(Boolean);
+    const directImage = cleanText(hotel.image || hotel.imageUrl || hotel.photo || hotel.thumbnail);
+    const images = (providedImages.length ? providedImages : [directImage || hotelFallbackImage]).filter(Boolean).slice(0, 3);
     const description = cleanText(hotel.description) ||
       `Подбран хотел в ${destinationName} с удобства за комфортен престой.`;
     const isSelected = hasSelectedHotel ? Boolean(hotel.selected) : index === 0;
@@ -1683,10 +1713,16 @@ function renderOfferHtml(offer, options = {}) {
       ? "\u0418\u0437\u0431\u0440\u0430\u043d \u0445\u043e\u0442\u0435\u043b"
       : `\u0425\u043e\u0442\u0435\u043b \u043e\u043f\u0446\u0438\u044f ${index + 1}`;
     const hotelPrice = toNumber(hotel.price, 0);
+    const optionTone = isSelected
+      ? "Premium option"
+      : hotelPrice > 0
+        ? "Best value"
+        : "Alternative option";
 
     return `
       <article class="card hotel-card hotel-option-card${isSelected ? " selected" : ""}">
         <div class="option-badge">${escapeHtml(optionLabel)}</div>
+        <div class="option-meta">${escapeHtml(optionTone)}</div>
         ${hotelPrice > 0 ? `<div class="option-price">${formatMoney(hotelPrice, hotel.currency || offer.currency || "EUR")}</div>` : ""}
         ${images.length ? `
           <div class="hotel-images">
@@ -1977,6 +2013,14 @@ h1 {
   padding: 7px 10px;
   margin-bottom: 14px;
 }
+.option-meta {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .8px;
+  margin: -6px 0 14px;
+  text-transform: uppercase;
+}
 .option-price {
   position: absolute;
   top: 22px;
@@ -2007,6 +2051,29 @@ h1 {
   margin: 0;
   padding-left: 20px;
   line-height: 1.7;
+}
+.trip-highlights {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+}
+.trip-highlight {
+  background: #fff;
+  border: 1px solid #e1e7ef;
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .06);
+}
+.trip-highlight strong {
+  display: block;
+  color: #101827;
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+.trip-highlight span {
+  color: #475569;
+  line-height: 1.45;
 }
 .cta-card {
   background: linear-gradient(135deg, #101827, #17233a);
@@ -2079,7 +2146,7 @@ h1 {
   .hero { padding: 34px 24px; min-height: 640px; }
   h1 { font-size: 48px; }
   .price { font-size: 42px; }
-  .detail-grid, .hotel-images { grid-template-columns: 1fr; }
+  .detail-grid, .hotel-images, .trip-highlights { grid-template-columns: 1fr; }
   .option-price { position: static; display: inline-flex; margin-bottom: 12px; }
 }
 @media print {
@@ -2092,10 +2159,12 @@ h1 {
   .section h2 { break-after: avoid; page-break-after: avoid; }
   .section h2::before { height: 2px; }
   .section h2 + .card { break-before: avoid; page-break-before: avoid; }
+  .section h2 + .hotel-options-grid { break-before: avoid; page-break-before: avoid; }
   .card { box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
+  .trip-highlight { box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
   .quiet-note { font-size: 15px; margin-top: 16px; }
   .cta-card h2 { font-size: 26px; }
-  .hotel-images img { height: 150px; }
+  .hotel-images img { height: 135px; }
 }
 @page { size: A4; margin: 12mm; }
 </style>
@@ -2132,6 +2201,9 @@ h1 {
         <li>Удобна комбинация от полет, хотел и ясен бюджет</li>
         <li>Подходящ избор за комфортно и запомнящо се пътуване</li>
       </ul>
+    </div>
+    <div class="trip-highlights">
+      ${tripHighlights.map((item) => `<div class="trip-highlight"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.text)}</span></div>`).join("")}
     </div>
   </section>
 
