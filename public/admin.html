@@ -305,6 +305,7 @@
 
     .card h2 { margin: 0 0 12px; font-size: 22px; }
     .card h3 { margin: 16px 0 10px; font-size: 16px; color: #fff; }
+    .legacy-fields { display: none !important; }
 
     .muted {
       color: #94a3b8;
@@ -2606,15 +2607,12 @@
 
 <h3>Flight Details</h3>
 
-<div class="row">
-  ...
-</div>
-
 <div id="flightCards"></div>
 
 <button type="button" id="addFlightBtn">
   + Add Flight
 </button>
+<div class="legacy-fields" aria-hidden="true">
           <div class="row">
             <div>
               <label>Flight Airline</label>
@@ -2647,14 +2645,11 @@
               <input id="flightNotes" />
             </div>
           </div>
+</div>
 
           <div class="divider"></div>
 
           <h3>Hotel Details</h3>
-
-<div class="row">
-  ...
-</div>
 
 <div id="hotelCards"></div>
 
@@ -2662,6 +2657,7 @@
   + Add Hotel
 </button>
 
+<div class="legacy-fields" aria-hidden="true">
           <div class="row">
             <div>
               <label>Main Hotel</label>
@@ -2711,6 +2707,7 @@
 
           <label>Hotel Image URLs</label>
           <textarea id="hotelImages" placeholder="Paste one image URL per line"></textarea>
+</div>
 
           <div class="divider"></div>
 

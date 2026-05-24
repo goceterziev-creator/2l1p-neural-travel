@@ -1038,14 +1038,15 @@ const selectedHotelInput =
   inputHotels.find(h => h.selected) ||
   inputHotels[0] ||
   null;
+const hasSelectedHotelInput = inputHotels.some((h) => h.selected);
 
 const calculatedHotelPrice = selectedHotelInput
   ? toNumber(selectedHotelInput.price, 0)
   : toNumber(body.hotelPrice, 0);
 
   
-const flightPrice = toNumber(body.flightPrice, 0);
-  const hotelPrice = toNumber(body.hotelPrice, 0);
+const flightPrice = calculatedFlightPrice;
+  const hotelPrice = calculatedHotelPrice;
   const transferPrice = toNumber(body.transferPrice, 0);
 
   const basePrice = flightPrice + hotelPrice + transferPrice;
@@ -1101,7 +1102,7 @@ const hotels = inputHotels.length
       roomsLeft: h.roomsLeft || "",
       description: h.description || "",
       images: sanitizeHotelImages(h.images || []).valid,
-      selected: Boolean(h.selected || index === 0)
+      selected: Boolean(h.selected || (!hasSelectedHotelInput && index === 0))
     })).filter(h =>
       h.name || h.stars || h.area || h.distance || h.room || h.meal || toNumber(h.price, 0) > 0 || h.roomsLeft || h.description || h.images.length
     )
@@ -1135,8 +1136,8 @@ const hotels = inputHotels.length
     notes: body.notes || "",
     destinationDescription: body.destinationDescription || "",
     validationWarnings: [],
-    flightRoute: body.flightRoute || "",
-    hotel: body.hotelName || "",
+    flightRoute: body.flightRoute || flights[0]?.route || "",
+    hotel: body.hotelName || hotels.find((item) => item.selected)?.name || hotels[0]?.name || "",
     flightPrice: Number(flightPrice.toFixed(2)),
     hotelPrice: Number(hotelPrice.toFixed(2)),
     transferPrice: Number(transferPrice.toFixed(2)),

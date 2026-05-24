@@ -617,6 +617,40 @@ function calculatePricing() {
   return { base, final, profit };
 }
 
+function selectedHotel() {
+  return hotels.find((hotel) => hotel.selected) || hotels[0] || {};
+}
+
+function syncLegacyFieldsFromBuilder() {
+  const firstFlight = flights[0] || {};
+  const hotel = selectedHotel();
+  const flightTotal = flights.reduce((sum, flight) => sum + Number(flight.price || 0), 0);
+
+  setValue("flightAirline", firstFlight.airline || "");
+  setValue("flightRoute", firstFlight.route || "");
+  setValue("flightDeparture", firstFlight.departure || "");
+  setValue("flightArrival", firstFlight.arrival || "");
+  setValue("flightBaggage", firstFlight.baggage || "");
+  setValue("flightNotes", firstFlight.notes || "");
+  setValue("flightPrice", flightTotal.toFixed(2));
+
+  setValue("hotelName", hotel.name || "");
+  setValue("hotelStars", hotel.stars || "");
+  setValue("hotelArea", hotel.area || "");
+  setValue("hotelDistance", hotel.distance || "");
+  setValue("hotelRoom", hotel.room || "");
+  setValue("hotelMeal", hotel.meal || "");
+  setValue("hotelRoomsLeft", hotel.roomsLeft || "");
+  setValue("hotelDescription", hotel.description || "");
+  setValue("hotelImages", Array.isArray(hotel.images) ? hotel.images.join("\n") : "");
+  if (hotels.length) setValue("hotelPrice", Number(hotel.price || 0).toFixed(2));
+}
+
+function updateAutoPrice() {
+  syncLegacyFieldsFromBuilder();
+  calculatePricing();
+}
+
 async function loadStats() {
   try {
     const stats = await fetchJson("/api/offers/stats/summary");
@@ -1940,6 +1974,10 @@ function updateCreateSurfaceSummary() {
 function populateForm(offer = {}) {
   const flight = firstItem(offer.flights || offer.flightOptions);
   const hotel = firstItem(offer.hotels || offer.hotelOptions);
+  flights = Array.isArray(offer.flights) && offer.flights.length ? offer.flights.map((item) => ({ ...item })) : (flight.airline || flight.route || flight.price ? [{ ...flight, price: Number(offer.flightPrice || flight.price || 0) }] : []);
+  hotels = Array.isArray(offer.hotels) && offer.hotels.length ? offer.hotels.map((item, index) => ({ ...item, selected: Boolean(item.selected || index === 0) })) : (hotel.name || hotel.price ? [{ ...hotel, price: Number(offer.hotelPrice || hotel.price || 0), selected: true }] : []);
+  renderFlightCards();
+  renderHotelCards();
 
   setValue("clientName", offer.clientName);
   setValue("clientPhone", offer.clientPhone);
@@ -1976,7 +2014,7 @@ function populateForm(offer = {}) {
   setValue("validForDays", offer.validForDays || 1);
   setValue("customValidUntil", "");
 
-  calculatePricing();
+  updateAutoPrice();
 }
 
 async function editOffer(id) {
@@ -2089,6 +2127,7 @@ async function uploadFlightImage() {
     if ($("flightBaggage")) $("flightBaggage").value = f.baggage || "";
     if ($("flightNotes")) $("flightNotes").value = f.notes || "";
     setValue("flightPrice", flightPrice.toFixed(2));
+    addFlight({ ...f, price: flightPrice });
 
     calculatePricing();
     alert("Flight screenshot imported successfully.");
@@ -2169,6 +2208,7 @@ async function uploadHotelImage() {
     if (Number(h.price || 0) > 0 && $("hotelPrice")) {
       $("hotelPrice").value = Number(h.price || 0).toFixed(2);
     }
+    addHotel(h);
 
     calculatePricing();
     alert("Hotel screenshot imported successfully.");
@@ -2179,7 +2219,7 @@ async function uploadHotelImage() {
 }
 
 function collectForm() {
-  calculatePricing();
+  updateAutoPrice();
 
 const destinationValue = $("destination")?.value.trim() || "";
 
@@ -2362,28 +2402,14 @@ function renderFlightCards() {
 
   box.innerHTML = flights.map((f, i) => `
     <div class="flight-card">
-      <input
-        placeholder="Airline"
-        value="${f.airline || ""}"
-        onchange="flights[${i}].airline=this.value"
-      />
-
-      <input
-        placeholder="Route"
-        value="${f.route || ""}"
-        onchange="flights[${i}].route=this.value"
-      />
-
-      <input
-        type="number"
-        placeholder="Price"
-        value="${f.price || 0}"
-        onchange="flights[${i}].price=Number(this.value||0);updateAutoPrice();"
-      />
-
-      <button type="button" onclick="removeFlight(${i})">
-        Remove
-      </button>
+      <input placeholder="Airline" value="${escapeHtml(f.airline || "")}" onchange="flights[${i}].airline=this.value;updateAutoPrice();" />
+      <input placeholder="Route" value="${escapeHtml(f.route || "")}" onchange="flights[${i}].route=this.value;updateAutoPrice();" />
+      <input placeholder="Departure" value="${escapeHtml(f.departure || "")}" onchange="flights[${i}].departure=this.value;updateAutoPrice();" />
+      <input placeholder="Arrival" value="${escapeHtml(f.arrival || "")}" onchange="flights[${i}].arrival=this.value;updateAutoPrice();" />
+      <input placeholder="Baggage" value="${escapeHtml(f.baggage || "")}" onchange="flights[${i}].baggage=this.value;updateAutoPrice();" />
+      <input type="number" step="0.01" placeholder="Price" value="${Number(f.price || 0)}" onchange="flights[${i}].price=Number(this.value||0);updateAutoPrice();" />
+      <textarea placeholder="Flight Notes" onchange="flights[${i}].notes=this.value;updateAutoPrice();">${escapeHtml(f.notes || "")}</textarea>
+      <button type="button" onclick="removeFlight(${i})">Remove Flight</button>
     </div>
   `).join("");
 }
@@ -2418,48 +2444,14 @@ function renderHotelCards() {
   box.innerHTML = hotels.map((h, i) => `
     <div class="hotel-card">
 
-      <input
-        placeholder="Hotel Name"
-        value="${h.name || ""}"
-        onchange="hotels[${i}].name=this.value"
-      />
-
-      <input
-        placeholder="Stars"
-        value="${h.stars || ""}"
-        onchange="hotels[${i}].stars=this.value"
-      />
-
-      <input
-        placeholder="Area"
-        value="${h.area || ""}"
-        onchange="hotels[${i}].area=this.value"
-      />
-
-      <input
-        placeholder="Distance"
-        value="${h.distance || ""}"
-        onchange="hotels[${i}].distance=this.value"
-      />
-
-      <input
-        placeholder="Room"
-        value="${h.room || ""}"
-        onchange="hotels[${i}].room=this.value"
-      />
-
-      <input
-        placeholder="Meal"
-        value="${h.meal || ""}"
-        onchange="hotels[${i}].meal=this.value"
-      />
-
-      <input
-        type="number"
-        placeholder="Price"
-        value="${h.price || 0}"
-        onchange="hotels[${i}].price=Number(this.value||0);updateAutoPrice();"
-      />
+      <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;updateAutoPrice();" />
+      <input placeholder="Stars" value="${escapeHtml(h.stars || "")}" onchange="hotels[${i}].stars=this.value;updateAutoPrice();" />
+      <input placeholder="Area" value="${escapeHtml(h.area || "")}" onchange="hotels[${i}].area=this.value;updateAutoPrice();" />
+      <input placeholder="Distance" value="${escapeHtml(h.distance || "")}" onchange="hotels[${i}].distance=this.value;updateAutoPrice();" />
+      <input placeholder="Room" value="${escapeHtml(h.room || "")}" onchange="hotels[${i}].room=this.value;updateAutoPrice();" />
+      <input placeholder="Meal" value="${escapeHtml(h.meal || "")}" onchange="hotels[${i}].meal=this.value;updateAutoPrice();" />
+      <input placeholder="Rooms Left" value="${escapeHtml(h.roomsLeft || "")}" onchange="hotels[${i}].roomsLeft=this.value;updateAutoPrice();" />
+      <input type="number" step="0.01" placeholder="Price" value="${Number(h.price || 0)}" onchange="hotels[${i}].price=Number(this.value||0);updateAutoPrice();" />
 
       <label>
         <input
@@ -2477,8 +2469,12 @@ function renderHotelCards() {
 
       <textarea
         placeholder="Hotel Description"
-        onchange="hotels[${i}].description=this.value"
-      >${h.description || ""}</textarea>
+        onchange="hotels[${i}].description=this.value;updateAutoPrice();"
+      >${escapeHtml(h.description || "")}</textarea>
+      <textarea
+        placeholder="Hotel Image URLs"
+        onchange="hotels[${i}].images=this.value.split('\n').map(x=>x.trim()).filter(Boolean);updateAutoPrice();"
+      >${escapeHtml(Array.isArray(h.images) ? h.images.join("\n") : "")}</textarea>
 
       <button
         type="button"
@@ -2500,7 +2496,9 @@ function addHotel(hotel = {}) {
     room: hotel.room || "",
     meal: hotel.meal || "",
     price: Number(hotel.price || 0),
+    roomsLeft: hotel.roomsLeft || "",
     description: hotel.description || "",
+    images: Array.isArray(hotel.images) ? hotel.images : [],
     selected: hotels.length === 0
   });
 
@@ -2563,6 +2561,10 @@ function clearForm() {
   if ($("currency")) $("currency").value = "EUR";
   if ($("validForDays")) $("validForDays").value = "1";
   if ($("status")) $("status").value = "draft";
+  flights = [];
+  hotels = [];
+  renderFlightCards();
+  renderHotelCards();
 
   calculatePricing();
   updateCreateSurfaceSummary();
@@ -2878,6 +2880,8 @@ if (validationWarnings.length) {
     if (Number(h.price || 0) > 0 && $("hotelPrice")) {
       $("hotelPrice").value = Number(h.price || 0).toFixed(2);
     }
+    addFlight({ ...f, price: flightPrice });
+    addHotel(h);
 
     // 3) Auto destination text
     const destination = $("destination")?.value || "";
