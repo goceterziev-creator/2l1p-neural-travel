@@ -1558,6 +1558,7 @@ function renderOfferHtml(offer, options = {}) {
   function displayDestination(value = "") {
     const raw = cleanText(value);
     const names = {
+      rim: "\u0420\u0438\u043c",
       rome: "Рим",
       roma: "Рим",
       "рим": "Рим",
@@ -1616,6 +1617,12 @@ function renderOfferHtml(offer, options = {}) {
   }
 
   const destinationName = displayDestination(offer.destination);
+  const flightSectionTitle = flights.length > 1
+    ? "\u0412\u0430\u0448\u0438\u0442\u0435 \u043f\u043e\u043b\u0435\u0442\u0438"
+    : "\u0412\u0430\u0448\u0438\u044f\u0442 \u043f\u043e\u043b\u0435\u0442";
+  const hotelSectionTitle = hotels.length > 1
+    ? "\u0425\u043e\u0442\u0435\u043b\u0441\u043a\u0438 \u043e\u043f\u0446\u0438\u0438"
+    : "\u0418\u0437\u0431\u0440\u0430\u043d\u0438\u044f\u0442 \u0445\u043e\u0442\u0435\u043b";
   const whatsappText = encodeURIComponent(`Здравейте! Вашата оферта за ${destinationName || "пътуване"} е готова:\n${clientLink}`);
   const whatsappLink = `https://wa.me/${offer.clientPhone || ""}?text=${whatsappText}`;
 
@@ -1664,13 +1671,23 @@ function renderOfferHtml(offer, options = {}) {
     `;
   }).join("");
 
-  const hotelCards = hotels.map((hotel) => {
+  const hasSelectedHotel = hotels.some((hotel) => Boolean(hotel.selected));
+  const orderedHotels = hotels.slice().sort((a, b) => Number(Boolean(b.selected)) - Number(Boolean(a.selected)));
+
+  const hotelCards = orderedHotels.map((hotel, index) => {
     const images = safeArray(hotel.images).filter(Boolean).slice(0, 3);
     const description = cleanText(hotel.description) ||
       `Подбран хотел в ${destinationName} с удобства за комфортен престой.`;
+    const isSelected = hasSelectedHotel ? Boolean(hotel.selected) : index === 0;
+    const optionLabel = isSelected
+      ? "\u0418\u0437\u0431\u0440\u0430\u043d \u0445\u043e\u0442\u0435\u043b"
+      : `\u0425\u043e\u0442\u0435\u043b \u043e\u043f\u0446\u0438\u044f ${index + 1}`;
+    const hotelPrice = toNumber(hotel.price, 0);
 
     return `
-      <article class="card hotel-card">
+      <article class="card hotel-card hotel-option-card${isSelected ? " selected" : ""}">
+        <div class="option-badge">${escapeHtml(optionLabel)}</div>
+        ${hotelPrice > 0 ? `<div class="option-price">${formatMoney(hotelPrice, hotel.currency || offer.currency || "EUR")}</div>` : ""}
         ${images.length ? `
           <div class="hotel-images">
             ${images.map((src) => `<img src="${escapeAttr(src)}" alt="${escapeAttr(cleanText(hotel.name || "Хотел"))}" onerror="this.closest('.hotel-images').classList.add('has-missing-image'); this.remove();" />`).join("")}
@@ -1794,6 +1811,9 @@ h1 {
 }
 .actions {
   margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 .actions a {
   display: inline-block;
@@ -1802,7 +1822,7 @@ h1 {
   text-decoration: none;
   padding: 12px 16px;
   border-radius: 10px;
-  margin-right: 10px;
+  margin-right: 0;
 }
 .section {
   padding-top: 32px;
@@ -1930,6 +1950,44 @@ h1 {
   border-radius: 12px;
   background: #e5e7eb;
 }
+.hotel-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+.hotel-options-grid .card + .card {
+  margin-top: 0;
+}
+.hotel-option-card {
+  position: relative;
+}
+.hotel-option-card.selected {
+  border-color: #d4af37;
+  box-shadow: 0 18px 42px rgba(148, 115, 22, .16);
+}
+.option-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #065f46;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 7px 10px;
+  margin-bottom: 14px;
+}
+.option-price {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  border-radius: 999px;
+  background: #101827;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 8px 11px;
+}
 .benefit-list {
   display: flex;
   flex-wrap: wrap;
@@ -2022,6 +2080,7 @@ h1 {
   h1 { font-size: 48px; }
   .price { font-size: 42px; }
   .detail-grid, .hotel-images { grid-template-columns: 1fr; }
+  .option-price { position: static; display: inline-flex; margin-bottom: 12px; }
 }
 @media print {
   body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -2077,13 +2136,13 @@ h1 {
   </section>
 
   <section class="section">
-    <h2>Вашият полет</h2>
+    <h2>${escapeHtml(flightSectionTitle)}</h2>
     ${flightCards || `<div class="card">Полетът ще бъде добавен след потвърждение.</div>`}
   </section>
 
   <section class="section">
-    <h2>Избраният хотел</h2>
-    ${hotelCards || `<div class="card">Хотелът ще бъде добавен след потвърждение.</div>`}
+    <h2>${escapeHtml(hotelSectionTitle)}</h2>
+    ${hotelCards ? `<div class="hotel-options-grid">${hotelCards}</div>` : `<div class="card">Хотелът ще бъде добавен след потвърждение.</div>`}
   </section>
 
   <section class="section">
