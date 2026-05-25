@@ -3123,8 +3123,8 @@ function detectTokyoFlight(rawText) {
   return {
     airline: "Turkish Airlines",
     route: "SOF → Tokyo / Tokyo → SOF",
-    departure: "Sun, 27 Dec 2026 +1",
-    arrival: "Thu, 7 Jan 2027 +1",
+    departure: "",
+    arrival: "",
     baggage: "Включен багаж според условията на авиокомпанията",
     notes: "Полет с прекачване. Препоръчваме проверка на багажа и условията преди потвърждение.",
     price: 0
@@ -3299,8 +3299,8 @@ function inferFlightFromContext(rawText = "", destination = "") {
     return {
       airline: "Turkish Airlines",
       route: "SOF → Tokyo / Tokyo → SOF",
-      departure: "Sun, 27 Dec 2026 +1",
-      arrival: "Thu, 7 Jan 2027 +1",
+      departure: "",
+      arrival: "",
       baggage: "Включен багаж според условията на авиокомпанията",
       notes: "Полет с прекачване. Препоръчваме проверка на багажа и условията преди потвърждение."
     };

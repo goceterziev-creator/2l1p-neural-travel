@@ -2886,7 +2886,6 @@ if (validationWarnings.length) {
 
     // 3) Auto destination text
     const destination = $("destination")?.value || "";
-    const hotelName = $("hotelName")?.value || "";
     const destinationKey = destinationAlias(destination);
     const destinationNames = {
       rome: "Рим",
@@ -2911,9 +2910,9 @@ if (validationWarnings.length) {
 
       $("destinationDescription").value =
         `${baseDescription.trim()}\n\n` +
-        `Офертата комбинира удобен полет, ${hotelName ? `хотел ${hotelName}` : "подбран хотел"} ` +
+        `Офертата комбинира удобен полет, подбрани варианти за настаняване ` +
         `и ясна крайна цена, без скрити вътрешни разбивки за клиента.` +
-        (hotelHighlights ? `\n\nХотелът предлага:\n${hotelHighlights}` : "");
+        (hotelHighlights ? `\n\nНастаняването е подбрано за:\n${hotelHighlights}` : "");
     }
 
     // 4) Auto notes
