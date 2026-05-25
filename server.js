@@ -1756,6 +1756,11 @@ async function renderOfferHtml(offer, options = {}) {
 
   const hasSelectedHotel = hotels.some((hotel) => Boolean(hotel.selected));
   const orderedHotels = hotels.slice().sort((a, b) => Number(Boolean(b.selected)) - Number(Boolean(a.selected)));
+  const flightOptionBase = flights.length
+    ? flights.reduce((sum, flight) => sum + toNumber(flight.price, 0), 0)
+    : toNumber(offer.flightPrice, 0);
+  const transferOptionBase = toNumber(offer.transferPrice, 0);
+  const markupMultiplier = 1 + toNumber(offer.markupPercent, 0) / 100;
 
   const hotelCards = orderedHotels.map((hotel, index) => {
     const providedImages = safeArray(hotel.images).filter(Boolean);
@@ -1768,6 +1773,10 @@ async function renderOfferHtml(offer, options = {}) {
       ? "\u0418\u0437\u0431\u0440\u0430\u043d \u0445\u043e\u0442\u0435\u043b"
       : `\u0425\u043e\u0442\u0435\u043b \u043e\u043f\u0446\u0438\u044f ${index + 1}`;
     const hotelPrice = toNumber(hotel.price, 0);
+    const calculatedOptionPrice = (flightOptionBase + hotelPrice + transferOptionBase) * markupMultiplier;
+    const clientOptionPrice = isSelected && toNumber(offer.finalPrice, 0) > 0
+      ? toNumber(offer.finalPrice, 0)
+      : calculatedOptionPrice;
     const optionTone = isSelected
       ? "Premium option"
       : hotelPrice > 0
@@ -1784,7 +1793,7 @@ async function renderOfferHtml(offer, options = {}) {
       <article class="card hotel-card hotel-option-card${isSelected ? " selected" : ""}">
         <div class="option-badge">${escapeHtml(optionLabel)}</div>
         <div class="option-meta">${escapeHtml(optionTone)}</div>
-        ${hotelPrice > 0 ? `<div class="option-price">${formatMoney(hotelPrice, hotel.currency || offer.currency || "EUR")}</div>` : ""}
+        ${clientOptionPrice > 0 ? `<div class="option-price"><small>Крайна цена</small>${formatMoney(clientOptionPrice, hotel.currency || offer.currency || "EUR")}</div>` : ""}
         ${images.length ? `
           <div class="hotel-images">
             ${images.map((src) => `<img src="${escapeAttr(src)}" alt="${escapeAttr(cleanText(hotel.name || "Хотел"))}" onerror="this.closest('.hotel-images').classList.add('has-missing-image'); this.remove();" />`).join("")}
@@ -2096,6 +2105,14 @@ h1 {
   font-size: 14px;
   font-weight: 800;
   padding: 8px 11px;
+}
+.option-price small {
+  display: block;
+  color: #cbd5e1;
+  font-size: 9px;
+  letter-spacing: .7px;
+  line-height: 1.1;
+  text-transform: uppercase;
 }
 .benefit-list {
   display: flex;
