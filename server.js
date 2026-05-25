@@ -1040,7 +1040,8 @@ const selectedHotelInput =
   inputHotels.find(h => h.selected) ||
   inputHotels[0] ||
   null;
-const hasSelectedHotelInput = inputHotels.some((h) => h.selected);
+const selectedHotelInputIndex = inputHotels.findIndex((h) => h.selected);
+const hasSelectedHotelInput = selectedHotelInputIndex >= 0;
 
 const calculatedHotelPrice = selectedHotelInput
   ? toNumber(selectedHotelInput.price, 0)
@@ -1104,7 +1105,7 @@ const hotels = inputHotels.length
       roomsLeft: h.roomsLeft || "",
       description: h.description || "",
       images: sanitizeHotelImages(h.images || []).valid,
-      selected: Boolean(h.selected || (!hasSelectedHotelInput && index === 0))
+      selected: hasSelectedHotelInput ? index === selectedHotelInputIndex : index === 0
     })).filter(h =>
       h.name || h.stars || h.area || h.distance || h.room || h.meal || toNumber(h.price, 0) > 0 || h.roomsLeft || h.description || h.images.length
     )
@@ -1754,8 +1755,13 @@ async function renderOfferHtml(offer, options = {}) {
     `;
   }).join("");
 
-  const hasSelectedHotel = hotels.some((hotel) => Boolean(hotel.selected));
-  const orderedHotels = hotels.slice().sort((a, b) => Number(Boolean(b.selected)) - Number(Boolean(a.selected)));
+  const selectedHotelIndex = hotels.findIndex((hotel) => Boolean(hotel.selected));
+  const normalizedHotels = hotels.map((hotel, index) => ({
+    ...hotel,
+    selected: selectedHotelIndex >= 0 ? index === selectedHotelIndex : index === 0
+  }));
+  const hasSelectedHotel = normalizedHotels.some((hotel) => Boolean(hotel.selected));
+  const orderedHotels = normalizedHotels.slice().sort((a, b) => Number(Boolean(b.selected)) - Number(Boolean(a.selected)));
   const flightOptionBase = flights.length
     ? flights.reduce((sum, flight) => sum + toNumber(flight.price, 0), 0)
     : toNumber(offer.flightPrice, 0);

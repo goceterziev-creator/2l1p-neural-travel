@@ -1975,7 +1975,14 @@ function populateForm(offer = {}) {
   const flight = firstItem(offer.flights || offer.flightOptions);
   const hotel = firstItem(offer.hotels || offer.hotelOptions);
   flights = Array.isArray(offer.flights) && offer.flights.length ? offer.flights.map((item) => ({ ...item })) : (flight.airline || flight.route || flight.price ? [{ ...flight, price: Number(offer.flightPrice || flight.price || 0) }] : []);
-  hotels = Array.isArray(offer.hotels) && offer.hotels.length ? offer.hotels.map((item, index) => ({ ...item, selected: Boolean(item.selected || index === 0) })) : (hotel.name || hotel.price ? [{ ...hotel, price: Number(offer.hotelPrice || hotel.price || 0), selected: true }] : []);
+  hotels = Array.isArray(offer.hotels) && offer.hotels.length
+    ? offer.hotels.map((item) => ({ ...item }))
+    : (hotel.name || hotel.price ? [{ ...hotel, price: Number(offer.hotelPrice || hotel.price || 0), selected: true }] : []);
+  const selectedHotelIndex = hotels.findIndex((item) => item.selected);
+  hotels = hotels.map((item, index) => ({
+    ...item,
+    selected: selectedHotelIndex >= 0 ? index === selectedHotelIndex : index === 0
+  }));
   renderFlightCards();
   renderHotelCards();
 
