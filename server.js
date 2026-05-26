@@ -946,6 +946,67 @@ function uniqueWarnings(warnings = []) {
   return [...new Set(safeArray(warnings).map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
+function displayValidationWarning(warning = "") {
+  return String(warning || "").replace(/^\[(INFO|WARNING|CRITICAL)\]\s*/i, "");
+}
+
+function normalizeIncomingWarnings(warnings = []) {
+  return safeArray(warnings)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item) => !/^flight destination mismatch:/i.test(item))
+    .filter((item) => !/^hotel destination mismatch:/i.test(item));
+}
+
+const DESTINATION_INTELLIGENCE = [
+  {
+    key: "tokyo",
+    label: "\u0422\u043e\u043a\u0438\u043e",
+    aliases: ["tokyo", "\u0442\u043e\u043a\u0438\u043e", "tokio"],
+    airports: ["nrt", "narita", "\u043d\u0430\u0440\u0438\u0442\u0430", "hnd", "haneda", "\u0445\u0430\u043d\u0435\u0434\u0430"],
+    districts: ["shinjuku", "\u0448\u0438\u043d\u0434\u0436\u0443\u043a\u0443", "ginza", "\u0433\u0438\u043d\u0434\u0437\u0430", "minato", "\u043c\u0438\u043d\u0430\u0442\u043e", "shinbashi", "\u0441\u0438\u043d\u0431\u0430\u0448\u0438", "\u0441\u0438\u043d\u044c\u0431\u0430\u0439", "asakusa", "\u0430\u0441\u0430\u043a\u0443\u0441\u0430", "ueno", "\u0443\u0435\u043d\u043e", "akihabara", "\u0430\u043a\u0438\u0445\u0430\u0431\u0430\u0440\u0430", "chidoricho", "\u0447\u0438\u0434\u043e\u0440\u0438\u0447\u043e", "hibiya", "\u0445\u0438\u0431\u0438\u044f"]
+  },
+  {
+    key: "rome",
+    label: "\u0420\u0438\u043c",
+    aliases: ["rome", "roma", "rim", "\u0440\u0438\u043c"],
+    airports: ["fco", "fiumicino", "ciampino", "cia"],
+    districts: ["trionfale", "triunfale", "\u0442\u0440\u0438\u043e\u043d\u0444\u0430\u043b\u0435", "\u0442\u0440\u0438\u0443\u043c\u0444\u0430\u043b\u0435", "prati", "\u043f\u0440\u0430\u0442\u0438", "vatican", "\u0432\u0430\u0442\u0438\u043a\u0430\u043d"]
+  },
+  {
+    key: "barcelona",
+    label: "\u0411\u0430\u0440\u0441\u0435\u043b\u043e\u043d\u0430",
+    aliases: ["barcelona", "\u0431\u0430\u0440\u0441\u0435\u043b\u043e\u043d\u0430"],
+    airports: ["bcn"],
+    districts: []
+  },
+  {
+    key: "bari",
+    label: "\u0411\u0430\u0440\u0438",
+    aliases: ["bari", "\u0431\u0430\u0440\u0438"],
+    airports: ["bri"],
+    districts: []
+  }
+];
+
+function destinationProfile(destination = "") {
+  const text = normalizeSearchText(destination);
+  if (!text) return null;
+  return DESTINATION_INTELLIGENCE.find((profile) =>
+    [...profile.aliases, ...profile.airports, ...profile.districts].some((needle) => text.includes(normalizeSearchText(needle)))
+  ) || null;
+}
+
+function findDestinationSignal(profile, text = "", groups = ["aliases", "airports", "districts"]) {
+  const normalized = normalizeSearchText(text);
+  if (!profile || !normalized) return null;
+  for (const group of groups) {
+    const match = safeArray(profile[group]).find((needle) => normalized.includes(normalizeSearchText(needle)));
+    if (match) return { group, match };
+  }
+  return null;
+}
+
 function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = []) {
   const warnings = [];
   const flights = getFlights(offer);
@@ -970,7 +1031,7 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
   ].join(" ")).join(" ");
   const rawHotelImages = safeArray(rawBody.hotelImages).join(" ");
   const destination = normalizeSearchText(offer.destination);
-  const destinationAliases = {
+  const legacyDestinationAliases = {
     rome: ["rome", "roma", "рим", "fco", "fiumicino"],
     rim: ["rome", "roma", "рим", "rim", "fco", "fiumicino"],
     "рим": ["rome", "roma", "рим", "fco", "fiumicino"],
@@ -979,16 +1040,27 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     barcelona: ["barcelona", "барселона"],
     "барселона": ["barcelona", "барселона"]
   };
-  const destinationNeedles = destinationAliases[destination] || (destination ? [destination] : []);
+  const profile = destinationProfile(offer.destination);
+  const destinationNeedles = profile
+    ? [...profile.aliases, ...profile.airports, ...profile.districts].map(normalizeSearchText)
+    : (legacyDestinationAliases[destination] || (destination ? [destination] : []));
 
   if (destinationNeedles.length) {
-    const flightHasDestination = destinationNeedles.some((needle) => normalizeSearchText(flightText).includes(needle));
-    const hotelHasDestination = destinationNeedles.some((needle) => normalizeSearchText(hotelText).includes(needle));
+    const flightSignal = profile ? findDestinationSignal(profile, flightText, ["aliases", "airports"]) : null;
+    const hotelSignal = profile ? findDestinationSignal(profile, hotelText, ["aliases", "districts", "airports"]) : null;
+    const airportSignal = profile ? findDestinationSignal(profile, flightText, ["airports"]) : null;
+    const districtSignal = profile ? findDestinationSignal(profile, hotelText, ["districts"]) : null;
+    const flightHasDestination = Boolean(flightSignal) || destinationNeedles.some((needle) => normalizeSearchText(flightText).includes(needle));
+    const hotelHasDestination = Boolean(hotelSignal) || destinationNeedles.some((needle) => normalizeSearchText(hotelText).includes(needle));
     if (flightText && !flightHasDestination) {
-      warnings.push(`Flight destination mismatch: Destination is "${offer.destination}", but flight route/details do not clearly mention it.`);
+      warnings.push(`[WARNING] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043d\u0435 \u0441\u043f\u043e\u043c\u0435\u043d\u0430\u0432\u0430 \u044f\u0441\u043d\u043e \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f\u0442\u0430 "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0430 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.`);
+    } else if (profile && airportSignal) {
+      warnings.push(`[INFO] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043a\u0430\u0446\u0430 \u0432 ${String(airportSignal.match).toUpperCase()}, \u043a\u043e\u0435\u0442\u043e \u0435 \u0432\u0430\u043b\u0438\u0434\u043d\u043e \u043b\u0435\u0442\u0438\u0449\u0435 \u0437\u0430 ${profile.label}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440\u0430 \u0434\u043e \u0445\u043e\u0442\u0435\u043b\u0430.`);
     }
     if (hotelText && !hotelHasDestination) {
-      warnings.push(`Hotel destination mismatch: Destination is "${offer.destination}", but Hotel Area/Description does not clearly mention it.`);
+      warnings.push(`[WARNING] \u041b\u043e\u043a\u0430\u0446\u0438\u044f\u0442\u0430 \u043d\u0430 \u0445\u043e\u0442\u0435\u043b\u0430 \u043d\u0435 \u0441\u044a\u0432\u043f\u0430\u0434\u0430 \u044f\u0441\u043d\u043e \u0441 \u043e\u0441\u043d\u043e\u0432\u043d\u0430\u0442\u0430 \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0434\u0430\u043b\u0438 \u0442\u043e\u0432\u0430 \u0435 \u0442\u044a\u0440\u0441\u0435\u043d\u0438\u044f\u0442 \u0440\u0430\u0439\u043e\u043d.`);
+    } else if (profile && districtSignal) {
+      warnings.push(`[INFO] \u0425\u043e\u0442\u0435\u043b\u044a\u0442 \u0435 \u0432 \u0440\u0430\u0439\u043e\u043d ${districtSignal.match}, \u043a\u043e\u0439\u0442\u043e \u0435 \u0440\u0430\u0437\u043f\u043e\u0437\u043d\u0430\u0442 \u043a\u0430\u0442\u043e \u0447\u0430\u0441\u0442 \u043e\u0442 ${profile.label}.`);
     }
   }
 
@@ -1025,7 +1097,12 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     warnings.push(`Hotel image URL warning: ${invalidHotelImages.length} hotel image URL(s) are not direct image links and were ignored.`);
   }
 
-  return uniqueWarnings([...safeArray(rawBody.validationWarnings), ...warnings]);
+  const finalPrice = Number(offer.finalPrice || offer.price || 0);
+  if (!finalPrice) {
+    warnings.push("[CRITICAL] \u041a\u0440\u0430\u0439\u043d\u0430\u0442\u0430 \u0446\u0435\u043d\u0430 \u0435 0 EUR. \u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u043d\u0435 \u0442\u0440\u044f\u0431\u0432\u0430 \u0434\u0430 \u0441\u0435 \u0438\u0437\u043f\u0440\u0430\u0449\u0430 \u043f\u0440\u0435\u0434\u0438 \u0434\u0430 \u0441\u0435 \u043f\u043e\u043f\u044a\u043b\u043d\u0438 \u0446\u0435\u043d\u0430.");
+  }
+
+  return uniqueWarnings([...normalizeIncomingWarnings(rawBody.validationWarnings), ...warnings]);
 }
 
 function normalizeOffer(body = {}) {
@@ -2365,7 +2442,7 @@ h1 {
   <section class="hero">
     <img class="hero-bg" src="${escapeAttr(heroImage)}" alt="${escapeAttr(destinationName || "Travel")}" />
     <div class="hero-content">
-      ${hasWarnings ? `<div class="warning" id="offerWarning">Някои елементи в офертата изискват допълнителна проверка преди изпращане.${validationWarnings.length ? `<ul>${validationWarnings.map((warning) => `<li>${escapeHtml(cleanText(warning))}</li>`).join("")}</ul>` : ""}${forPdf ? "" : `<button class="warning-close" type="button" aria-label="Скрий предупреждението" title="Скрий предупреждението" onclick="dismissOfferWarning()">×</button>`}</div>` : ""}
+      ${hasWarnings ? `<div class="warning" id="offerWarning">Някои елементи в офертата изискват допълнителна проверка преди изпращане.${validationWarnings.length ? `<ul>${validationWarnings.map((warning) => `<li>${escapeHtml(cleanText(displayValidationWarning(warning)))}</li>`).join("")}</ul>` : ""}${forPdf ? "" : `<button class="warning-close" type="button" aria-label="Скрий предупреждението" title="Скрий предупреждението" onclick="dismissOfferWarning()">×</button>`}</div>` : ""}
       <div class="eyebrow">AYA Travel - персонална оферта</div>
       <h1>${escapeHtml(destinationName || "Пътуване")}</h1>
       <div class="hero-copy">

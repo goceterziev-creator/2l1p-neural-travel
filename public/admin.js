@@ -277,8 +277,22 @@ function getOfferWarnings(offer = {}) {
   return Array.isArray(offer.validationWarnings) ? offer.validationWarnings.filter(Boolean) : [];
 }
 
+function warningSeverity(warning = "") {
+  const text = String(warning || "").trim().toLowerCase();
+  if (text.startsWith("[critical]") || text.includes("0 eur") || text.includes("0.00 eur")) return "critical";
+  if (text.startsWith("[info]")) return "info";
+  return "warning";
+}
+
+function displayWarning(warning = "") {
+  return String(warning || "").replace(/^\[(INFO|WARNING|CRITICAL)\]\s*/i, "");
+}
+
 function classifyWarning(warning = "") {
   const text = String(warning || "").toLowerCase();
+  const severity = warningSeverity(warning);
+  if (severity === "critical") return "critical";
+  if (severity === "info") return "info";
   if (text.includes("date")) return "dates";
   if (text.includes("guest") || text.includes("adult") || text.includes("passenger")) return "guests";
   if (text.includes("availability") || text.includes("available") || text.includes("налич")) return "availability";
@@ -288,7 +302,7 @@ function classifyWarning(warning = "") {
 }
 
 function qaScore(offer = {}) {
-  const warnings = getOfferWarnings(offer);
+  const warnings = getOfferWarnings(offer).filter((warning) => warningSeverity(warning) !== "info");
   const finalPrice = Number(offer.finalPrice || offer.price || 0);
   let score = 100;
 
@@ -303,8 +317,9 @@ function qaScore(offer = {}) {
 }
 
 function qaTone(score, warnings = []) {
-  if (warnings.length >= 3 || score < 60) return "risk";
-  if (warnings.length || score < 85) return "review";
+  const actionableWarnings = warnings.filter((warning) => warningSeverity(warning) !== "info");
+  if (actionableWarnings.some((warning) => warningSeverity(warning) === "critical") || actionableWarnings.length >= 3 || score < 60) return "risk";
+  if (actionableWarnings.length || score < 85) return "review";
   return "ready";
 }
 
@@ -324,7 +339,7 @@ function warningChips(offer = {}) {
     <div class="warning-chips">
       ${warnings.slice(0, 4).map((warning) => {
         const kind = classifyWarning(warning);
-        return `<span class="warning-chip ${kind}" title="${escapeHtml(warning)}">${escapeHtml(kind)}</span>`;
+        return `<span class="warning-chip ${kind}" title="${escapeHtml(displayWarning(warning))}">${escapeHtml(kind)}</span>`;
       }).join("")}
       ${warnings.length > 4 ? `<span class="warning-chip more">+${warnings.length - 4}</span>` : ""}
     </div>
@@ -1183,7 +1198,7 @@ function renderWarningGroup(title, items = []) {
       ${items.slice(0, 6).map((item) => `
         <div class="drawer-warning">
           <span>${escapeHtml(item.destination)}</span>
-          <strong>${escapeHtml(item.warning)}</strong>
+          <strong>${escapeHtml(displayWarning(item.warning))}</strong>
         </div>
       `).join("")}
       ${items.length > 6 ? `<div class="drawer-more">+${items.length - 6} more</div>` : ""}
@@ -2642,7 +2657,28 @@ function destinationMatchesHotel(destination, hotel = {}) {
   }
 
   if (d.includes("tokyo") || d.includes("токио")) {
-    return text.includes("tokyo") || text.includes("akihabara") || text.includes("shinjuku") || text.includes("ginza");
+    return (
+      text.includes("tokyo") ||
+      text.includes("токио") ||
+      text.includes("akihabara") ||
+      text.includes("shinjuku") ||
+      text.includes("шинджуку") ||
+      text.includes("ginza") ||
+      text.includes("гиндза") ||
+      text.includes("minato") ||
+      text.includes("минато") ||
+      text.includes("shinbashi") ||
+      text.includes("синбаши") ||
+      text.includes("синьбай") ||
+      text.includes("asakusa") ||
+      text.includes("асакуса") ||
+      text.includes("ueno") ||
+      text.includes("уено") ||
+      text.includes("hibiya") ||
+      text.includes("хибия") ||
+      text.includes("chidoricho") ||
+      text.includes("чидоричо")
+    );
   }
 
   if (d.includes("barcelona") || d.includes("барселона")) {
@@ -2661,13 +2697,13 @@ function getDestinationMismatchWarnings(destination, flight = {}, hotel = {}) {
 
   if (!destinationMatchesFlight(destination, flight)) {
     warnings.push(
-      `Flight destination mismatch: Destination is "${destination || "-"}", but Flight Route is "${flight?.route || "-"}"`
+      `[WARNING] Полетът не споменава ясно дестинацията "${destination || "-"}". Проверете маршрута преди изпращане.`
     );
   }
 
   if (!destinationMatchesHotel(destination, hotel)) {
     warnings.push(
-      `Hotel destination mismatch: Destination is "${destination || "-"}", but Hotel Area/Description is "${hotel?.area || hotel?.description || hotel?.name || "-"}"`
+      `[WARNING] Локацията на хотела не съвпада ясно с основната дестинация "${destination || "-"}". Проверете дали това е търсеният район.`
     );
   }
 
