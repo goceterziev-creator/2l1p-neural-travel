@@ -924,6 +924,50 @@ function parseDateTokens(value = "", fallbackYear = "") {
   return dates;
 }
 
+function displayDateToken(isoDate = "") {
+  const match = String(isoDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}.${match[2]}.${match[1]}` : "";
+}
+
+function inferTravelPeriod(offer = {}) {
+  const hotelText = JSON.stringify(offer.hotels || []);
+  const sourceText = offer.travelDates || hotelText;
+  const year = inferYearFromText(sourceText);
+  const dates = parseDateTokens(sourceText, year);
+  return {
+    outbound: displayDateToken(dates[0]),
+    inbound: displayDateToken(dates[1])
+  };
+}
+
+function isMissingFlightDisplay(value = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return !text || text === "-" || /needs review/i.test(text);
+}
+
+function fillFlightDisplayFallbacks(flight = {}, offer = {}) {
+  const next = { ...flight };
+  const period = inferTravelPeriod(offer);
+  const route = String(next.route || "").replace(/→/g, "->");
+  const routeParts = route.split("/").map((part) => String(part || "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  const outboundRoute = routeParts[0] || "";
+  const inboundRoute = routeParts[1] || "";
+
+  if (isMissingFlightDisplay(next.departure) && period.outbound) {
+    next.departure = outboundRoute
+      ? `${outboundRoute}, ${period.outbound} (часовете са за потвърждение)`
+      : `${period.outbound} (часовете са за потвърждение)`;
+  }
+
+  if (isMissingFlightDisplay(next.arrival) && period.inbound) {
+    next.arrival = inboundRoute
+      ? `${inboundRoute}, ${period.inbound} (часовете са за потвърждение)`
+      : `${period.inbound} (часовете са за потвърждение)`;
+  }
+
+  return next;
+}
+
 function isLikelyImageUrl(value = "") {
   const text = String(value || "").trim();
   if (!/^https?:\/\//i.test(text)) return false;
@@ -1153,7 +1197,9 @@ const flights = inputFlights.length
       baggage: f.baggage || "",
       notes: f.notes || "",
       price: toNumber(f.price, 0)
-    })).filter(f =>
+    }))
+    .map((f) => fillFlightDisplayFallbacks(f, body))
+    .filter(f =>
       f.airline || f.route || f.departure || f.arrival || f.baggage || f.notes || toNumber(f.price, 0) > 0
     )
   : [
@@ -1166,7 +1212,9 @@ const flights = inputFlights.length
         notes: body.flightNotes || "",
         price: flightPrice
       }
-    ].filter(f =>
+    ]
+    .map((f) => fillFlightDisplayFallbacks(f, body))
+    .filter(f =>
       f.airline || f.route || f.departure || f.arrival || f.baggage || f.notes || toNumber(f.price, 0) > 0
     );
 
@@ -1850,6 +1898,7 @@ async function renderOfferHtml(offer, options = {}) {
   ].filter(Boolean);
 
   const flightCards = flights.map((flight) => {
+    const displayFlight = fillFlightDisplayFallbacks(flight, offer);
     const segments = routeSegments(flight.route || offer.flightRoute);
     return `
       <article class="card flight-card">
@@ -1869,8 +1918,8 @@ async function renderOfferHtml(offer, options = {}) {
         </div>
 
         <div class="detail-grid">
-          <div><strong>Отиване</strong><br>${escapeHtml(clientSafeFlightText(flight.departure, "-"))}</div>
-          <div><strong>Връщане</strong><br>${escapeHtml(clientSafeFlightText(flight.arrival, "-"))}</div>
+          <div><strong>Отиване</strong><br>${escapeHtml(clientSafeFlightText(displayFlight.departure, "-"))}</div>
+          <div><strong>Връщане</strong><br>${escapeHtml(clientSafeFlightText(displayFlight.arrival, "-"))}</div>
           <div><strong>Багаж</strong><br>${escapeHtml(clientSafeFlightText(flight.baggage, "Според условията на авиокомпанията"))}</div>
           <div><strong>Препоръка</strong><br>Бъдете на летището поне 2 часа преди излитане.</div>
         </div>
