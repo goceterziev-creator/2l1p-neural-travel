@@ -1984,6 +1984,7 @@ async function renderOfferHtml(offer, options = {}) {
             ${images.map((src) => `<img src="${escapeAttr(src)}" alt="${escapeAttr(cleanText(hotel.name || "Хотел"))}" onerror="this.closest('.hotel-images').classList.add('has-missing-image'); this.remove();" />`).join("")}
           </div>
         ` : ""}
+        <div class="hotel-option-body">
 
         <div class="card-kicker">Настаняване</div>
         <h3>${escapeHtml(cleanText(hotel.name || "Подбран хотел"))}</h3>
@@ -2001,6 +2002,7 @@ async function renderOfferHtml(offer, options = {}) {
           <span>Отлична локация</span>
           <span>Удобен престой</span>
           <span>Подходящ избор за пътуването</span>
+        </div>
         </div>
       </article>
     `;
@@ -2160,6 +2162,9 @@ h1 {
   font-size: 27px;
   margin: 0 0 18px;
 }
+.hotel-option-card h3 {
+  overflow-wrap: anywhere;
+}
 .route-timeline {
   display: grid;
   gap: 10px;
@@ -2228,7 +2233,7 @@ h1 {
 .hotel-images {
   display: flex;
   gap: 8px;
-  margin-bottom: 20px;
+  margin: 0;
   overflow: hidden;
 }
 .hotel-images:empty, .hotel-images.has-missing-image:empty {
@@ -2237,7 +2242,7 @@ h1 {
 .hotel-images img {
   flex: 1 1 0;
   min-width: 0;
-  height: 124px;
+  height: 100%;
   object-fit: cover;
   object-position: center;
   border-radius: 12px;
@@ -2245,18 +2250,35 @@ h1 {
 }
 .hotel-options-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 18px;
+  grid-template-columns: 1fr;
+  gap: 16px;
   align-items: stretch;
 }
 .hotel-options-grid .card + .card {
   margin-top: 0;
 }
 .hotel-option-card {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(230px, 34%) minmax(0, 1fr);
+  column-gap: 22px;
+  min-height: 290px;
   position: relative;
+  overflow: hidden;
+}
+.hotel-option-card .option-badge,
+.hotel-option-card .option-meta,
+.hotel-option-card .option-price,
+.hotel-option-card .hotel-option-body {
+  grid-column: 2;
+}
+.hotel-option-card .hotel-images {
+  grid-column: 1;
+  grid-row: 1 / span 4;
+  align-self: stretch;
+  min-height: 250px;
+}
+.hotel-option-body {
+  min-width: 0;
 }
 .hotel-option-card.selected {
   background: linear-gradient(180deg, #142033 0%, #0f172a 100%);
@@ -2305,15 +2327,17 @@ h1 {
   text-transform: uppercase;
 }
 .option-price {
-  position: absolute;
-  top: 22px;
-  right: 22px;
+  justify-self: end;
+  align-self: start;
   border-radius: 999px;
   background: #101827;
   color: #fff;
   font-size: 14px;
   font-weight: 800;
   padding: 8px 11px;
+  margin-top: -48px;
+  max-width: 210px;
+  text-align: center;
 }
 .option-price small {
   display: block;
@@ -2491,8 +2515,9 @@ h1 {
   h1 { font-size: 48px; }
   .price { font-size: 42px; }
   .detail-grid, .trip-highlights, .cta-contact { grid-template-columns: 1fr; }
-  .hotel-images { display: grid; grid-template-columns: 1fr; }
-  .option-price { position: static; display: inline-flex; margin-bottom: 12px; }
+  .hotel-option-card { display: block; min-height: 0; }
+  .hotel-images { display: flex; height: 170px; margin-bottom: 16px; }
+  .option-price { display: inline-flex; margin: 0 0 12px; }
   .cta-qr { width: 100%; }
 }
 @media print {
@@ -2511,7 +2536,11 @@ h1 {
   .quiet-note { font-size: 15px; margin-top: 16px; }
   .cta-card h2 { font-size: 26px; }
   .cta-contact { grid-template-columns: 1fr auto; }
-  .hotel-images img { height: 92px; }
+  .hotel-option-card { grid-template-columns: 34% minmax(0, 1fr); min-height: 245px; column-gap: 14px; }
+  .hotel-option-card .hotel-images { min-height: 215px; }
+  .hotel-images img { height: 100%; }
+  .hotel-option-card .detail-grid { gap: 8px; margin: 10px 0; }
+  .hotel-option-card p { margin: 8px 0; }
 }
 @page { size: A4; margin: 12mm; }
 </style>
