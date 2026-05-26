@@ -1622,10 +1622,10 @@ async function callVisionJson({ imageBuffer, mimeType, prompt }) {
   return extractJsonObject(outputText);
 }
 
-async function findHotelImageWithSerpApi(hotelName = "", destination = "") {
+async function findHotelImagesWithSerpApi(hotelName = "", destination = "", limit = 3) {
   const apiKey = process.env.SERPAPI_KEY;
   const name = String(hotelName || "").trim();
-  if (!apiKey || !name) return "";
+  if (!apiKey || !name) return [];
 
   try {
     const query = [name, destination, "hotel exterior room"]
@@ -1646,7 +1646,7 @@ async function findHotelImageWithSerpApi(hotelName = "", destination = "") {
     const response = await fetch(url, fetchOptions);
     if (!response.ok) {
       console.warn("SerpAPI hotel image lookup failed:", response.status);
-      return "";
+      return [];
     }
 
     const data = await response.json();
@@ -1654,11 +1654,16 @@ async function findHotelImageWithSerpApi(hotelName = "", destination = "") {
       .flatMap((item) => [item?.original, item?.thumbnail])
       .filter((src) => typeof src === "string" && /^https?:\/\//i.test(src));
 
-    return candidates.find(isLikelyImageUrl) || "";
+    return [...new Set(candidates.filter(isLikelyImageUrl))].slice(0, limit);
   } catch (error) {
     console.warn("SerpAPI hotel image lookup skipped:", error.message);
-    return "";
+    return [];
   }
+}
+
+async function findHotelImageWithSerpApi(hotelName = "", destination = "") {
+  const images = await findHotelImagesWithSerpApi(hotelName, destination, 1);
+  return images[0] || "";
 }
 
 function normalizeHotelTextToBulgarian(parsed = {}) {
@@ -2221,18 +2226,20 @@ h1 {
   margin-bottom: 5px;
 }
 .hotel-images {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  display: flex;
+  gap: 8px;
   margin-bottom: 20px;
+  overflow: hidden;
 }
 .hotel-images:empty, .hotel-images.has-missing-image:empty {
   display: none;
 }
 .hotel-images img {
-  width: 100%;
-  height: 210px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 124px;
   object-fit: cover;
+  object-position: center;
   border-radius: 12px;
   background: #e5e7eb;
 }
@@ -2252,8 +2259,30 @@ h1 {
   position: relative;
 }
 .hotel-option-card.selected {
+  background: linear-gradient(180deg, #142033 0%, #0f172a 100%);
   border-color: #d4af37;
-  box-shadow: 0 18px 42px rgba(148, 115, 22, .16);
+  color: #f8fafc;
+  box-shadow: 0 22px 48px rgba(15, 23, 42, .28);
+}
+.hotel-option-card.selected .detail-grid div {
+  background: rgba(255, 255, 255, .09);
+  border: 1px solid rgba(255, 255, 255, .12);
+}
+.hotel-option-card.selected .card-kicker,
+.hotel-option-card.selected .option-meta {
+  color: #fde68a;
+}
+.hotel-option-card.selected p {
+  color: #e5e7eb;
+}
+.hotel-option-card.selected .option-badge {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #78350f;
+}
+.hotel-option-card.selected .option-price {
+  background: #f8fafc;
+  color: #0f172a;
 }
 .option-badge {
   display: inline-flex;
@@ -2461,7 +2490,8 @@ h1 {
   .hero { padding: 34px 24px; min-height: 640px; }
   h1 { font-size: 48px; }
   .price { font-size: 42px; }
-  .detail-grid, .hotel-images, .trip-highlights, .cta-contact { grid-template-columns: 1fr; }
+  .detail-grid, .trip-highlights, .cta-contact { grid-template-columns: 1fr; }
+  .hotel-images { display: grid; grid-template-columns: 1fr; }
   .option-price { position: static; display: inline-flex; margin-bottom: 12px; }
   .cta-qr { width: 100%; }
 }
@@ -2481,7 +2511,7 @@ h1 {
   .quiet-note { font-size: 15px; margin-top: 16px; }
   .cta-card h2 { font-size: 26px; }
   .cta-contact { grid-template-columns: 1fr auto; }
-  .hotel-images img { height: 135px; }
+  .hotel-images img { height: 92px; }
 }
 @page { size: A4; margin: 12mm; }
 </style>
@@ -3740,12 +3770,13 @@ Rules:
     });
 
     const hotel = normalizeHotelTextToBulgarian(parsed);
-    const imageUrl = await findHotelImageWithSerpApi(
+    const imageUrls = await findHotelImagesWithSerpApi(
       hotel.name,
-      hotel.area || req.body?.destination || ""
+      hotel.area || req.body?.destination || "",
+      3
     );
-    if (imageUrl) {
-      hotel.images = [imageUrl];
+    if (imageUrls.length) {
+      hotel.images = imageUrls;
     }
     const metadata = normalizeHotelProfileMetadata(hotel, parsed);
 
