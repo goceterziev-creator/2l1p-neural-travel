@@ -1233,22 +1233,49 @@ function ocrCompactText(rawText = "") {
   return String(rawText || "").replace(/\s+/g, " ").trim();
 }
 
+function parseOcrMoneyValue(value = "") {
+  let amount = String(value || "")
+    .replace(/[^\d,.\s]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+  if (!amount) return 0;
+
+  const lastComma = amount.lastIndexOf(",");
+  const lastDot = amount.lastIndexOf(".");
+  const decimalSeparator = lastComma > lastDot ? "," : ".";
+  const otherSeparator = decimalSeparator === "," ? "." : ",";
+
+  if (lastComma !== -1 && lastDot !== -1) {
+    amount = amount.replace(new RegExp(`\\${otherSeparator}`, "g"), "").replace(decimalSeparator, ".");
+  } else if (lastComma !== -1 || lastDot !== -1) {
+    const separator = lastComma !== -1 ? "," : ".";
+    const parts = amount.split(separator);
+    const finalPart = parts[parts.length - 1] || "";
+    amount = finalPart.length === 2
+      ? parts.slice(0, -1).join("") + "." + finalPart
+      : parts.join("");
+  }
+
+  const parsed = Number(amount);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 function extractOcrMoneyValues(rawText = "") {
-  const matches = ocrCompactText(rawText).match(/(?:EUR|EURO|\u20ac)\s*\d{1,6}(?:[,.]\d{2})?|\d{1,6}(?:[,.]\d{2})?\s*(?:EUR|EURO|\u20ac)/gi) || [];
+  const matches = ocrCompactText(rawText).match(/(?:EUR|EURO|\u20ac)(?:\s*euros?)?\s*\d[\d\s,.]*|\d[\d\s,.]*\s*(?:EUR|EURO|\u20ac)/gi) || [];
   return matches
-    .map((value) => Number(String(value).replace(/[^\d,.]/g, "").replace(",", ".")))
+    .map((value) => parseOcrMoneyValue(value))
     .filter((value) => Number.isFinite(value) && value > 0);
 }
 
 function extractLabeledFlightPrice(rawText = "") {
   const text = ocrCompactText(rawText);
   const match =
-    text.match(/\bFLIGHTS?\s*([0-9]{1,6}[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)/i) ||
-    text.match(/\bTOTAL\s*([0-9]{1,6}[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)/i) ||
-    text.match(/(?:\u20ac|EUR|EURO)\s*([0-9]{1,6}[,.][0-9]{2})\b/i);
+    text.match(/\bFLIGHTS?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)/i) ||
+    text.match(/\bTOTAL(?:\s+price)?(?:\s+for\s+\d+\s+\w+)?\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i) ||
+    text.match(/(?:\u20ac|EUR|EURO)(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i);
 
   if (!match) return 0;
-  const value = Number(String(match[1] || "").replace(",", "."));
+  const value = parseOcrMoneyValue(match[1] || "");
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
@@ -1256,9 +1283,9 @@ function extractFlightPriceFromText(rawText = "") {
   const labeled = extractLabeledFlightPrice(rawText);
   if (labeled > 0) return labeled;
 
-  const matches = ocrCompactText(rawText).match(/\d{1,4}(?:[\.,]\d{2})?\s?(?:\u20ac|eur)|(?:\u20ac|eur)\s?\d{1,4}(?:[\.,]\d{2})?/gi) || [];
+  const matches = ocrCompactText(rawText).match(/\d[\d\s,.]*\s?(?:\u20ac|eur)|(?:\u20ac|eur)(?:\s*euros?)?\s?\d[\d\s,.]*/gi) || [];
   const prices = matches
-    .map((value) => Number(String(value).replace(/[^\d,.]/g, "").replace(",", ".")))
+    .map((value) => parseOcrMoneyValue(value))
     .filter((value) => Number.isFinite(value) && value > 0);
 
   return prices.length ? Math.max(...prices) : 0;
@@ -1274,6 +1301,8 @@ function normalizeGuestsText(value = "") {
 
 function translateOcrCity(value = "") {
   const key = String(value || "").trim().toLowerCase();
+  if (["tokyo", "nrt", "hnd"].includes(key)) return "\u0422\u043e\u043a\u0438\u043e";
+  if (key === "ist") return "\u0418\u0441\u0442\u0430\u043d\u0431\u0443\u043b";
   const cities = {
     sofia: "София",
     sof: "София",
@@ -1358,6 +1387,7 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
     notes: [adults ? `Пътници: ${adults} възрастен${adults === 1 ? "" : "и"}.` : "", "Данните са извлечени от Booking.com checkout screenshot."].filter(Boolean).join(" "),
     price
   };
+  if (/turkish/i.test(compact)) flight.airline = "Turkish Airlines";
   const missingFields = [];
   if (flight.airline === "Не е посочено") missingFields.push("flight.airline");
   if (!/\d{1,2}:\d{2}/.test(compact)) missingFields.push("flight.times");
