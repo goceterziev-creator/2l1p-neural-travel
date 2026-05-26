@@ -3161,6 +3161,20 @@ function normalizeFlightFromDestination(destinationRaw, rawText) {
   return null;
 }
 
+function extractFlightTimeline(rawText = "") {
+  const compact = ocrCompactText(rawText);
+  const timeline = [];
+  const pattern = /\b((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s*-\s*\d{1,2}:\d{2}\s*(?:AM|PM)?)\s+([A-Z]{3})\s*-/gi;
+  let match;
+  while ((match = pattern.exec(compact))) {
+    timeline.push({
+      when: match[1].replace(/\s+/g, " ").trim(),
+      code: match[2].toUpperCase()
+    });
+  }
+  return timeline;
+}
+
 function detectTokyoFlight(rawText) {
   const t = String(rawText || "").toLowerCase();
 
@@ -3174,11 +3188,27 @@ function detectTokyoFlight(rawText) {
 
   if (!hasTokyo) return null;
 
+  const timeline = extractFlightTimeline(rawText);
+  const outboundStartIndex = timeline.findIndex((item) => item.code === "SOF");
+  const outboundEndIndex = timeline.findIndex((item, index) =>
+    index > outboundStartIndex && ["NRT", "HND"].includes(item.code)
+  );
+  const inboundStartIndex = timeline.findIndex((item, index) =>
+    index > outboundEndIndex && ["NRT", "HND"].includes(item.code)
+  );
+  const inboundEndIndex = timeline.map((item) => item.code).lastIndexOf("SOF");
+  const stopovers = [...new Set(timeline.map((item) => item.code).filter((code) => !["SOF", "NRT", "HND"].includes(code)))];
+  const via = stopovers.length ? `, via ${stopovers.join(" + ")}` : "";
+  const outboundStart = timeline[outboundStartIndex];
+  const outboundEnd = timeline[outboundEndIndex];
+  const inboundStart = timeline[inboundStartIndex];
+  const inboundEnd = timeline[inboundEndIndex];
+
   return {
     airline: "Turkish Airlines",
     route: "SOF → Tokyo / Tokyo → SOF",
-    departure: "",
-    arrival: "",
+    departure: outboundStart && outboundEnd ? `SOF -> Tokyo, ${outboundStart.when} - ${outboundEnd.when}${via}` : "",
+    arrival: inboundStart && inboundEnd ? `Tokyo -> SOF, ${inboundStart.when} - ${inboundEnd.when}${via}` : "",
     baggage: "Включен багаж според условията на авиокомпанията",
     notes: "Полет с прекачване. Препоръчваме проверка на багажа и условията преди потвърждение.",
     price: 0
