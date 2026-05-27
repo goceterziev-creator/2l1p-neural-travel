@@ -53,7 +53,7 @@ function addHotel(hotel = {}) {
     price: Number(hotel.price || 0),
     roomsLeft: hotel.roomsLeft || "",
     description: hotel.description || "",
-    images: hotel.images || [],
+    images: uniqueHotelImages(hotel.images || []),
     selected: hotels.length === 0
   });
 
@@ -602,6 +602,53 @@ function splitLines(text) {
     .split("\n")
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+function isLikelyHotelImageUrl(value = "") {
+  const text = String(value || "").trim();
+  if (!/^https?:\/\//i.test(text)) return false;
+  if (/\.(?:jpg|jpeg|png|webp|gif)(?:[?#].*)?$/i.test(text)) return true;
+  return /\/images?\//i.test(text) && !/\/hotel\/[^/]+\/[^/?#]+\.html/i.test(text);
+}
+
+function hotelImageKey(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+
+  try {
+    const url = new URL(text);
+    return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/+$/, "").toLowerCase()}`;
+  } catch {
+    return text.split(/[?#]/)[0].replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function uniqueHotelImages(images = [], limit = 6, usedKeys = null) {
+  const picked = [];
+  const localKeys = new Set();
+
+  for (const source of Array.isArray(images) ? images : []) {
+    const image = typeof source === "string" ? source.trim() : "";
+    if (!image || !isLikelyHotelImageUrl(image)) continue;
+
+    const key = hotelImageKey(image);
+    if (!key || localKeys.has(key) || (usedKeys && usedKeys.has(key))) continue;
+
+    localKeys.add(key);
+    if (usedKeys) usedKeys.add(key);
+    picked.push(image);
+    if (picked.length >= limit) break;
+  }
+
+  return picked;
+}
+
+function dedupeHotelOptionImages(sourceHotels = [], limit = 6) {
+  const usedKeys = new Set();
+  return (Array.isArray(sourceHotels) ? sourceHotels : []).map((hotel) => ({
+    ...hotel,
+    images: uniqueHotelImages(hotel.images || [], limit, usedKeys)
+  }));
 }
 
 function calculatePricing() {
@@ -1430,7 +1477,7 @@ function renderOfferWorkspace(offerId = activeWorkspaceOfferId) {
   const flights = Array.isArray(offer.flights) ? offer.flights : [];
   const hotels = Array.isArray(offer.hotels) ? offer.hotels : [];
   const hotelImages = activeWorkspaceTab === "assets"
-    ? hotels.flatMap((hotel) => Array.isArray(hotel.images) ? hotel.images : []).slice(0, 6)
+    ? uniqueHotelImages(hotels.flatMap((hotel) => Array.isArray(hotel.images) ? hotel.images : []), 6)
     : [];
   const rawClientKey = clientKeyFromOffer(offer);
   const clientKey = encodeURIComponent(rawClientKey);
@@ -1993,6 +2040,7 @@ function populateForm(offer = {}) {
   hotels = Array.isArray(offer.hotels) && offer.hotels.length
     ? offer.hotels.map((item) => ({ ...item }))
     : (hotel.name || hotel.price ? [{ ...hotel, price: Number(offer.hotelPrice || hotel.price || 0), selected: true }] : []);
+  hotels = dedupeHotelOptionImages(hotels);
   const selectedHotelIndex = hotels.findIndex((item) => item.selected);
   hotels = hotels.map((item, index) => ({
     ...item,
@@ -2308,7 +2356,7 @@ formValidationWarnings.push(
     hotelMeal: $("hotelMeal")?.value.trim() || "",
     hotelRoomsLeft: $("hotelRoomsLeft")?.value.trim() || "",
     hotelDescription: $("hotelDescription")?.value.trim() || "",
-    hotelImages: splitLines($("hotelImages")?.value || ""),
+    hotelImages: uniqueHotelImages(splitLines($("hotelImages")?.value || "")),
 
     destinationDescription: $("destinationDescription")?.value.trim() || "",
     notes: $("notes")?.value.trim() || "",
@@ -2335,8 +2383,8 @@ async function saveOffer() {
 
   const payload = collectForm();
 
-payload.flights = flights;
-payload.hotels = hotels;
+  payload.flights = flights;
+  payload.hotels = dedupeHotelOptionImages(hotels);
 
   const destinationValue = payload.destination || "";
 
@@ -2464,6 +2512,8 @@ function renderHotelCards() {
 
   if (!box) return;
 
+  hotels = dedupeHotelOptionImages(hotels);
+
   box.innerHTML = hotels.map((h, i) => `
     <div class="hotel-card">
 
@@ -2496,7 +2546,7 @@ function renderHotelCards() {
       >${escapeHtml(h.description || "")}</textarea>
       <textarea
         placeholder="Hotel Image URLs"
-        onchange="hotels[${i}].images=this.value.split('\n').map(x=>x.trim()).filter(Boolean);updateAutoPrice();"
+        onchange="hotels[${i}].images=uniqueHotelImages(this.value.split('\n').map(x=>x.trim()).filter(Boolean));renderHotelCards();updateAutoPrice();"
       >${escapeHtml(Array.isArray(h.images) ? h.images.join("\n") : "")}</textarea>
 
       <button
@@ -2521,7 +2571,7 @@ function addHotel(hotel = {}) {
     price: Number(hotel.price || 0),
     roomsLeft: hotel.roomsLeft || "",
     description: hotel.description || "",
-    images: Array.isArray(hotel.images) ? hotel.images : [],
+    images: uniqueHotelImages(Array.isArray(hotel.images) ? hotel.images : []),
     selected: hotels.length === 0
   });
 

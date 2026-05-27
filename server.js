@@ -981,9 +981,41 @@ function sanitizeHotelImages(value = [], limit = 6) {
     .map((x) => x.trim())
     .filter((x) => x.startsWith("http"));
 
-  const valid = raw.filter(isLikelyImageUrl).slice(0, limit);
+  const valid = uniqueHotelImages(raw, limit);
   const invalid = raw.filter((x) => !isLikelyImageUrl(x));
   return { valid, invalid };
+}
+
+function hotelImageKey(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+
+  try {
+    const url = new URL(text);
+    return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/+$/, "").toLowerCase()}`;
+  } catch {
+    return text.split(/[?#]/)[0].replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function uniqueHotelImages(images = [], limit = 6, usedKeys = null) {
+  const picked = [];
+  const localKeys = new Set();
+
+  for (const source of safeArray(images)) {
+    const image = typeof source === "string" ? source.trim() : "";
+    if (!image || !isLikelyImageUrl(image)) continue;
+
+    const key = hotelImageKey(image);
+    if (!key || localKeys.has(key) || (usedKeys && usedKeys.has(key))) continue;
+
+    localKeys.add(key);
+    if (usedKeys) usedKeys.add(key);
+    picked.push(image);
+    if (picked.length >= limit) break;
+  }
+
+  return picked;
 }
 
 function uniqueWarnings(warnings = []) {
@@ -1250,6 +1282,8 @@ const flights = inputFlights.length
       f.airline || f.route || f.departure || f.arrival || f.baggage || f.notes || toNumber(f.price, 0) > 0
     );
 
+const usedInputHotelImageKeys = new Set();
+
 const hotels = inputHotels.length
   ? inputHotels.map((h, index) => ({
       name: h.name || "",
@@ -1261,7 +1295,7 @@ const hotels = inputHotels.length
       price: toNumber(h.price, 0),
       roomsLeft: h.roomsLeft || "",
       description: h.description || "",
-      images: sanitizeHotelImages(h.images || []).valid,
+      images: uniqueHotelImages(h.images || [], 6, usedInputHotelImageKeys),
       selected: hasSelectedHotelInput ? index === selectedHotelInputIndex : index === 0
     })).filter(h =>
       h.name || h.stars || h.area || h.distance || h.room || h.meal || toNumber(h.price, 0) > 0 || h.roomsLeft || h.description || h.images.length
@@ -1686,7 +1720,7 @@ async function findHotelImagesWithSerpApi(hotelName = "", destination = "", limi
       .flatMap((item) => [item?.original, item?.thumbnail])
       .filter((src) => typeof src === "string" && /^https?:\/\//i.test(src));
 
-    return [...new Set(candidates.filter(isLikelyImageUrl))].slice(0, limit);
+    return uniqueHotelImages(candidates, limit);
   } catch (error) {
     console.warn("SerpAPI hotel image lookup skipped:", error.message);
     return [];
@@ -1978,11 +2012,18 @@ async function renderOfferHtml(offer, options = {}) {
     : toNumber(offer.flightPrice, 0);
   const transferOptionBase = toNumber(offer.transferPrice, 0);
   const markupMultiplier = 1 + toNumber(offer.markupPercent, 0) / 100;
+  const usedRenderedHotelImageKeys = new Set();
 
   const hotelCards = orderedHotels.map((hotel, index) => {
     const providedImages = safeArray(hotel.images).filter(Boolean);
     const directImage = cleanText(hotel.image || hotel.imageUrl || hotel.photo || hotel.thumbnail);
-    const images = (providedImages.length ? providedImages : [directImage || hotelFallbackImage]).filter(Boolean).slice(0, 3);
+    const primaryImages = providedImages.length ? providedImages : [directImage].filter(Boolean);
+    let images = uniqueHotelImages(primaryImages, 3, usedRenderedHotelImageKeys);
+
+    if (!images.length && hotelFallbackImage) {
+      images = uniqueHotelImages([hotelFallbackImage], 1, usedRenderedHotelImageKeys);
+    }
+
     const description = cleanText(hotel.description) ||
       `Подбран хотел в ${destinationName} с удобства за комфортен престой.`;
     const isSelected = hasSelectedHotel ? Boolean(hotel.selected) : index === 0;
