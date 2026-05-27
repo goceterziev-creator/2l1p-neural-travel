@@ -1095,6 +1095,15 @@ function uniqueHotelImages(images = [], limit = 6, usedKeys = null) {
   return picked;
 }
 
+function arrangeHotelGalleryImages(images = [], limit = 2, usedKeys = null) {
+  const candidates = safeArray(images).filter(Boolean);
+  const arranged = candidates.length >= 3
+    ? [candidates[0], candidates[candidates.length - 1], ...candidates.slice(1, -1)]
+    : candidates;
+
+  return uniqueHotelImages(arranged, limit, usedKeys);
+}
+
 function uniqueWarnings(warnings = []) {
   return [...new Set(safeArray(warnings).map((item) => String(item || "").trim()).filter(Boolean))];
 }
@@ -2038,6 +2047,43 @@ async function renderOfferHtml(offer, options = {}) {
     return names[destinationKey(raw)] || raw || "дестинацията";
   }
 
+  function isResortDestination(value = "") {
+    const key = destinationKey(value);
+    return key === "maldives" || key === "maldive" || key === "малдиви" || key === "малдивски";
+  }
+
+  function normalizeHeroParagraphs(paragraphs = [], destination = "") {
+    if (!isResortDestination(destination)) return paragraphs;
+
+    const text = paragraphs.join(" ");
+    const hasCityBreakCopy = /пешеходно разстояние|центъра|кратък престой|забележителности|разходк/i.test(text);
+    if (!hasCityBreakCopy && paragraphs.length) return paragraphs;
+
+    return [
+      "Малдивите са подбрана island escape дестинация с кристални лагуни, водни вили и спокойна premium resort атмосфера.",
+      "Офертата комбинира удобен полет, внимателно подбрани варианти за настаняване и ясна крайна цена, без скрити вътрешни разбивки за клиента.",
+      "Настаняването е подходящо за плажна почивка, романтично пътуване и пълен релакс в resort среда."
+    ];
+  }
+
+  function destinationExperienceItems(destination = "") {
+    if (isResortDestination(destination)) {
+      return [
+        "Кристални лагуни, бели плажове и спокойна island атмосфера",
+        "Подбрани resort варианти с комфорт, обслужване и premium удобства",
+        "Възможност за water villa, all-inclusive престой, spa и плажна почивка",
+        "Ясна комбинация от полет, настаняване и финална клиентска цена"
+      ];
+    }
+
+    return [
+      `Разходка из най-характерните части на ${destinationName || "дестинацията"}`,
+      "Местна кухня, атмосфера и свободно време за разходки",
+      "Удобна комбинация от полет, хотел и ясен бюджет",
+      "Подходящ избор за комфортно и запомнящо се пътуване"
+    ];
+  }
+
   function airlineName(value = "") {
     const raw = clientSafeFlightText(value, "");
     if (/ryanair/i.test(raw) && /wizz/i.test(raw)) return "Ryanair + Wizz Air";
@@ -2136,7 +2182,8 @@ async function renderOfferHtml(offer, options = {}) {
     autoHotelImages[destinationImageKey] ||
     autoHotelImages.default;
 
-  const heroParagraphs = splitDescription(offer.destinationDescription);
+  const heroParagraphs = normalizeHeroParagraphs(splitDescription(offer.destinationDescription), offer.destination);
+  const experienceItems = destinationExperienceItems(offer.destination);
   const tripHighlights = [
     {
       title: "\u041F\u043E\u0434\u0431\u0440\u0430\u043D \u043C\u0430\u0440\u0448\u0440\u0443\u0442",
@@ -2213,7 +2260,7 @@ async function renderOfferHtml(offer, options = {}) {
     const providedImages = safeArray(hotel.images).filter(Boolean);
     const directImage = cleanText(hotel.image || hotel.imageUrl || hotel.photo || hotel.thumbnail);
     const primaryImages = providedImages.length ? providedImages : [directImage].filter(Boolean);
-    let images = uniqueHotelImages(primaryImages, 3, usedRenderedHotelImageKeys);
+    let images = arrangeHotelGalleryImages(primaryImages, 2, usedRenderedHotelImageKeys);
 
     if (!images.length && hotelFallbackImage) {
       images = uniqueHotelImages([hotelFallbackImage], 1, usedRenderedHotelImageKeys);
@@ -2837,10 +2884,7 @@ h1 {
     <h2>Какво ви очаква в ${escapeHtml(destinationName || "дестинацията")}</h2>
     <div class="card experience-card">
       <ul>
-        <li>Разходка из най-характерните части на ${escapeHtml(destinationName || "дестинацията")}</li>
-        <li>Местна кухня, атмосфера и свободно време за разходки</li>
-        <li>Удобна комбинация от полет, хотел и ясен бюджет</li>
-        <li>Подходящ избор за комфортно и запомнящо се пътуване</li>
+        ${experienceItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
       </ul>
     </div>
     <div class="trip-highlights">
