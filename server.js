@@ -942,7 +942,45 @@ function inferTravelPeriod(offer = {}) {
 
 function isMissingFlightDisplay(value = "") {
   const text = String(value || "").replace(/\s+/g, " ").trim();
-  return !text || text === "-" || /needs review/i.test(text);
+  return !text || text === "-" || /needs review/i.test(text) || isNoisyFlightDisplay(text);
+}
+
+function isNoisyFlightDisplay(value = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > 180 ||
+    /Baggage The total baggage|Fare rules|Extras you might like|Available in the next steps|Flight time \d/i.test(text);
+}
+
+function cleanFlightDisplayField(value = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (isNoisyFlightDisplay(text) || /needs review/i.test(text)) return "";
+  return text;
+}
+
+function cleanFlightBaggage(value = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (/checked bags|max weight|carry-on bags|personal items/i.test(text)) {
+    const parts = [];
+    if (/personal item|personal items/i.test(text)) parts.push("малък личен багаж включен");
+    if (/carry-on/i.test(text)) parts.push("ръчен багаж според условията на авиокомпанията");
+    if (/checked bag/i.test(text)) parts.push("чекиран багаж според условията на авиокомпанията");
+    return [...new Set(parts)].join("; ") || "Багаж според условията на авиокомпанията";
+  }
+  return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
+}
+
+function cleanFlightNotes(value = "") {
+  const text = String(value || "")
+    .replace(/възрастени/gi, "възрастни")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!text || /Baggage The total baggage|Fare rules|Extras you might like|Available in the next steps/i.test(text)) {
+    return "Полетните часове, багажът и условията се потвърждават финално преди резервация.";
+  }
+
+  return text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
 }
 
 function fillFlightDisplayFallbacks(flight = {}, offer = {}) {
@@ -1260,13 +1298,13 @@ const flightPrice = calculatedFlightPrice;
   const { valid: hotelImages, invalid: invalidHotelImages } = sanitizeHotelImages(body.hotelImages);
 
 const flights = inputFlights.length
-  ? inputFlights.map(f => ({
+    ? inputFlights.map(f => ({
       airline: f.airline || "",
       route: f.route || "",
-      departure: f.departure || "",
-      arrival: f.arrival || "",
-      baggage: f.baggage || "",
-      notes: f.notes || "",
+      departure: cleanFlightDisplayField(f.departure || ""),
+      arrival: cleanFlightDisplayField(f.arrival || ""),
+      baggage: cleanFlightBaggage(f.baggage || ""),
+      notes: cleanFlightNotes(f.notes || ""),
       price: toNumber(f.price, 0)
     }))
     .map((f) => fillFlightDisplayFallbacks(f, body))
@@ -1277,10 +1315,10 @@ const flights = inputFlights.length
       {
         airline: body.flightAirline || "",
         route: body.flightRoute || "",
-        departure: body.flightDeparture || "",
-        arrival: body.flightArrival || "",
-        baggage: body.flightBaggage || "",
-        notes: body.flightNotes || "",
+        departure: cleanFlightDisplayField(body.flightDeparture || ""),
+        arrival: cleanFlightDisplayField(body.flightArrival || ""),
+        baggage: cleanFlightBaggage(body.flightBaggage || ""),
+        notes: cleanFlightNotes(body.flightNotes || ""),
         price: flightPrice
       }
     ]
@@ -1872,8 +1910,30 @@ async function renderOfferHtml(offer, options = {}) {
   function cleanText(value = "") {
     return String(value || "")
       .replace(/Genius.*?\./gi, "")
+      .replace(/възрастени/gi, "възрастни")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function cleanClientHotelDescription(value = "") {
+    let text = cleanText(value)
+      .replace(/Distance in property description.*$/i, "")
+      .replace(/Most popular facilities.*$/i, "")
+      .replace(/Най-популярни съоръжения.*$/i, "")
+      .replace(/Couples in particular like.*$/i, "")
+      .replace(/Двойките особено харесват.*$/i, "")
+      .replace(/Може да отговаряте.*?дати\./i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!text) return "";
+
+    const sentences = text.match(/[^.!?。]+[.!?。]/g);
+    if (sentences?.length) {
+      text = sentences.slice(0, 2).join(" ").trim();
+    }
+
+    return text.length > 360 ? `${text.slice(0, 357).trim()}...` : text;
   }
 
   function clientSafeFlightText(value = "", fallback = "-") {
@@ -2096,7 +2156,7 @@ async function renderOfferHtml(offer, options = {}) {
       images = uniqueHotelImages([hotelFallbackImage], 1, usedRenderedHotelImageKeys);
     }
 
-    const description = cleanText(hotel.description) ||
+    const description = cleanClientHotelDescription(hotel.description) ||
       `Подбран хотел в ${destinationName} с удобства за комфортен престой.`;
     const isSelected = hasSelectedHotel ? Boolean(hotel.selected) : index === 0;
     const optionLabel = isSelected

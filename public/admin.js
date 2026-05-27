@@ -28,14 +28,15 @@ let flights = [];
 let hotels = [];
 
 function addFlight(flight = {}) {
+  const cleanFlight = normalizeFlightFields(flight);
   flights.push({
-    airline: flight.airline || "",
-    route: flight.route || "",
-    departure: flight.departure || "",
-    arrival: flight.arrival || "",
-    baggage: flight.baggage || "",
-    notes: flight.notes || "",
-    price: Number(flight.price || 0)
+    airline: cleanFlight.airline || "",
+    route: cleanFlight.route || "",
+    departure: cleanFlight.departure || "",
+    arrival: cleanFlight.arrival || "",
+    baggage: cleanFlight.baggage || "",
+    notes: cleanFlight.notes || "",
+    price: Number(cleanFlight.price || 0)
   });
 
   renderFlightCards();
@@ -2037,6 +2038,7 @@ function populateForm(offer = {}) {
   const flight = firstItem(offer.flights || offer.flightOptions);
   const hotel = firstItem(offer.hotels || offer.hotelOptions);
   flights = Array.isArray(offer.flights) && offer.flights.length ? offer.flights.map((item) => ({ ...item })) : (flight.airline || flight.route || flight.price ? [{ ...flight, price: Number(offer.flightPrice || flight.price || 0) }] : []);
+  flights = flights.map(normalizeFlightFields);
   hotels = Array.isArray(offer.hotels) && offer.hotels.length
     ? offer.hotels.map((item) => ({ ...item }))
     : (hotel.name || hotel.price ? [{ ...hotel, price: Number(offer.hotelPrice || hotel.price || 0), selected: true }] : []);
@@ -2170,7 +2172,7 @@ async function uploadFlightImage() {
 
     console.log("FLIGHT OCR DATA:", data);
 
-    const f = data.flight || {};
+    const f = normalizeFlightFields(data.flight || {});
     const flightPrice = getImportedFlightPrice(data, f);
     console.log("FLIGHT IMPORT RESPONSE:", {
       flightAirline: f.airline,
@@ -2383,7 +2385,7 @@ async function saveOffer() {
 
   const payload = collectForm();
 
-  payload.flights = flights;
+  payload.flights = flights.map(normalizeFlightFields);
   payload.hotels = dedupeHotelOptionImages(hotels);
 
   const destinationValue = payload.destination || "";
@@ -2652,6 +2654,54 @@ function bindPricingEvents() {
 
 function normalizeText(value = "") {
   return String(value || "").toLowerCase();
+}
+
+function isNoisyFlightDisplay(value = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > 180 ||
+    /Baggage The total baggage|Fare rules|Extras you might like|Available in the next steps|Flight time \d/i.test(text);
+}
+
+function cleanFlightDisplayField(value = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text || /needs review/i.test(text) || isNoisyFlightDisplay(text)) return "";
+  return text;
+}
+
+function cleanFlightBaggage(value = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (/checked bags|max weight|carry-on bags|personal items/i.test(text)) {
+    const parts = [];
+    if (/personal item|personal items/i.test(text)) parts.push("малък личен багаж включен");
+    if (/carry-on/i.test(text)) parts.push("ръчен багаж според условията на авиокомпанията");
+    if (/checked bag/i.test(text)) parts.push("чекиран багаж според условията на авиокомпанията");
+    return [...new Set(parts)].join("; ") || "Багаж според условията на авиокомпанията";
+  }
+  return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
+}
+
+function cleanFlightNotes(value = "") {
+  const text = String(value || "")
+    .replace(/възрастени/gi, "възрастни")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!text || /Baggage The total baggage|Fare rules|Extras you might like|Available in the next steps/i.test(text)) {
+    return "Полетните часове, багажът и условията се потвърждават финално преди резервация.";
+  }
+
+  return text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
+}
+
+function normalizeFlightFields(flight = {}) {
+  return {
+    ...flight,
+    departure: cleanFlightDisplayField(flight.departure || ""),
+    arrival: cleanFlightDisplayField(flight.arrival || ""),
+    baggage: cleanFlightBaggage(flight.baggage || ""),
+    notes: cleanFlightNotes(flight.notes || "")
+  };
 }
 
 function destinationAlias(value = "") {
