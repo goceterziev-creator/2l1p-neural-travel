@@ -1915,8 +1915,9 @@ async function renderOfferHtml(offer, options = {}) {
       .trim();
   }
 
-  function cleanClientHotelDescription(value = "") {
-    let text = cleanText(value)
+  function cleanClientHotelDescription(value = "", hotel = {}) {
+    const hotelName = cleanText(hotel.name || "Хотелът");
+    const text = cleanText(value)
       .replace(/Distance in property description.*$/i, "")
       .replace(/Most popular facilities.*$/i, "")
       .replace(/Най-популярни съоръжения.*$/i, "")
@@ -1928,12 +1929,35 @@ async function renderOfferHtml(offer, options = {}) {
 
     if (!text) return "";
 
-    const sentences = text.match(/[^.!?。]+[.!?。]/g);
-    if (sentences?.length) {
-      text = sentences.slice(0, 2).join(" ").trim();
+    const isIslandResort = /maldives|малдив|atoll|атол|lagoon|лагуна|beach|плаж|villa|вила|island|остров|ocean|океан|sea|море/i.test(text);
+    const features = [];
+
+    if (/all inclusive|всичко включено/i.test(`${text} ${hotel.meal || ""}`)) features.push("all-inclusive концепция");
+    if (/water villa|over.?water|водн|water|lagoon|лагуна/i.test(`${text} ${hotel.room || ""}`)) features.push("водни вили и директна връзка с лагуната");
+    if (/beach|плаж|beachfront|private beach|частна плажна/i.test(text)) features.push("плажна локация");
+    if (/spa|спа|massage|масаж/i.test(text)) features.push("spa зона");
+    if (/pool|басейн|infinity/i.test(text)) features.push("басейн");
+    if (/restaurant|ресторант|buffet|bar|бар/i.test(text)) features.push("ресторанти и барове");
+    if (/fitness|gym|фитнес/i.test(text)) features.push("фитнес удобства");
+
+    const selectedFeatures = [...new Set(features)].slice(0, 4);
+
+    if (isIslandResort) {
+      const featureText = selectedFeatures.length
+        ? `Акцентите включват ${selectedFeatures.join(", ")}.`
+        : "Акцентът е върху спокойствие, гледки към океана и висок стандарт на обслужване.";
+      return `${hotelName} е premium resort избор за спокойна island почивка с усещане за уединение и комфорт. ${featureText}`;
     }
 
-    return text.length > 360 ? `${text.slice(0, 357).trim()}...` : text;
+    const sentences = text.match(/[^.!?。]+[.!?。]/g) || [];
+    let summary = sentences
+      .filter((sentence) => !/openstreetmap|genius|most popular|най-популярни/i.test(sentence))
+      .slice(0, 2)
+      .join(" ")
+      .trim();
+
+    if (!summary) summary = text;
+    return summary.length > 260 ? `${summary.slice(0, 257).trim()}...` : summary;
   }
 
   function clientSafeFlightText(value = "", fallback = "-") {
@@ -2156,7 +2180,7 @@ async function renderOfferHtml(offer, options = {}) {
       images = uniqueHotelImages([hotelFallbackImage], 1, usedRenderedHotelImageKeys);
     }
 
-    const description = cleanClientHotelDescription(hotel.description) ||
+    const description = cleanClientHotelDescription(hotel.description, hotel) ||
       `Подбран хотел в ${destinationName} с удобства за комфортен престой.`;
     const isSelected = hasSelectedHotel ? Boolean(hotel.selected) : index === 0;
     const optionLabel = isSelected
