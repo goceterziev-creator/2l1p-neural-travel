@@ -2233,7 +2233,9 @@ h1 {
 .hotel-images {
   display: flex;
   gap: 8px;
-  margin: 0;
+  order: 1;
+  height: 150px;
+  margin: 0 0 18px;
   overflow: hidden;
 }
 .hotel-images:empty, .hotel-images.has-missing-image:empty {
@@ -2258,10 +2260,9 @@ h1 {
   margin-top: 0;
 }
 .hotel-option-card {
-  display: grid;
-  grid-template-columns: minmax(230px, 34%) minmax(0, 1fr);
-  column-gap: 22px;
-  min-height: 290px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   position: relative;
   overflow: hidden;
 }
@@ -2269,16 +2270,14 @@ h1 {
 .hotel-option-card .option-meta,
 .hotel-option-card .option-price,
 .hotel-option-card .hotel-option-body {
-  grid-column: 2;
+  order: 2;
 }
 .hotel-option-card .hotel-images {
-  grid-column: 1;
-  grid-row: 1 / span 4;
-  align-self: stretch;
-  min-height: 250px;
+  order: 1;
 }
 .hotel-option-body {
   min-width: 0;
+  order: 3;
 }
 .hotel-option-card.selected {
   background: linear-gradient(180deg, #142033 0%, #0f172a 100%);
@@ -2327,15 +2326,14 @@ h1 {
   text-transform: uppercase;
 }
 .option-price {
-  justify-self: end;
-  align-self: start;
+  align-self: flex-start;
   border-radius: 999px;
   background: #101827;
   color: #fff;
   font-size: 14px;
   font-weight: 800;
   padding: 8px 11px;
-  margin-top: -48px;
+  margin: 0 0 14px;
   max-width: 210px;
   text-align: center;
 }
@@ -2515,8 +2513,7 @@ h1 {
   h1 { font-size: 48px; }
   .price { font-size: 42px; }
   .detail-grid, .trip-highlights, .cta-contact { grid-template-columns: 1fr; }
-  .hotel-option-card { display: block; min-height: 0; }
-  .hotel-images { display: flex; height: 170px; margin-bottom: 16px; }
+  .hotel-images { height: 170px; margin-bottom: 16px; }
   .option-price { display: inline-flex; margin: 0 0 12px; }
   .cta-qr { width: 100%; }
 }
@@ -2536,8 +2533,8 @@ h1 {
   .quiet-note { font-size: 15px; margin-top: 16px; }
   .cta-card h2 { font-size: 26px; }
   .cta-contact { grid-template-columns: 1fr auto; }
-  .hotel-option-card { grid-template-columns: 34% minmax(0, 1fr); min-height: 245px; column-gap: 14px; }
-  .hotel-option-card .hotel-images { min-height: 215px; }
+  .hotel-option-card { min-height: 0; }
+  .hotel-option-card .hotel-images { height: 108px; margin-bottom: 10px; }
   .hotel-images img { height: 100%; }
   .hotel-option-card .detail-grid { gap: 8px; margin: 10px 0; }
   .hotel-option-card p { margin: 8px 0; }
