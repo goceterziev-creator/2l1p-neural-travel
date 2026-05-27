@@ -1062,6 +1062,13 @@ const DESTINATION_INTELLIGENCE = [
     aliases: ["bari", "\u0431\u0430\u0440\u0438"],
     airports: ["bri"],
     districts: []
+  },
+  {
+    key: "maldives",
+    label: "\u041c\u0430\u043b\u0434\u0438\u0432\u0438",
+    aliases: ["maldives", "maldive", "\u043c\u0430\u043b\u0434\u0438\u0432\u0438", "\u043c\u0430\u043b\u0434\u0438\u0432\u0441\u043a\u0438"],
+    airports: ["mle", "male", "\u043c\u0430\u043b\u0435"],
+    districts: ["atoll", "\u0430\u0442\u043e\u043b", "maafushi", "\u043c\u0430\u0430\u0444\u0443\u0448\u0438"]
   }
 ];
 
@@ -1732,6 +1739,56 @@ async function findHotelImageWithSerpApi(hotelName = "", destination = "") {
   return images[0] || "";
 }
 
+const destinationHeroImageCache = new Map();
+
+async function findDestinationImageWithSerpApi(destination = "") {
+  const apiKey = process.env.SERPAPI_KEY;
+  const name = String(destination || "").trim();
+  if (!apiKey || !name) return "";
+
+  const cacheKey = normalizeSearchText(name);
+  if (destinationHeroImageCache.has(cacheKey)) {
+    return destinationHeroImageCache.get(cacheKey);
+  }
+
+  try {
+    const profile = destinationProfile(name);
+    const queryName = profile?.label || name;
+    const tropicalHint = profile?.key === "maldives" ? "turquoise lagoon overwater villas beach" : "travel destination landmark landscape";
+    const query = `${queryName} ${tropicalHint}`;
+
+    const url = new URL("https://serpapi.com/search.json");
+    url.searchParams.set("engine", "google_images");
+    url.searchParams.set("q", query);
+    url.searchParams.set("api_key", apiKey);
+
+    const fetchOptions = {};
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+      fetchOptions.signal = AbortSignal.timeout(8000);
+    }
+
+    const response = await fetch(url, fetchOptions);
+    if (!response.ok) {
+      console.warn("SerpAPI destination hero lookup failed:", response.status);
+      destinationHeroImageCache.set(cacheKey, "");
+      return "";
+    }
+
+    const data = await response.json();
+    const candidates = safeArray(data?.images_results)
+      .flatMap((item) => [item?.original, item?.thumbnail])
+      .filter((src) => typeof src === "string" && /^https?:\/\//i.test(src));
+    const image = uniqueHotelImages(candidates, 1)[0] || "";
+
+    destinationHeroImageCache.set(cacheKey, image);
+    return image;
+  } catch (error) {
+    console.warn("SerpAPI destination hero lookup skipped:", error.message);
+    destinationHeroImageCache.set(cacheKey, "");
+    return "";
+  }
+}
+
 function normalizeHotelTextToBulgarian(parsed = {}) {
   const mealMap = new Map([
     ["breakfast included", "Включена закуска"],
@@ -1795,13 +1852,20 @@ async function renderOfferHtml(offer, options = {}) {
     "барселона": "https://images.unsplash.com/photo-1583422409516-2895a77efded",
     rome: "https://images.unsplash.com/photo-1552832230-c0197dd311b5",
     rim: "https://images.unsplash.com/photo-1552832230-c0197dd311b5",
-    "рим": "https://images.unsplash.com/photo-1552832230-c0197dd311b5"
+    "рим": "https://images.unsplash.com/photo-1552832230-c0197dd311b5",
+    maldives: "https://images.unsplash.com/photo-1514282401047-d79a71a590e8",
+    maldive: "https://images.unsplash.com/photo-1514282401047-d79a71a590e8",
+    "малдиви": "https://images.unsplash.com/photo-1514282401047-d79a71a590e8",
+    "малдивски": "https://images.unsplash.com/photo-1514282401047-d79a71a590e8"
   };
 
   const autoHotelImages = {
     rome: "https://images.unsplash.com/photo-1566073771259-6a8506099945",
     rim: "https://images.unsplash.com/photo-1566073771259-6a8506099945",
     "рим": "https://images.unsplash.com/photo-1566073771259-6a8506099945",
+    maldives: "https://images.unsplash.com/photo-1573843981267-be1999ff37cd",
+    maldive: "https://images.unsplash.com/photo-1573843981267-be1999ff37cd",
+    "малдиви": "https://images.unsplash.com/photo-1573843981267-be1999ff37cd",
     default: "https://images.unsplash.com/photo-1566073771259-6a8506099945"
   };
 
@@ -1842,7 +1906,11 @@ async function renderOfferHtml(offer, options = {}) {
       barcelona: "Барселона",
       "барселона": "Барселона",
       tokyo: "Токио",
-      "токио": "Токио"
+      "токио": "Токио",
+      maldives: "Малдиви",
+      maldive: "Малдиви",
+      "малдиви": "Малдиви",
+      "малдивски": "Малдиви"
     };
     return names[destinationKey(raw)] || raw || "дестинацията";
   }
@@ -1933,12 +2001,14 @@ async function renderOfferHtml(offer, options = {}) {
     console.warn("WhatsApp QR generation skipped:", error.message);
   }
 
+  const destinationImageKey = destinationKey(offer.destination);
   const heroImage =
     offer.destinationImage ||
-    autoImages[destinationKey(offer.destination)] ||
+    autoImages[destinationImageKey] ||
+    await findDestinationImageWithSerpApi(displayDestination(offer.destination) || offer.destination) ||
     "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee";
   const hotelFallbackImage =
-    autoHotelImages[destinationKey(offer.destination)] ||
+    autoHotelImages[destinationImageKey] ||
     autoHotelImages.default;
 
   const heroParagraphs = splitDescription(offer.destinationDescription);
