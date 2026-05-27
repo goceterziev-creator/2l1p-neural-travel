@@ -2658,6 +2658,7 @@ function destinationAlias(value = "") {
   const text = normalizeText(value).trim();
 
   if (text.includes("rim")) return "rome";
+  if (text.includes("maldives") || text.includes("maldive") || text.includes("малдив")) return "maldives";
   return text;
 }
 
@@ -2679,6 +2680,10 @@ function destinationMatchesFlight(destination, flight = {}) {
 
   if (d.includes("bari") || d.includes("бари")) {
     return text.includes("bari") || text.includes("bri");
+  }
+
+  if (d.includes("maldives") || d.includes("малдив")) {
+    return text.includes("maldives") || text.includes("малдив") || text.includes("mle") || text.includes("male") || text.includes("malé") || text.includes("мале");
   }
 
   return true;
@@ -2737,6 +2742,21 @@ function destinationMatchesHotel(destination, hotel = {}) {
 
   if (d.includes("bari") || d.includes("бари")) {
     return text.includes("bari");
+  }
+
+  if (d.includes("maldives") || d.includes("малдив")) {
+    return (
+      text.includes("maldives") ||
+      text.includes("малдив") ||
+      text.includes("mle") ||
+      text.includes("male") ||
+      text.includes("malé") ||
+      text.includes("мале") ||
+      text.includes("atoll") ||
+      text.includes("атол") ||
+      text.includes("himandhoo") ||
+      text.includes("химандху")
+    );
   }
 
   return true;
@@ -2988,10 +3008,13 @@ if (validationWarnings.length) {
       barcelona: "Барселона",
       "барселона": "Барселона",
       tokyo: "Токио",
-      "токио": "Токио"
+      "токио": "Токио",
+      maldives: "Малдиви",
+      "малдиви": "Малдиви"
     };
     const destinationName = destinationNames[destinationKey] || destination.trim() || "Дестинацията";
-    const hotelType = "citybreak";
+    const resortDestinations = new Set(["maldives", "малдиви"]);
+    const hotelType = resortDestinations.has(destinationKey) ? "resort" : "citybreak";
     const hotelHighlights = (window.HOTEL_TAGS?.[hotelType] || [])
       .map(item => `• ${item}`)
       .join("\n");

@@ -2002,10 +2002,12 @@ async function renderOfferHtml(offer, options = {}) {
   }
 
   const destinationImageKey = destinationKey(offer.destination);
-  const heroImage =
-    offer.destinationImage ||
+  const resolvedDestinationImage =
     autoImages[destinationImageKey] ||
-    await findDestinationImageWithSerpApi(displayDestination(offer.destination) || offer.destination) ||
+    await findDestinationImageWithSerpApi(displayDestination(offer.destination) || offer.destination);
+  const heroImage =
+    resolvedDestinationImage ||
+    offer.destinationImage ||
     "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee";
   const hotelFallbackImage =
     autoHotelImages[destinationImageKey] ||
