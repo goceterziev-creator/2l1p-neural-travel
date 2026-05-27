@@ -624,19 +624,58 @@ function hotelImageKey(value = "") {
   }
 }
 
+function hotelImageHostType(value = "") {
+  try {
+    const host = new URL(String(value || "").trim()).hostname.toLowerCase();
+    if (host.includes("serpapi.com")) return "proxy";
+    if (host.includes("bstatic.com") || host.includes("booking.com")) return "hotel-source";
+    return "external";
+  } catch {
+    return "external";
+  }
+}
+
+function hotelImageSceneKey(value = "") {
+  const key = hotelImageKey(value);
+  if (!key) return "";
+
+  const filename = key.split("/").pop() || key;
+  const numericId = filename.match(/\d{6,}/)?.[0];
+  if (numericId) return numericId;
+
+  return key
+    .replace(/(?:max|square|max\d+x\d+|xdata|images?|hotel|searches|thumbnail|thumb|large|small|medium)/g, "")
+    .replace(/[^a-z0-9а-я]+/gi, "")
+    .slice(0, 28);
+}
+
 function uniqueHotelImages(images = [], limit = 6, usedKeys = null) {
+  const candidates = (Array.isArray(images) ? images : [])
+    .map((source) => typeof source === "string" ? source.trim() : "")
+    .filter((image) => image && isLikelyHotelImageUrl(image));
+  const hasDirectHotelSource = candidates.some((image) => hotelImageHostType(image) === "hotel-source");
   const picked = [];
   const localKeys = new Set();
+  const localSceneKeys = new Set();
 
-  for (const source of Array.isArray(images) ? images : []) {
-    const image = typeof source === "string" ? source.trim() : "";
-    if (!image || !isLikelyHotelImageUrl(image)) continue;
+  for (const image of candidates) {
+    if (hasDirectHotelSource && hotelImageHostType(image) === "proxy") continue;
 
     const key = hotelImageKey(image);
-    if (!key || localKeys.has(key) || (usedKeys && usedKeys.has(key))) continue;
+    const sceneKey = hotelImageSceneKey(image);
+    if (
+      !key ||
+      localKeys.has(key) ||
+      (sceneKey && localSceneKeys.has(sceneKey)) ||
+      (usedKeys && (usedKeys.has(key) || (sceneKey && usedKeys.has(`scene:${sceneKey}`))))
+    ) continue;
 
     localKeys.add(key);
-    if (usedKeys) usedKeys.add(key);
+    if (sceneKey) localSceneKeys.add(sceneKey);
+    if (usedKeys) {
+      usedKeys.add(key);
+      if (sceneKey) usedKeys.add(`scene:${sceneKey}`);
+    }
     picked.push(image);
     if (picked.length >= limit) break;
   }
