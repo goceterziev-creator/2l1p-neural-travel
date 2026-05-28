@@ -1963,6 +1963,50 @@ async function renderOfferHtml(offer, options = {}) {
       .trim();
   }
 
+  const HOTEL_MICROCOPY_RULES = [
+    {
+      keywords: ["all inclusive", "all-inclusive", "всичко включено"],
+      label: "\u041D\u0430\u0439-\u0434\u043E\u0431\u0440\u0430 all-inclusive \u0441\u0442\u043E\u0439\u043D\u043E\u0441\u0442"
+    },
+    {
+      keywords: ["water villa", "overwater", "over-water", "lagoon", "\u0432\u043E\u0434\u043D\u0430 \u0432\u0438\u043B\u0430", "\u0432\u043E\u0434\u043D\u0438 \u0432\u0438\u043B\u0438", "\u043B\u0430\u0433\u0443\u043D\u0430"],
+      label: "\u041F\u0440\u0435\u043C\u0438\u0443\u043C \u0432\u0438\u043B\u0430 \u0432 \u043B\u0430\u0433\u0443\u043D\u0430\u0442\u0430"
+    },
+    {
+      keywords: ["beachfront", "private beach", "beach access", "\u043D\u0430 \u043F\u043B\u0430\u0436\u0430", "\u0447\u0430\u0441\u0442\u0435\u043D \u043F\u043B\u0430\u0436", "\u043F\u043B\u0430\u0436\u043D\u0430"],
+      label: "\u041D\u0430\u0439-\u0434\u043E\u0431\u044A\u0440 \u0434\u043E\u0441\u0442\u044A\u043F \u0434\u043E \u043F\u043B\u0430\u0436\u0430"
+    },
+    {
+      keywords: ["family", "kids", "children", "\u0441\u0435\u043C\u0435\u0439", "\u0434\u0435\u0446\u0430", "\u0434\u0435\u0442\u0435"],
+      label: "\u041F\u043E\u0434\u0445\u043E\u0434\u044F\u0449\u043E \u0437\u0430 \u0441\u0435\u043C\u0435\u0439\u0441\u0442\u0432\u0430"
+    },
+    {
+      keywords: ["spa", "honeymoon", "couples", "romantic", "\u0441\u043F\u0430", "\u043C\u0435\u0434\u0435\u043D \u043C\u0435\u0441\u0435\u0446", "\u0434\u0432\u043E\u0439\u043A\u0438", "\u0440\u043E\u043C\u0430\u043D\u0442\u0438\u0447"],
+      label: "\u0413\u043E\u0442\u043E\u0432\u043E \u0437\u0430 \u0440\u043E\u043C\u0430\u043D\u0442\u0438\u0447\u043D\u043E \u043F\u044A\u0442\u0443\u0432\u0430\u043D\u0435"
+    }
+  ];
+
+  function resolveHotelMicrocopy(hotel = {}) {
+    const text = [
+      hotel.name,
+      hotel.description,
+      hotel.meal,
+      hotel.room,
+      hotel.area
+    ]
+      .map(cleanText)
+      .join(" ")
+      .toLowerCase();
+
+    for (const rule of HOTEL_MICROCOPY_RULES) {
+      if (rule.keywords.some((keyword) => text.includes(String(keyword).toLowerCase()))) {
+        return rule.label;
+      }
+    }
+
+    return "\u041A\u0443\u0440\u0438\u0440\u0430\u043D travel \u0438\u0437\u0431\u043E\u0440";
+  }
+
   function cleanClientHotelDescription(value = "", hotel = {}) {
     const hotelName = cleanText(hotel.name || "Хотелът");
     const text = cleanText(value)
@@ -2347,7 +2391,7 @@ async function renderOfferHtml(offer, options = {}) {
         <div class="benefit-list">
           <span>Отлична локация</span>
           <span>Удобен престой</span>
-          <span>Подходящ избор за пътуването</span>
+          <span>${escapeHtml(resolveHotelMicrocopy(hotel))}</span>
         </div>
         </div>
       </article>
