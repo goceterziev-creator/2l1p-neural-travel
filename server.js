@@ -2013,6 +2013,63 @@ async function renderOfferHtml(offer, options = {}) {
     return "\u041A\u0443\u0440\u0438\u0440\u0430\u043D travel \u0438\u0437\u0431\u043E\u0440";
   }
 
+  function cleanBrochureLocation(value = "", fallback = "") {
+    const raw = cleanText(value || fallback);
+    if (!raw || raw === "-") return "";
+
+    const parts = raw
+      .split(",")
+      .map((part) => cleanText(part).replace(/\b\d{3,}\b/g, "").trim())
+      .filter(Boolean);
+
+    if (!parts.length) return raw;
+
+    const joined = parts.join(" ");
+    const hasMaldives = /maldives|maldive|\u043c\u0430\u043b\u0434\u0438\u0432/i.test(joined);
+    if (hasMaldives) {
+      const islandOrAtoll = parts.find((part) => /atoll|\u0430\u0442\u043e\u043b/i.test(part)) ||
+        parts.find((part) => !/maldives|maldive|\u043c\u0430\u043b\u0434\u0438\u0432|himandhoo|\u0445\u0438\u043c\u0430\u043d\u0434\u0445\u0443/i.test(part)) ||
+        parts[0];
+      return `${islandOrAtoll}, Maldives`;
+    }
+
+    if (parts.length >= 3) {
+      return `${parts[0]}, ${parts[parts.length - 1]}`;
+    }
+
+    return parts.join(", ");
+  }
+
+  function resolveHotelOptionTone(clientOptionPrice = 0, optionPrices = []) {
+    const price = toNumber(clientOptionPrice, 0);
+    const prices = optionPrices.map((item) => toNumber(item, 0)).filter((item) => item > 0);
+    if (!price || prices.length < 2) {
+      return {
+        label: "\u041A\u0443\u0440\u0438\u0440\u0430\u043D\u0430 \u043E\u043F\u0446\u0438\u044F",
+        toneClass: "alternative"
+      };
+    }
+
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    if (price === min) {
+      return {
+        label: "\u041D\u0430\u0439-\u0434\u043E\u0431\u0440\u0430 \u0446\u0435\u043D\u0430",
+        toneClass: "best-price"
+      };
+    }
+    if (price === max) {
+      return {
+        label: "\u041F\u0440\u0435\u043C\u0438\u0443\u043C \u0438\u0437\u0436\u0438\u0432\u044F\u0432\u0430\u043D\u0435",
+        toneClass: "premium"
+      };
+    }
+    return {
+      label: "\u0411\u0430\u043B\u0430\u043D\u0441\u0438\u0440\u0430\u043D\u0430 \u043E\u043F\u0446\u0438\u044F",
+      toneClass: "balanced"
+    };
+  }
+
   function cleanClientHotelDescription(value = "", hotel = {}) {
     const hotelName = cleanText(hotel.name || "Хотелът");
     const text = cleanText(value)
@@ -2331,6 +2388,13 @@ async function renderOfferHtml(offer, options = {}) {
   const transferOptionBase = toNumber(offer.transferPrice, 0);
   const markupMultiplier = 1 + toNumber(offer.markupPercent, 0) / 100;
   const usedRenderedHotelImageKeys = new Set();
+  const hotelOptionPrices = orderedHotels.map((hotel) => {
+    const hotelPrice = toNumber(hotel.price, 0);
+    const calculatedOptionPrice = (flightOptionBase + hotelPrice + transferOptionBase) * markupMultiplier;
+    return hotel.selected && toNumber(offer.finalPrice, 0) > 0
+      ? toNumber(offer.finalPrice, 0)
+      : calculatedOptionPrice;
+  });
 
   const hotelCards = orderedHotels.map((hotel, index) => {
     const providedImages = safeArray(hotel.images).filter(Boolean);
@@ -2353,16 +2417,7 @@ async function renderOfferHtml(offer, options = {}) {
     const clientOptionPrice = isSelected && toNumber(offer.finalPrice, 0) > 0
       ? toNumber(offer.finalPrice, 0)
       : calculatedOptionPrice;
-    const optionTone = isSelected
-      ? "Premium option"
-      : hotelPrice > 0
-        ? "Best value"
-        : "Alternative option";
-    const optionToneClass = isSelected
-      ? "premium"
-      : hotelPrice > 0
-        ? "best-value"
-        : "alternative";
+    const optionTone = resolveHotelOptionTone(clientOptionPrice, hotelOptionPrices);
     const detailValue = (value) => {
       const text = cleanText(value);
       return text && text !== "-"
@@ -2373,7 +2428,7 @@ async function renderOfferHtml(offer, options = {}) {
     return `
       <article class="card hotel-card hotel-option-card${isSelected ? " selected" : ""}">
         <div class="option-badge">${escapeHtml(optionLabel)}</div>
-        <div class="option-meta ${escapeAttr(optionToneClass)}">${escapeHtml(optionTone)}</div>
+        <div class="option-meta ${escapeAttr(optionTone.toneClass)}">${escapeHtml(optionTone.label)}</div>
         ${clientOptionPrice > 0 ? `<div class="option-price"><small>Крайна цена</small>${formatMoney(clientOptionPrice, hotel.currency || offer.currency || "EUR")}</div>` : ""}
         ${images.length ? `
           <div class="hotel-images">
@@ -2388,7 +2443,7 @@ async function renderOfferHtml(offer, options = {}) {
         <div class="detail-grid">
           <div><strong>Стая</strong><br>${escapeHtml(detailValue(hotel.room))}</div>
           <div><strong>Изхранване</strong><br>${escapeHtml(detailValue(hotel.meal))}</div>
-          <div><strong>Локация</strong><br>${escapeHtml(detailValue(hotel.area || destinationName))}</div>
+          <div><strong>Локация</strong><br>${escapeHtml(detailValue(cleanBrochureLocation(hotel.area, destinationName)))}</div>
           <div><strong>Наличност</strong><br>${escapeHtml(detailValue(hotel.roomsLeft))}</div>
         </div>
 
@@ -2730,11 +2785,21 @@ h1 {
 .option-meta.best-value {
   color: #047857;
 }
+.option-meta.best-price {
+  color: #047857;
+}
+.option-meta.balanced {
+  color: #2563eb;
+}
 .option-meta.alternative {
   color: #475569;
 }
 .hotel-option-card.selected .option-meta.premium {
   color: #fde68a;
+}
+.hotel-option-card.selected .option-meta.best-price,
+.hotel-option-card.selected .option-meta.balanced {
+  color: #bbf7d0;
 }
 .option-price {
   align-self: flex-start;
