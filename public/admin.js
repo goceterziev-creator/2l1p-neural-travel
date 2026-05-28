@@ -2751,6 +2751,88 @@ function destinationAlias(value = "") {
   return text;
 }
 
+const DESTINATION_QA_PROFILES = [
+  {
+    key: "tokyo",
+    label: "Токио",
+    aliases: ["tokyo", "токио", "tokio"],
+    airports: ["nrt", "narita", "нарита", "hnd", "haneda", "ханеда"],
+    districts: ["minato", "минато", "shinjuku", "шинджуку", "ginza", "гиндза", "shinbashi", "синбаши", "синьбай", "asakusa", "асакуса", "ueno", "уено", "akihabara", "акихабара", "chidoricho", "чидоричо", "hibiya", "хибия"]
+  },
+  {
+    key: "rome",
+    label: "Рим",
+    aliases: ["rome", "roma", "rim", "рим"],
+    airports: ["fco", "fiumicino", "cia", "ciampino"],
+    districts: ["trionfale", "triunfale", "трионфале", "триумфале", "prati", "прати", "vatican", "ватикан"]
+  },
+  {
+    key: "maldives",
+    label: "Малдиви",
+    aliases: ["maldives", "maldive", "малдиви", "малдивски"],
+    airports: ["mle", "male", "malé", "мале"],
+    districts: ["atoll", "атол", "ari atoll", "ари атол", "himandhoo", "химандху", "maafushi", "маафуши"]
+  },
+  {
+    key: "barcelona",
+    label: "Барселона",
+    aliases: ["barcelona", "барселона"],
+    airports: ["bcn"],
+    districts: []
+  },
+  {
+    key: "bari",
+    label: "Бари",
+    aliases: ["bari", "бари"],
+    airports: ["bri"],
+    districts: []
+  }
+];
+
+function getDestinationQaProfile(destination = "") {
+  const text = normalizeText(destination);
+  return DESTINATION_QA_PROFILES.find((profile) =>
+    [...profile.aliases, ...profile.airports, ...profile.districts].some((needle) => text.includes(normalizeText(needle)))
+  ) || null;
+}
+
+function findDestinationQaSignal(profile, value = "", groups = ["aliases", "airports", "districts"]) {
+  const text = normalizeText(typeof value === "string" ? value : JSON.stringify(value || {}));
+  if (!profile || !text) return null;
+  for (const group of groups) {
+    const match = (profile[group] || []).find((needle) => text.includes(normalizeText(needle)));
+    if (match) return { group, match };
+  }
+  return null;
+}
+
+function displayDestinationQaSignal(signal = {}) {
+  const key = normalizeText(signal.match);
+  const names = {
+    nrt: "NRT",
+    narita: "NRT",
+    "нарита": "NRT",
+    hnd: "HND",
+    haneda: "HND",
+    "ханеда": "HND",
+    fco: "FCO",
+    cia: "CIA",
+    mle: "MLE",
+    male: "MLE",
+    "malé": "MLE",
+    "мале": "MLE",
+    minato: "Минато",
+    "минато": "Минато",
+    shinjuku: "Шинджуку",
+    "шинджуку": "Шинджуку",
+    ginza: "Гиндза",
+    "гиндза": "Гиндза",
+    atoll: "атол",
+    "атол": "атол"
+  };
+  return names[key] || String(signal.match || "").trim();
+}
+
 function destinationMatchesFlight(destination, flight = {}) {
   const d = destinationAlias(destination);
   const text = normalizeText(JSON.stringify(flight));
@@ -2853,16 +2935,37 @@ function destinationMatchesHotel(destination, hotel = {}) {
 
 function getDestinationMismatchWarnings(destination, flight = {}, hotel = {}) {
   const warnings = [];
+  const profile = getDestinationQaProfile(destination);
+  const flightSignal = profile ? findDestinationQaSignal(profile, flight, ["aliases", "airports"]) : null;
+  const airportSignal = profile ? findDestinationQaSignal(profile, flight, ["airports"]) : null;
+  const hotelSignal = profile ? findDestinationQaSignal(profile, hotel, ["aliases", "districts", "airports"]) : null;
+  const districtSignal = profile ? findDestinationQaSignal(profile, hotel, ["districts"]) : null;
 
   if (!destinationMatchesFlight(destination, flight)) {
     warnings.push(
       `[WARNING] Полетът не споменава ясно дестинацията "${destination || "-"}". Проверете маршрута преди изпращане.`
+    );
+  } else if (profile && airportSignal) {
+    warnings.push(
+      `[INFO] Полетът каца в ${displayDestinationQaSignal(airportSignal)}, което е разпознато като валидно летище за ${profile.label}. Проверете трансфера до хотела.`
+    );
+  } else if (profile && flightSignal?.group === "airports") {
+    warnings.push(
+      `[INFO] Полетът използва ${displayDestinationQaSignal(flightSignal)}, което е валидно за ${profile.label}.`
     );
   }
 
   if (!destinationMatchesHotel(destination, hotel)) {
     warnings.push(
       `[WARNING] Локацията на хотела не съвпада ясно с основната дестинация "${destination || "-"}". Проверете дали това е търсеният район.`
+    );
+  } else if (profile && districtSignal) {
+    warnings.push(
+      `[INFO] Хотелът е в район ${displayDestinationQaSignal(districtSignal)}, който е разпознат като част от ${profile.label}.`
+    );
+  } else if (profile && hotelSignal?.group === "districts") {
+    warnings.push(
+      `[INFO] Хотелската локация е разпозната като валидна за ${profile.label}.`
     );
   }
 
@@ -2920,14 +3023,14 @@ function getHotelStayMismatchWarnings(offer = {}, hotel = {}) {
   const effectiveHotelAdults = hotelAdults || inferredSingleRoomAdults;
 
   if (offerAdults && effectiveHotelAdults && offerAdults !== effectiveHotelAdults) {
-    warnings.push(`Hotel guests mismatch: offer Guests is "${offer.guests || "-"}", but hotel room/description indicates ${effectiveHotelAdults} adult(s)`);
+    warnings.push(`[WARNING] Броят гости в офертата е "${offer.guests || "-"}", но хотелът показва ${effectiveHotelAdults} възрастни. Проверете броя гости.`);
   }
 
   const offerNights = parseOfferNightCount(offer.travelDates);
   const hotelNights = parseHotelNightCount(hotel);
 
   if (offerNights && hotelNights && offerNights !== hotelNights) {
-    warnings.push(`Hotel stay mismatch: offer is for ${offerNights} nights, hotel screenshot is for ${hotelNights} nights`);
+    warnings.push(`[WARNING] Офертата е за ${offerNights} нощувки, но хотелският screenshot показва ${hotelNights} нощувки. Проверете периода.`);
   }
 
   return warnings;
@@ -2941,7 +3044,7 @@ function getFlightPassengerMismatchWarnings(offer = {}, flight = {}) {
   );
 
   if (offerAdults && flightAdults && offerAdults !== flightAdults) {
-    warnings.push(`Flight passengers mismatch: offer Guests is "${offer.guests || "-"}", but flight screenshot indicates ${flightAdults} adult(s)`);
+    warnings.push(`[WARNING] Броят гости в офертата е "${offer.guests || "-"}", но полетът показва ${flightAdults} възрастни. Проверете броя пътници.`);
   }
 
   return warnings;
@@ -2949,11 +3052,12 @@ function getFlightPassengerMismatchWarnings(offer = {}, flight = {}) {
 
 function confirmMismatchWarnings(destination, flight, hotel) {
   const warnings = getDestinationMismatchWarnings(destination, flight, hotel);
+  const actionableWarnings = warnings.filter((warning) => warningSeverity(warning) !== "info");
 
-  if (!warnings.length) return true;
+  if (!actionableWarnings.length) return true;
 
   return confirm(
-    `${warnings.join("\n")}\n\n` +
+    `${actionableWarnings.map(displayWarning).join("\n")}\n\n` +
     `Destination: ${destination || "-"}\n` +
     `Flight: ${flight?.route || "-"}\n` +
     `Hotel: ${hotel?.name || "-"}\n\n` +

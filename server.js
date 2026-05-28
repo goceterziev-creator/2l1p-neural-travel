@@ -1112,6 +1112,12 @@ function displayValidationWarning(warning = "") {
   return String(warning || "").replace(/^\[(INFO|WARNING|CRITICAL)\]\s*/i, "");
 }
 
+function createQaFinding({ severity = "WARNING", message = "" } = {}) {
+  const level = String(severity || "WARNING").toUpperCase();
+  const safeLevel = ["INFO", "WARNING", "CRITICAL"].includes(level) ? level : "WARNING";
+  return `[${safeLevel}] ${String(message || "").trim()}`;
+}
+
 function normalizeIncomingWarnings(warnings = []) {
   return safeArray(warnings)
     .map((item) => String(item || "").trim())
@@ -1270,11 +1276,11 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
   const hotelAdults = parseAdultCount(`${hotelText} ${rawHotelImages}`);
 
   if (offerAdults && flightAdults && offerAdults !== flightAdults) {
-    warnings.push(`Flight guests mismatch: offer Guests is "${offer.guests || "-"}", but flight details indicate ${flightAdults} adult(s).`);
+    warnings.push(createQaFinding({ severity: "WARNING", message: `\u0411\u0440\u043e\u044f\u0442 \u0433\u043e\u0441\u0442\u0438 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.guests || "-"}", \u043d\u043e \u043f\u043e\u043b\u0435\u0442\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${flightAdults} \u0432\u044a\u0437\u0440\u0430\u0441\u0442\u043d\u0438. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0431\u0440\u043e\u044f \u043f\u044a\u0442\u043d\u0438\u0446\u0438.` }));
   }
 
   if (offerAdults && hotelAdults && offerAdults !== hotelAdults) {
-    warnings.push(`Hotel guests mismatch: offer Guests is "${offer.guests || "-"}", but hotel room/description indicates ${hotelAdults} adult(s).`);
+    warnings.push(createQaFinding({ severity: "WARNING", message: `\u0411\u0440\u043e\u044f\u0442 \u0433\u043e\u0441\u0442\u0438 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.guests || "-"}", \u043d\u043e \u0445\u043e\u0442\u0435\u043b\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${hotelAdults} \u0432\u044a\u0437\u0440\u0430\u0441\u0442\u043d\u0438. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0431\u0440\u043e\u044f \u0433\u043e\u0441\u0442\u0438.` }));
   }
 
   const offerYear = inferYearFromText(offer.travelDates) || inferYearFromText(flightText);
@@ -1283,24 +1289,24 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
 
   if (offerDates.length >= 2 && flightDates.length >= 2) {
     if (offerDates[0] !== flightDates[0] || offerDates[1] !== flightDates[1]) {
-      warnings.push(`Flight dates mismatch: offer period is "${offer.travelDates || "-"}", but flight details show ${flightDates[0]} - ${flightDates[1]}.`);
+      warnings.push(createQaFinding({ severity: "WARNING", message: `\u041f\u0435\u0440\u0438\u043e\u0434\u044a\u0442 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.travelDates || "-"}", \u043d\u043e \u043f\u043e\u043b\u0435\u0442\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${flightDates[0]} - ${flightDates[1]}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0434\u0430\u0442\u0438\u0442\u0435 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.` }));
     }
   }
 
   for (const hotel of hotels) {
     const availability = normalizeSearchText(hotel.roomsLeft);
     if (/няма налич|няма свобод|not available|no availability|sold out|unavailable/.test(availability)) {
-      warnings.push(`Hotel availability warning: "${hotel.name || "Hotel"}" shows "${hotel.roomsLeft}".`);
+      warnings.push(createQaFinding({ severity: "WARNING", message: `\u0425\u043e\u0442\u0435\u043b\u044a\u0442 "${hotel.name || "Hotel"}" \u043f\u043e\u043a\u0430\u0437\u0432\u0430 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0430 \u0438\u043b\u0438 \u043b\u0438\u043f\u0441\u0432\u0430\u0449\u0430 \u043d\u0430\u043b\u0438\u0447\u043d\u043e\u0441\u0442. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.` }));
     }
   }
 
   if (invalidHotelImages.length) {
-    warnings.push(`Hotel image URL warning: ${invalidHotelImages.length} hotel image URL(s) are not direct image links and were ignored.`);
+    warnings.push(createQaFinding({ severity: "INFO", message: `${invalidHotelImages.length} hotel image URL(s) \u043d\u0435 \u0441\u0430 direct image links \u0438 \u0431\u044f\u0445\u0430 \u043f\u0440\u043e\u043f\u0443\u0441\u043d\u0430\u0442\u0438.` }));
   }
 
   const finalPrice = Number(offer.finalPrice || offer.price || 0);
   if (!finalPrice) {
-    warnings.push("[CRITICAL] \u041a\u0440\u0430\u0439\u043d\u0430\u0442\u0430 \u0446\u0435\u043d\u0430 \u0435 0 EUR. \u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u043d\u0435 \u0442\u0440\u044f\u0431\u0432\u0430 \u0434\u0430 \u0441\u0435 \u0438\u0437\u043f\u0440\u0430\u0449\u0430 \u043f\u0440\u0435\u0434\u0438 \u0434\u0430 \u0441\u0435 \u043f\u043e\u043f\u044a\u043b\u043d\u0438 \u0446\u0435\u043d\u0430.");
+    warnings.push(createQaFinding({ severity: "CRITICAL", message: "\u041a\u0440\u0430\u0439\u043d\u0430\u0442\u0430 \u0446\u0435\u043d\u0430 \u0435 0 EUR. \u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u043d\u0435 \u0442\u0440\u044f\u0431\u0432\u0430 \u0434\u0430 \u0441\u0435 \u0438\u0437\u043f\u0440\u0430\u0449\u0430 \u043f\u0440\u0435\u0434\u0438 \u0434\u0430 \u0441\u0435 \u043f\u043e\u043f\u044a\u043b\u043d\u0438 \u0446\u0435\u043d\u0430." }));
   }
 
   return uniqueWarnings([...normalizeIncomingWarnings(rawBody.validationWarnings), ...warnings]);
