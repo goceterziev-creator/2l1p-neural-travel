@@ -2017,6 +2017,32 @@ async function renderOfferHtml(offer, options = {}) {
     return text;
   }
 
+  function clientSafeBaggageSummary(value = "") {
+    const text = cleanText(value).toLowerCase();
+    if (!text || /needs review/i.test(text)) return "\u0421\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\u0442\u0430.";
+
+    const hasPersonal = /personal item|small bag|under the seat|личен багаж|малък личен|малка чанта/.test(text);
+    const hasCabin = /carry-on|cabin|ръчен багаж|салонен/.test(text);
+    const hasChecked = /checked bag|hold luggage|чекиран/.test(text);
+    const hasPaidOption = /срещу доплащане|available in the next steps|can be added|for a fee|\+\s*€|€\s*\d/.test(text);
+
+    if (hasPaidOption && (hasCabin || hasChecked)) {
+      return hasPersonal
+        ? "\u0412\u043A\u043B\u044E\u0447\u0435\u043D \u043B\u0438\u0447\u0435\u043D \u0431\u0430\u0433\u0430\u0436. \u0414\u043E\u043F\u044A\u043B\u043D\u0438\u0442\u0435\u043B\u043D\u0438\u044F\u0442 \u0431\u0430\u0433\u0430\u0436 \u0441\u0435 \u043F\u043E\u0442\u0432\u044A\u0440\u0436\u0434\u0430\u0432\u0430 \u043F\u0440\u0435\u0434\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u0430\u0446\u0438\u044F."
+        : "\u0411\u0430\u0433\u0430\u0436\u044A\u0442 \u0441\u0435 \u043F\u043E\u0442\u0432\u044A\u0440\u0436\u0434\u0430\u0432\u0430 \u043F\u0440\u0435\u0434\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u0430\u0446\u0438\u044F.";
+    }
+
+    if (hasCabin && hasChecked) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D cabin + checked baggage.";
+    if (hasChecked) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D checked baggage.";
+    if (hasCabin) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D cabin baggage.";
+    if (hasPersonal) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D \u043B\u0438\u0447\u0435\u043D \u0431\u0430\u0433\u0430\u0436.";
+    if (/според условията|according to airline conditions|included/.test(text)) {
+      return "\u0411\u0430\u0433\u0430\u0436 \u0441\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\u0442\u0430.";
+    }
+
+    return clientSafeFlightText(value, "\u0421\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\u0442\u0430.");
+  }
+
   function destinationKey(value = "") {
     return String(value || "")
       .toLowerCase()
@@ -2233,7 +2259,7 @@ async function renderOfferHtml(offer, options = {}) {
         <div class="detail-grid">
           <div><strong>Отиване</strong><br>${escapeHtml(clientSafeFlightText(displayFlight.departure, "-"))}</div>
           <div><strong>Връщане</strong><br>${escapeHtml(clientSafeFlightText(displayFlight.arrival, "-"))}</div>
-          <div><strong>Багаж</strong><br>${escapeHtml(clientSafeFlightText(flight.baggage, "Според условията на авиокомпанията"))}</div>
+          <div><strong>Багаж</strong><br>${escapeHtml(clientSafeBaggageSummary(flight.baggage))}</div>
           <div><strong>Препоръка</strong><br>Бъдете на летището поне 2 часа преди излитане.</div>
         </div>
 
@@ -2282,6 +2308,11 @@ async function renderOfferHtml(offer, options = {}) {
       : hotelPrice > 0
         ? "Best value"
         : "Alternative option";
+    const optionToneClass = isSelected
+      ? "premium"
+      : hotelPrice > 0
+        ? "best-value"
+        : "alternative";
     const detailValue = (value) => {
       const text = cleanText(value);
       return text && text !== "-"
@@ -2292,7 +2323,7 @@ async function renderOfferHtml(offer, options = {}) {
     return `
       <article class="card hotel-card hotel-option-card${isSelected ? " selected" : ""}">
         <div class="option-badge">${escapeHtml(optionLabel)}</div>
-        <div class="option-meta">${escapeHtml(optionTone)}</div>
+        <div class="option-meta ${escapeAttr(optionToneClass)}">${escapeHtml(optionTone)}</div>
         ${clientOptionPrice > 0 ? `<div class="option-price"><small>Крайна цена</small>${formatMoney(clientOptionPrice, hotel.currency || offer.currency || "EUR")}</div>` : ""}
         ${images.length ? `
           <div class="hotel-images">
@@ -2364,11 +2395,14 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, rgba(5,10,20,.88), rgba(5,10,20,.56) 48%, rgba(5,10,20,.18));
+  background:
+    linear-gradient(180deg, rgba(5,10,20,.78) 0%, rgba(5,10,20,.42) 38%, rgba(5,10,20,.20) 100%),
+    linear-gradient(90deg, rgba(5,10,20,.92), rgba(5,10,20,.62) 48%, rgba(5,10,20,.24));
 }
 .hero-content {
   position: relative;
   z-index: 1;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, .46);
   max-width: 680px;
 }
 .eyebrow {
@@ -2639,6 +2673,18 @@ h1 {
   letter-spacing: .8px;
   margin: -6px 0 14px;
   text-transform: uppercase;
+}
+.option-meta.premium {
+  color: #b45309;
+}
+.option-meta.best-value {
+  color: #047857;
+}
+.option-meta.alternative {
+  color: #475569;
+}
+.hotel-option-card.selected .option-meta.premium {
+  color: #fde68a;
 }
 .option-price {
   align-self: flex-start;
