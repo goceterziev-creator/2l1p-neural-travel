@@ -358,6 +358,9 @@ Planned:
 Closed Beta SaaS
 
 Status:
+CLIENT OFFER / LUXURY BROCHURE PHASE = PASS
+
+Closed Beta Prep:
 ACTIVE
 
 Target:
@@ -379,12 +382,30 @@ Precondition:
 Runbook:
 - docs/V10_CLOSED_BETA_PREP.md
 - docs/V10_BETA_DEMO_PACKAGE.md
+- docs/V10_BETA_READINESS.md
 
 Current V10 layers:
 - V10.3 Luxury PDF Brochure = PASS
 - V10.4 Hotel Image Resolver = PASS
 - V10.5 WhatsApp QR CTA = PASS
-- V10.6 Beta Demo Package = ACTIVE
+- V10.6 Beta Demo Package = PASS
+- V10.8 Maldives Brochure Polish = PASS
+- V10.9 Rule-Based Hotel Microcopy = PASS
+- V10.9.1 Dynamic Hotel Option Labels = PASS
+- V10.9.2 Brochure Location Cleanup = PASS
+- V10.10 Operator Confidence QA = FOUNDATION PASS
+
+V10 freeze rule:
+No more brochure polish before beta unless a real beta test exposes a blocker.
+
+Latest beta PDF sanity review:
+PASS
+
+Reviewed:
+- Maldives
+- Tokyo
+- Barcelona
+- Barcelona regenerated PDF
 
 ---
 
