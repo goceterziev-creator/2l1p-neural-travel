@@ -1646,6 +1646,86 @@ function buildOcrMetadata(source, parsed = {}, missingFields = []) {
   };
 }
 
+const FLIGHT_OCR_CONFIDENCE_THRESHOLDS = {
+  airline: 0.75,
+  route: 0.85,
+  dates: 0.8,
+  price: 0.8
+};
+
+function scoreFlightAirlineConfidence(flight = {}) {
+  const airline = String(flight.airline || "").trim();
+  if (!airline || /needs review|imported airline|not specified/i.test(airline)) return 0.35;
+  if (/wizz|ryanair|turkish|lufthansa|aegean|bulgaria air/i.test(airline)) return 0.92;
+  return 0.78;
+}
+
+function scoreFlightRouteConfidence(flight = {}, rawText = "") {
+  const route = String(flight.route || "").trim();
+  const text = ocrCompactText(rawText).toUpperCase();
+  if (!route || /needs review|detected from image/i.test(route)) return 0.35;
+  if (/\b(SOF|PRG|BCN|FCO|CIA|BRI|NRT|HND|MLE|IST)\b/.test(route.toUpperCase())) return 0.88;
+  if (/\b(SOF|PRG|BCN|FCO|CIA|BRI|NRT|HND|MLE|IST)\b/.test(text) && /->|→|\//.test(route)) return 0.82;
+  if (/->|→|\//.test(route) && route.length >= 10) return 0.74;
+  return 0.55;
+}
+
+function scoreFlightDatesConfidence(flight = {}, rawText = "") {
+  const departure = String(flight.departure || "");
+  const arrival = String(flight.arrival || "");
+  const combined = `${departure} ${arrival}`;
+  const raw = ocrCompactText(rawText);
+  if (/needs review/i.test(combined) || (!departure && !arrival)) return 0.35;
+  if (/\d{1,2}:\d{2}/.test(combined) && /\d{1,2}|\bJan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec\b/i.test(combined)) return 0.88;
+  if (/\d{1,2}:\d{2}/.test(combined)) return 0.76;
+  if (/\d{1,2}:\d{2}/.test(raw)) return 0.68;
+  return 0.52;
+}
+
+function scoreFlightPriceConfidence(flight = {}, rawText = "") {
+  const price = Number(flight.price || 0);
+  const raw = ocrCompactText(rawText);
+  if (!Number.isFinite(price) || price <= 0) return 0.3;
+  if (/\b(total|flight price|flights?)\b/i.test(raw) && price >= 10) return 0.91;
+  if (price >= 10) return 0.82;
+  return 0.55;
+}
+
+function detectMobileScreenshotRisk(rawText = "") {
+  const text = ocrCompactText(rawText).toLowerCase();
+  return /railway\.app|chrome|next|gboard|keyboard|choose file|scan flight screenshot|admin v8/.test(text);
+}
+
+function buildFlightOcrConfidence(rawText = "", flight = {}, metadata = {}) {
+  const confidence = {
+    airline: Number(scoreFlightAirlineConfidence(flight).toFixed(2)),
+    route: Number(scoreFlightRouteConfidence(flight, rawText).toFixed(2)),
+    dates: Number(scoreFlightDatesConfidence(flight, rawText).toFixed(2)),
+    price: Number(scoreFlightPriceConfidence(flight, rawText).toFixed(2))
+  };
+  const warnings = [];
+  const isMobileScreenshot = detectMobileScreenshotRisk(rawText);
+  if (isMobileScreenshot) warnings.push("Mobile screenshot detected.");
+  if (confidence.airline < FLIGHT_OCR_CONFIDENCE_THRESHOLDS.airline) warnings.push("Airline confidence below production threshold.");
+  if (confidence.route < FLIGHT_OCR_CONFIDENCE_THRESHOLDS.route) warnings.push("Route confidence below production threshold.");
+  if (confidence.dates < FLIGHT_OCR_CONFIDENCE_THRESHOLDS.dates) warnings.push("Flight date/time confidence below production threshold.");
+  if (confidence.price < FLIGHT_OCR_CONFIDENCE_THRESHOLDS.price) warnings.push("Flight price confidence below production threshold.");
+  safeArray(metadata.missingFields).forEach((field) => warnings.push(`Missing OCR field: ${field}.`));
+  return {
+    airline: { value: flight.airline || "", confidence: confidence.airline },
+    route: { value: flight.route || "", confidence: confidence.route },
+    outboundDate: { value: flight.departure || "", confidence: confidence.dates },
+    returnDate: { value: flight.arrival || "", confidence: confidence.dates },
+    price: { value: Number(flight.price || 0), currency: "EUR", confidence: confidence.price },
+    thresholds: FLIGHT_OCR_CONFIDENCE_THRESHOLDS,
+    risk: {
+      isMobileScreenshot,
+      requiresOperatorReview: warnings.length > 0,
+      warnings: uniqueWarnings(warnings)
+    }
+  };
+}
+
 function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
   const compact = ocrCompactText(rawText);
   const pair = extractOcrCityPair(compact);
@@ -3675,10 +3755,13 @@ const profileImport = parseOcrByProfile(text, {
 
 if (profileImport?.flight) {
   const flightPrice = Number(profileImport.flight.price || 0);
+  profileImport.flight.price = flightPrice;
+  const flightConfidence = buildFlightOcrConfidence(text, profileImport.flight, profileImport.metadata);
   console.log("FLIGHT IMPORT RESPONSE:", {
     flightAirline: profileImport.flight.airline,
     flightRoute: profileImport.flight.route,
-    flightPrice
+    flightPrice,
+    requiresOperatorReview: flightConfidence.risk.requiresOperatorReview
   });
   return res.json({
     success: true,
@@ -3694,7 +3777,10 @@ if (profileImport?.flight) {
     hotel: profileImport.hotel || {},
     metadata: profileImport.metadata,
     source: profileImport.metadata?.source,
-    missingFields: profileImport.metadata?.missingFields || []
+    missingFields: profileImport.metadata?.missingFields || [],
+    flightConfidence,
+    risk: flightConfidence.risk,
+    operatorWarnings: flightConfidence.risk.warnings
   });
 }
 
@@ -3732,11 +3818,13 @@ if (
     notes: "Регистриран багаж от €36/крак",
     price: flightPrice
   };
+  const flightConfidence = buildFlightOcrConfidence(text, flight);
 
   console.log("FLIGHT IMPORT RESPONSE:", {
     flightAirline: flight.airline,
     flightRoute: flight.route,
-    flightPrice
+    flightPrice,
+    requiresOperatorReview: flightConfidence.risk.requiresOperatorReview
   });
 
   return res.json({
@@ -3750,7 +3838,10 @@ if (
     flightBaggage: flight.baggage,
     flightNotes: flight.notes,
     flight,
-    hotel: {}
+    hotel: {},
+    flightConfidence,
+    risk: flightConfidence.risk,
+    operatorWarnings: flightConfidence.risk.warnings
   });
 }
 
@@ -3877,6 +3968,11 @@ if (tokyoFlight) {
     extractLabeledFlightPrice(text || "") ||
     extractFlightPriceFromText(text || "") ||
     Number(tokyoFlight.price || 0);
+  const flight = {
+    ...tokyoFlight,
+    price: flightPrice
+  };
+  const flightConfidence = buildFlightOcrConfidence(text, flight);
 
   return res.json({
     success: true,
@@ -3890,11 +3986,11 @@ if (tokyoFlight) {
     flightArrival: tokyoFlight.arrival,
     flightBaggage: tokyoFlight.baggage,
     flightNotes: tokyoFlight.notes,
-    flight: {
-      ...tokyoFlight,
-      price: flightPrice
-    },
-    hotel: {}
+    flight,
+    hotel: {},
+    flightConfidence,
+    risk: flightConfidence.risk,
+    operatorWarnings: flightConfidence.risk.warnings
   });
 }
 
@@ -3903,10 +3999,12 @@ const forcedFlight = normalizeFlightFromDestination(req.body?.destination, text)
 if (forcedFlight) {
   const flightPrice = Number(forcedFlight.price || extractFlightPriceFromText(cleanText) || 0);
   forcedFlight.price = flightPrice;
+  const flightConfidence = buildFlightOcrConfidence(text, forcedFlight);
   console.log("FLIGHT IMPORT RESPONSE:", {
     flightAirline: forcedFlight.airline,
     flightRoute: forcedFlight.route,
-    flightPrice
+    flightPrice,
+    requiresOperatorReview: flightConfidence.risk.requiresOperatorReview
   });
 
   return res.json({
@@ -3920,7 +4018,10 @@ if (forcedFlight) {
     flightBaggage: forcedFlight.baggage,
     flightNotes: forcedFlight.notes,
     flight: forcedFlight,
-    hotel: {}
+    hotel: {},
+    flightConfidence,
+    risk: flightConfidence.risk,
+    operatorWarnings: flightConfidence.risk.warnings
   });
 }
 
@@ -4216,6 +4317,7 @@ console.log("FLIGHT IMPORT RESPONSE:", {
   flightRoute: flight.route,
   flightPrice: Number(flight.price || 0)
 });
+const flightConfidence = buildFlightOcrConfidence(text, flight);
 
 return res.json({
   success: true,
@@ -4228,7 +4330,10 @@ return res.json({
   flightBaggage: flight.baggage,
   flightNotes: flight.notes,
   flight,
-  hotel
+  hotel,
+  flightConfidence,
+  risk: flightConfidence.risk,
+  operatorWarnings: flightConfidence.risk.warnings
 });
   } catch (err) {
     console.error("IMPORT ERROR:", err);

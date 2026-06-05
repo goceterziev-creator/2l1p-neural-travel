@@ -230,7 +230,7 @@ function renderCapabilitySummary() {
 
 function renderCapabilityNotice() {
   if (hasCapability("offers.create")) {
-    return `<div class="note capability-note">Create access enabled by server capability: offers.create.</div>`;
+    return "";
   }
   return `<div class="note capability-note">Read-only access: your role can review scoped operational data, but cannot create or update offers.</div>`;
 }
@@ -2213,6 +2213,8 @@ async function uploadFlightImage() {
 
     const f = normalizeFlightFields(data.flight || {});
     const flightPrice = getImportedFlightPrice(data, f);
+    const importWarnings = getFlightImportWarnings(data);
+    mergeCurrentValidationWarnings(importWarnings);
     console.log("FLIGHT IMPORT RESPONSE:", {
       flightAirline: f.airline,
       flightRoute: f.route,
@@ -2241,7 +2243,11 @@ async function uploadFlightImage() {
     addFlight({ ...f, price: flightPrice });
 
     calculatePricing();
-    alert("Flight screenshot imported successfully.");
+    if (shouldReviewFlightImport(data) && importWarnings.length) {
+      alert(`Flight screenshot imported, but needs operator review:\n\n${importWarnings.join("\n")}`);
+    } else {
+      alert("Flight screenshot imported successfully.");
+    }
   } catch (error) {
     console.error("Flight image import failed:", error);
     alert(`Error: ${error.message}`);
@@ -2258,6 +2264,32 @@ function getImportedFlightPrice(data = {}, flight = {}) {
     flight.extractedPrice ??
     0
   ) || 0;
+}
+
+function getFlightImportWarnings(data = {}) {
+  return [
+    ...(Array.isArray(data.operatorWarnings) ? data.operatorWarnings : []),
+    ...(Array.isArray(data?.risk?.warnings) ? data.risk.warnings : []),
+    ...(Array.isArray(data?.flightConfidence?.risk?.warnings) ? data.flightConfidence.risk.warnings : [])
+  ].map((warning) => String(warning || "").trim()).filter(Boolean);
+}
+
+function mergeCurrentValidationWarnings(warnings = []) {
+  const existing = Array.isArray(window.currentValidationWarnings)
+    ? window.currentValidationWarnings
+    : [];
+  window.currentValidationWarnings = [...new Set([
+    ...existing,
+    ...warnings.map((warning) => String(warning || "").trim()).filter(Boolean)
+  ])];
+  return window.currentValidationWarnings;
+}
+
+function shouldReviewFlightImport(data = {}) {
+  return Boolean(
+    data?.risk?.requiresOperatorReview ||
+    data?.flightConfidence?.risk?.requiresOperatorReview
+  );
 }
 
 async function uploadHotelImage() {
@@ -2373,6 +2405,10 @@ formValidationWarnings.push(
   )
 );
 
+formValidationWarnings.push(
+  ...(Array.isArray(window.currentValidationWarnings) ? window.currentValidationWarnings : [])
+);
+
   return {
     clientName: $("clientName")?.value.trim() || "",
     clientPhone: $("clientPhone")?.value.trim() || "",
@@ -2473,6 +2509,10 @@ validationWarnings.push(
     { guests: payload.guests || "" },
     flightForValidation
   )
+);
+
+validationWarnings.push(
+  ...(Array.isArray(window.currentValidationWarnings) ? window.currentValidationWarnings : [])
 );
 
   payload.validationWarnings = validationWarnings;
@@ -3105,6 +3145,7 @@ async function autoBuildOffer() {
 
     const f = flightData.flight || {};
     const flightPrice = getImportedFlightPrice(flightData, f);
+    const flightImportWarnings = getFlightImportWarnings(flightData);
     console.log("AUTO FLIGHT IMPORT RESPONSE:", {
       flightAirline: f.airline,
       flightRoute: f.route,
@@ -3129,6 +3170,8 @@ console.log("AUTO HOTEL DATA:", h);
 const selectedDestination = getDestinationValue();
 
 const validationWarnings = [];
+
+validationWarnings.push(...flightImportWarnings);
 
 validationWarnings.push(
   ...getDestinationMismatchWarnings(selectedDestination, f, h)
