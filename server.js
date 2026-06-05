@@ -1603,7 +1603,14 @@ function translateOcrCity(value = "") {
     bari: "Бари",
     bri: "Бари",
     barcelona: "Барселона",
-    bcn: "Барселона"
+    bcn: "Барселона",
+    prague: "Прага",
+    prg: "Прага",
+    milan: "Милано",
+    milano: "Милано",
+    mxp: "Милано",
+    mle: "Мале",
+    male: "Мале"
   };
   return cities[key] || String(value || "").trim();
 }
@@ -1616,6 +1623,119 @@ function translateOcrDate(value = "") {
     .replace(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/gi, (match) => days[match.slice(0, 3)] || match)
     .replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi, (match) => months[match.slice(0, 3)] || match)
     .trim();
+}
+
+const FLIGHT_AIRPORT_ALIASES = [
+  { code: "SOF", city: "София", aliases: ["sof", "sofia", "софия", "sofia airport"] },
+  { code: "PRG", city: "Прага", aliases: ["prg", "prague", "praha", "прага", "vaclav havel"] },
+  { code: "BCN", city: "Барселона", aliases: ["bcn", "barcelona", "барселона", "el prat", "barcelona el prat"] },
+  { code: "FCO", city: "Рим", aliases: ["fco", "rome", "roma", "рим", "fiumicino"] },
+  { code: "CIA", city: "Рим", aliases: ["cia", "ciampino"] },
+  { code: "MXP", city: "Милано", aliases: ["mxp", "milan", "milano", "милано", "malpensa"] },
+  { code: "BGY", city: "Милано", aliases: ["bgy", "bergamo", "orioserio", "orio al serio"] },
+  { code: "BRI", city: "Бари", aliases: ["bri", "bari", "бари"] },
+  { code: "NRT", city: "Токио", aliases: ["nrt", "narita", "нарита"] },
+  { code: "HND", city: "Токио", aliases: ["hnd", "haneda", "ханеда"] },
+  { code: "MLE", city: "Мале", aliases: ["mle", "male", "malé", "мале", "velana"] },
+  { code: "IST", city: "Истанбул", aliases: ["ist", "istanbul", "истанбул"] }
+];
+
+function airportAliasRecord(value = "") {
+  const text = normalizeSearchText(value);
+  if (!text) return null;
+  return FLIGHT_AIRPORT_ALIASES.find((record) =>
+    record.code.toLowerCase() === text ||
+    safeArray(record.aliases).some((alias) => text.includes(normalizeSearchText(alias)))
+  ) || null;
+}
+
+function detectAirportCodes(rawText = "") {
+  const text = normalizeSearchText(rawText);
+  return FLIGHT_AIRPORT_ALIASES
+    .filter((record) => safeArray(record.aliases).some((alias) => text.includes(normalizeSearchText(alias))))
+    .map((record) => record.code);
+}
+
+function uniqueAirportCodes(codes = []) {
+  return [...new Set(codes.map((code) => String(code || "").toUpperCase()).filter(Boolean))];
+}
+
+function resolveDestinationAirport(rawText = "", destination = "") {
+  const destinationRecord = airportAliasRecord(destination);
+  const codes = uniqueAirportCodes(detectAirportCodes(rawText));
+  const nonSofia = codes.filter((code) => code !== "SOF");
+  return destinationRecord?.code && destinationRecord.code !== "SOF"
+    ? destinationRecord
+    : FLIGHT_AIRPORT_ALIASES.find((record) => record.code === nonSofia[0]) || null;
+}
+
+function extractPassengerSummary(rawText = "") {
+  const text = ocrCompactText(rawText);
+  const adultMatch = text.match(/\b(?:Adults?|Adult)\s*\(?\s*(\d+)\s*\)?|\b(\d+)\s*(?:adult|adults|traveler|travelers|passengers?)\b/i);
+  const childMatch = text.match(/\b(?:Child|Children)\s*\(?\s*(\d+)\s*\)?|\b(\d+)\s*(?:child|children)\b/i);
+  const adults = Number(adultMatch?.[1] || adultMatch?.[2] || 0);
+  const children = Number(childMatch?.[1] || childMatch?.[2] || 0);
+  const parts = [];
+  if (adults) parts.push(`${adults} възрастен${adults === 1 ? "" : "и"}`);
+  if (children) parts.push(`${children} дете${children === 1 ? "" : "ца"}`);
+  return parts.length ? `Пътници: ${parts.join(" и ")}.` : "";
+}
+
+function extractFlightDateRange(rawText = "") {
+  const text = ocrCompactText(rawText);
+  const month = "(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)";
+  const range =
+    text.match(new RegExp(`(\\d{1,2})\\s*${month}\\s*(20\\d{2})\\s*[-–]\\s*(\\d{1,2})\\s*${month}\\s*(20\\d{2})`, "i")) ||
+    text.match(new RegExp(`(\\d{1,2})\\s*${month}\\s*[-–]\\s*(\\d{1,2})\\s*${month}\\s*(20\\d{2})`, "i"));
+  if (!range) return null;
+  if (range.length >= 7) {
+    return {
+      outbound: `${range[1]} ${range[2]} ${range[3]}`,
+      inbound: `${range[4]} ${range[5]} ${range[6]}`
+    };
+  }
+  return {
+    outbound: `${range[1]} ${range[2]} ${range[5]}`,
+    inbound: `${range[3]} ${range[4]} ${range[5]}`
+  };
+}
+
+function extractWizzTotalPrice(rawText = "") {
+  const text = ocrCompactText(rawText);
+  const preferred =
+    text.match(/(?:TOTAL|Total)\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:EUR|\u20ac)/i) ||
+    text.match(/([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:EUR|\u20ac)\s*(?:NEXT|Next)\b/i) ||
+    text.match(/(?:EUR|\u20ac)\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:NEXT|Next)\b/i);
+  if (preferred) {
+    const value = parseOcrMoneyValue(preferred[1] || "");
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  const prices = extractOcrMoneyValues(text)
+    .filter((value) => value >= 10)
+    .filter((value) => ![28.35, 18].includes(Number(value.toFixed(2))));
+  return prices.length ? Math.max(...prices) : 0;
+}
+
+function extractWizzLegInfo(rawText = "") {
+  const text = ocrCompactText(rawText);
+  const outboundText = text.match(/OUTBOUND FLIGHT(.*?)(?:INBOUND FLIGHT|$)/i)?.[1] || "";
+  const inboundText = text.match(/INBOUND FLIGHT(.*)/i)?.[1] || "";
+  const month = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)";
+  const parseLeg = (section = "") => {
+    const date = section.match(new RegExp(`(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(\\d{1,2}\\s*${month}\\s*(?:20\\d{2})?)`, "i"))?.[1] || "";
+    const times = section.match(/\b\d{1,2}:\d{2}\b/g) || [];
+    const number = section.match(/\bW6\s?\d{3,5}\b/i)?.[0]?.replace(/\s+/g, " ") || "";
+    return {
+      date: date ? translateOcrDate(date) : "",
+      start: times[0] || "",
+      end: times[1] || "",
+      number
+    };
+  };
+  return {
+    outbound: parseLeg(outboundText),
+    inbound: parseLeg(inboundText)
+  };
 }
 
 function extractOcrCityPair(rawText = "") {
@@ -1631,8 +1751,8 @@ function detectOcrSource(rawText = "", kind = "flight") {
   const text = ocrCompactText(rawText).toLowerCase();
   if (kind === "hotel" && /booking|check.?in|check.?out|breakfast|room|reviews/.test(text)) return "booking_hotel_checkout";
   if (/(price details|your details|enter your details|choose your fare|check and pay)/.test(text)) return "booking_flight_checkout";
-  if (/ryanair|priority|small bag|personal item|cabin bag/.test(text)) return "ryanair_checkout";
   if (/wizz|w6\s?\d{3,5}|basic fare|priority boarding/.test(text)) return "wizz_checkout";
+  if (/ryanair|priority|small bag|personal item|cabin bag/.test(text)) return "ryanair_checkout";
   return kind === "hotel" ? "generic_hotel" : "generic_flight";
 }
 
@@ -1730,16 +1850,18 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
   const compact = ocrCompactText(rawText);
   const pair = extractOcrCityPair(compact);
   const destinationLower = String(destination || "").toLowerCase();
-  if (!pair && !/(rome|rim|рим)/i.test(destinationLower)) return null;
+  const destinationAirport = resolveDestinationAirport(compact, destination);
+  if (!pair && !destinationAirport && !destinationLower) return null;
 
   const fromRaw = pair?.from || "Sofia";
-  const toRaw = pair?.to || "Rome";
+  const toRaw = pair?.to || destinationAirport?.city || destination || "";
   const from = translateOcrCity(fromRaw);
   const to = translateOcrCity(toRaw);
+  const fromCode = /\bSOF\b|sofia|софия/i.test(compact) ? "SOF" : from;
+  const toCode = destinationAirport?.code || to;
   const dates = compact.match(/(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s*)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|un)\s*\d{1,2}/gi) || [];
   const moneyValues = extractOcrMoneyValues(compact);
-  const adultMatch = compact.match(/\bAdult\s*\(?\s*(\d+)\s*\)?|\b(\d+)\s*(?:adult|adults|traveler|travelers)\b/i);
-  const adults = Number(adultMatch?.[1] || adultMatch?.[2] || 0);
+  const passengerSummary = extractPassengerSummary(compact);
   let price = moneyValues.length ? Math.max(...moneyValues) : 0;
   if (/sofia/i.test(fromRaw) && /rome/i.test(toRaw) && price > 0 && price < 10) price = Number((price + 64).toFixed(2));
 
@@ -1750,11 +1872,11 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
 
   const flight = {
     airline: /ryanair/i.test(compact) ? "Ryanair" : "Не е посочено",
-    route: `${from} -> ${to} / ${to} -> ${from}`,
-    departure: dates[0] ? `${from} -> ${to}, ${translateOcrDate(dates[0])}` : "",
-    arrival: dates[1] ? `${to} -> ${from}, ${translateOcrDate(dates[1])}` : "",
+    route: `${fromCode} -> ${toCode} / ${toCode} -> ${fromCode}`,
+    departure: dates[0] ? `${fromCode} -> ${toCode}, ${translateOcrDate(dates[0])}` : "",
+    arrival: dates[1] ? `${toCode} -> ${fromCode}, ${translateOcrDate(dates[1])}` : "",
     baggage: baggage.join("; ") || "Не е посочено",
-    notes: [adults ? `Пътници: ${adults} възрастен${adults === 1 ? "" : "и"}.` : "", "Данните са извлечени от Booking.com checkout screenshot."].filter(Boolean).join(" "),
+    notes: [passengerSummary, "Данните са извлечени от Booking.com checkout screenshot."].filter(Boolean).join(" "),
     price
   };
   if (/turkish/i.test(compact)) flight.airline = "Turkish Airlines";
@@ -1788,10 +1910,60 @@ function parseRyanairCheckout(rawText = "") {
   return { flight, hotel: {}, metadata: buildOcrMetadata("ryanair_checkout", flight, missingFields) };
 }
 
+function parseWizzCheckout(rawText = "", { destination = "" } = {}) {
+  const compact = ocrCompactText(rawText);
+  const destinationAirport = resolveDestinationAirport(compact, destination);
+  const destinationCode = destinationAirport?.code || "";
+  const destinationCity = destinationAirport?.city || translateOcrCity(destination || "");
+  const times = compact.match(/\b\d{1,2}:\d{2}\b/g) || [];
+  const flightNumbers = compact.match(/\bW6\s?\d{3,5}\b/gi) || [];
+  const dateRange = extractFlightDateRange(compact);
+  const wizzLegs = extractWizzLegInfo(compact);
+  const price = extractWizzTotalPrice(compact) || extractLabeledFlightPrice(compact) || extractFlightPriceFromText(compact);
+  const hasSofia = /\bSOF\b|sofia|софия/i.test(compact);
+  const route = hasSofia && destinationCode
+    ? `SOF -> ${destinationCode} / ${destinationCode} -> SOF`
+    : "";
+  const outboundNumber = wizzLegs.outbound.number || flightNumbers[0]?.replace(/\s+/g, " ") || "";
+  const inboundNumber = wizzLegs.inbound.number || flightNumbers[1]?.replace(/\s+/g, " ") || "";
+  const outboundDate = wizzLegs.outbound.date || (dateRange?.outbound ? translateOcrDate(dateRange.outbound) : "");
+  const inboundDate = wizzLegs.inbound.date || (dateRange?.inbound ? translateOcrDate(dateRange.inbound) : "");
+  const outboundStart = wizzLegs.outbound.start || times[0] || "";
+  const outboundEnd = wizzLegs.outbound.end || times[1] || "";
+  const inboundStart = wizzLegs.inbound.start || times[2] || "";
+  const inboundEnd = wizzLegs.inbound.end || times[3] || "";
+  const departure = route && (outboundDate || times[0])
+    ? `SOF -> ${destinationCode}${outboundDate ? `, ${outboundDate}` : ""}${outboundStart && outboundEnd ? `, ${outboundStart} - ${outboundEnd}` : ""}${outboundNumber ? `, ${outboundNumber}` : ""}`
+    : "";
+  const arrival = route && (inboundDate || times[2])
+    ? `${destinationCode} -> SOF${inboundDate ? `, ${inboundDate}` : ""}${inboundStart && inboundEnd ? `, ${inboundStart} - ${inboundEnd}` : ""}${inboundNumber ? `, ${inboundNumber}` : ""}`
+    : "";
+  const baggage = /personal item|small bag|малка чанта|under the seat|basic/i.test(compact)
+    ? "Малка чанта включена"
+    : "Багаж според условията на авиокомпанията";
+  const passengerSummary = extractPassengerSummary(compact);
+  const flight = {
+    airline: "Wizz Air",
+    route,
+    departure,
+    arrival,
+    baggage,
+    notes: [passengerSummary, destinationCity ? `Wizz Air route към ${destinationCity}.` : "", "Проверете финално часовете, багажа и условията преди резервация."].filter(Boolean).join(" "),
+    price
+  };
+  const missingFields = [];
+  if (!flight.route) missingFields.push("flight.route");
+  if (!flight.departure || !flight.arrival) missingFields.push("flight.times");
+  if (!flight.price) missingFields.push("flight.price");
+  if (!dateRange) missingFields.push("flight.dates");
+  return { flight, hotel: {}, metadata: buildOcrMetadata("wizz_checkout", flight, missingFields) };
+}
+
 function parseOcrByProfile(rawText = "", { kind = "flight", destination = "" } = {}) {
   const source = detectOcrSource(rawText, kind);
   if (source === "booking_flight_checkout") return parseBookingFlightCheckout(rawText, { destination });
   if (source === "ryanair_checkout") return parseRyanairCheckout(rawText);
+  if (source === "wizz_checkout") return parseWizzCheckout(rawText, { destination });
   return null;
 }
 
@@ -1986,7 +2158,7 @@ function normalizeHotelTextToBulgarian(parsed = {}) {
   return {
     name: text(parsed.name),
     stars: text(parsed.stars),
-    area: text(parsed.area),
+    area: text(parsed.area || parsed.location || parsed.address),
     distance: text(parsed.distance)
       .replace(/km from city center/i, "км от центъра")
       .replace(/from city center/i, "от центъра"),
@@ -2000,8 +2172,42 @@ function normalizeHotelTextToBulgarian(parsed = {}) {
     roomsLeft: text(parsed.roomsLeft)
       .replace(/rooms? left/i, "оставащи стаи")
       .replace(/only/i, "само"),
-    description: text(parsed.description)
+    description: text(parsed.description || parsed.amenities || parsed.rating)
   };
+}
+
+function enrichHotelImportFallbacks(hotel = {}, parsed = {}, destination = "") {
+  const destinationName = normalizeDestinationName(destination || "");
+  const address = String(parsed.address || parsed.location || "").trim();
+  const amenities = Array.isArray(parsed.amenities)
+    ? parsed.amenities.map((item) => String(item || "").trim()).filter(Boolean).join(", ")
+    : String(parsed.amenities || "").trim();
+  const rating = String(parsed.rating || "").trim();
+  const enriched = { ...hotel };
+
+  if (!enriched.area && address) enriched.area = address;
+  if (!enriched.area && destinationName) enriched.area = destinationName;
+  if (!enriched.distance && /city center|centre|center|център/i.test(address)) {
+    enriched.distance = address;
+  }
+  if (!enriched.meal && /breakfast|закуска/i.test(`${parsed.meal || ""} ${amenities} ${parsed.description || ""}`)) {
+    enriched.meal = "Възможна закуска според видимата информация";
+  }
+  if (!enriched.roomsLeft && /rooms? left|only\s+\d+|остава/i.test(`${parsed.roomsLeft || ""} ${parsed.description || ""}`)) {
+    enriched.roomsLeft = String(parsed.roomsLeft || "").trim();
+  }
+  if (!enriched.description) {
+    enriched.description = [
+      rating ? `Рейтинг: ${rating}.` : "",
+      amenities ? `Видими удобства: ${amenities}.` : "",
+      destinationName ? `Хотелска опция в ${destinationName}.` : ""
+    ].filter(Boolean).join(" ");
+  }
+  if (enriched.description && amenities && !enriched.description.toLowerCase().includes(amenities.toLowerCase())) {
+    enriched.description = `${enriched.description} Видими удобства: ${amenities}.`;
+  }
+
+  return enriched;
 }
 
 async function renderOfferHtml(offer, options = {}) {
@@ -4361,19 +4567,29 @@ Return ONLY strict JSON:
   "price": 0,
   "currency": "EUR",
   "roomsLeft": "",
-  "description": ""
+  "description": "",
+  "address": "",
+  "location": "",
+  "rating": "",
+  "amenities": []
 }
 Rules:
 - price must be numeric only
 - return all human-readable fields in Bulgarian: area, distance, room, meal, roomsLeft, description
 - keep hotel name as the original brand/name if visible
+- area should include visible city/address/area, not empty when an address is visible
+- amenities should include visible facilities such as Free WiFi, Parking, Breakfast, rating, pool, restaurant
 - description should be short, client-friendly Bulgarian, based only on visible info
 - translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
 - if not visible, use empty string or 0
 `
     });
 
-    const hotel = normalizeHotelTextToBulgarian(parsed);
+    const hotel = enrichHotelImportFallbacks(
+      normalizeHotelTextToBulgarian(parsed),
+      parsed,
+      req.body?.destination || ""
+    );
     const imageUrls = await findHotelImagesWithSerpApi(
       hotel.name,
       hotel.area || req.body?.destination || "",
