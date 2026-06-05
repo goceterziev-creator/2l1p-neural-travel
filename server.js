@@ -2718,7 +2718,7 @@ async function renderOfferHtml(offer, options = {}) {
           <div><strong>Препоръка</strong><br>Бъдете на летището поне 2 часа преди излитане.</div>
         </div>
 
-        <p class="quiet-note">Финално потвърждение на полетните часове и условия преди резервация.</p>
+        <p class="quiet-note">Полетните часове и наличности подлежат на потвърждение към момента на резервация.</p>
       </article>
     `;
   }).join("");
@@ -3347,6 +3347,45 @@ h1 {
   .actions { display: none; }
   .warning-close { display: none; }
   .hero { border-radius: 0; min-height: 96vh; break-after: page; page-break-after: always; }
+  .hero {
+    min-height: 248mm;
+    padding: 28mm 18mm 22mm;
+  }
+  .hero-content {
+    max-width: 150mm;
+  }
+  .hero h1 {
+    font-size: 46px;
+    margin-bottom: 12px;
+  }
+  .hero-copy {
+    font-size: 15px;
+    gap: 8px;
+    line-height: 1.45;
+    margin-bottom: 14px;
+    max-width: 145mm;
+  }
+  .hero-copy p:nth-child(n+3) {
+    display: none;
+  }
+  .hero-meta {
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .hero-meta div, .pill {
+    font-size: 11px;
+    padding: 6px 9px;
+  }
+  .price {
+    font-size: 42px;
+    margin: 14px 0 10px;
+  }
+  .included {
+    gap: 7px;
+  }
+  .pdf-skip {
+    display: none;
+  }
   .section { padding-top: 7mm; }
   .section h2 { break-after: avoid; page-break-after: avoid; }
   .section h2::before { height: 2px; }
@@ -3389,7 +3428,7 @@ h1 {
     </div>
   </section>
 
-  <section class="section">
+  <section class="section pdf-skip">
     <h2>Какво ви очаква в ${escapeHtml(destinationName || "дестинацията")}</h2>
     <div class="card experience-card">
       <ul>
