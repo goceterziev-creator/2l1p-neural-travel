@@ -1702,10 +1702,12 @@ function extractFlightDateRange(rawText = "") {
 
 function extractWizzTotalPrice(rawText = "") {
   const text = ocrCompactText(rawText);
+  const currency = "(?:EUR|EURO|ERR|ERJR|€)";
   const preferred =
-    text.match(/(?:TOTAL|Total)\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:EUR|\u20ac)/i) ||
-    text.match(/([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:EUR|\u20ac)\s*(?:NEXT|Next)\b/i) ||
-    text.match(/(?:EUR|\u20ac)\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:NEXT|Next)\b/i);
+    text.match(new RegExp(`(?:TOTAL|Total)\\s*([0-9][0-9\\s,.]*[,.][0-9]{2})\\s*${currency}`, "i")) ||
+    text.match(new RegExp(`([0-9][0-9\\s,.]*[,.][0-9]{2})\\s*${currency}\\s*[~\\s]*(?:NEXT|Next)\\b`, "i")) ||
+    text.match(new RegExp(`${currency}\\s*([0-9][0-9\\s,.]*[,.][0-9]{2})\\s*[~\\s]*(?:NEXT|Next)\\b`, "i")) ||
+    text.match(new RegExp(`~\\s*([0-9][0-9\\s,.]*[,.][0-9]{2})\\s*${currency}\\s*~\\s*(?:NEXT|Next)\\b`, "i"));
   if (preferred) {
     const value = parseOcrMoneyValue(preferred[1] || "");
     if (Number.isFinite(value) && value > 0) return value;
@@ -2176,8 +2178,27 @@ function normalizeHotelTextToBulgarian(parsed = {}) {
   };
 }
 
+function normalizeImportDestinationName(value = "") {
+  const raw = String(value || "").trim();
+  const key = raw.toLowerCase();
+  const map = {
+    prague: "Прага",
+    prg: "Прага",
+    barcelona: "Барселона",
+    bcn: "Барселона",
+    rome: "Рим",
+    roma: "Рим",
+    rim: "Рим",
+    maldives: "Малдиви",
+    maldive: "Малдиви",
+    tokyo: "Токио",
+    tokio: "Токио"
+  };
+  return map[key] || raw;
+}
+
 function enrichHotelImportFallbacks(hotel = {}, parsed = {}, destination = "") {
-  const destinationName = normalizeDestinationName(destination || "");
+  const destinationName = normalizeImportDestinationName(destination || "");
   const address = String(parsed.address || parsed.location || "").trim();
   const amenities = Array.isArray(parsed.amenities)
     ? parsed.amenities.map((item) => String(item || "").trim()).filter(Boolean).join(", ")
