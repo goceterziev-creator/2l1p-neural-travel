@@ -2787,6 +2787,7 @@ function destinationAlias(value = "") {
   const text = normalizeText(value).trim();
 
   if (text.includes("rim")) return "rome";
+  if (text.includes("prague") || text.includes("praga") || text.includes("praha") || text.includes("prg") || text.includes("прага")) return "prague";
   if (text.includes("maldives") || text.includes("maldive") || text.includes("малдив")) return "maldives";
   return text;
 }
@@ -2819,6 +2820,13 @@ const DESTINATION_QA_PROFILES = [
     aliases: ["barcelona", "барселона"],
     airports: ["bcn"],
     districts: []
+  },
+  {
+    key: "prague",
+    label: "Прага",
+    aliases: ["prague", "praga", "praha", "прага"],
+    airports: ["prg"],
+    districts: ["old town", "stare mesto", "staré město", "стария град", "root"]
   },
   {
     key: "bari",
@@ -3243,10 +3251,27 @@ if (validationWarnings.length) {
       "бари": "Бари",
       barcelona: "Барселона",
       "барселона": "Барселона",
+      prague: "Прага",
+      praga: "Прага",
+      praha: "Прага",
+      prg: "Прага",
+      "прага": "Прага",
       tokyo: "Токио",
       "токио": "Токио",
       maldives: "Малдиви",
       "малдиви": "Малдиви"
+    };
+    const destinationStories = {
+      prague:
+        "Прага е град на кули, площади и романтични улици. Само за няколко дни можете да посетите Стария град, Пражкия замък и Карловия мост.\n\nГрадът съчетава средновековна архитектура, гледки към река Вълтава и спокойна атмосфера за кратка европейска почивка.",
+      rome:
+        "Рим съчетава антична история, впечатляваща архитектура и жива градска атмосфера. Колизеумът, Ватиканът, Фонтанът ди Треви и малките улички около площадите превръщат пътуването в класически city break.",
+      barcelona:
+        "Барселона комбинира море, архитектура и градска енергия. Гауди, Готическият квартал, плажовете и оживените булеварди я правят отличен избор за кратко европейско пътуване.",
+      tokyo:
+        "Токио съчетава модерни квартали, традиционни храмове и впечатляваща градска култура. Градът е подходящ за пътуване с много открития, силна кухня и различни лица във всеки район.",
+      maldives:
+        "Малдивите са island escape дестинация с кристални лагуни, водни вили и спокойна premium resort атмосфера. Подходящи са за плажна почивка, романтично пътуване и пълен релакс."
     };
     const destinationName = destinationNames[destinationKey] || destination.trim() || "Дестинацията";
     const resortDestinations = new Set(["maldives", "малдиви"]);
@@ -3258,7 +3283,8 @@ if (validationWarnings.length) {
     if ($("destinationDescription")) {
       const baseDescription =
         window.DESTINATION_DESCRIPTIONS?.[destinationKey] ||
-        `${destinationName} е внимателно подбрана дестинация за комфортно и запомнящо се пътуване.`;
+        destinationStories[destinationKey] ||
+        `${destinationName} предлага ясна комбинация от полет, хотел и добре подреден бюджет.`;
 
       $("destinationDescription").value =
         `${baseDescription.trim()}\n\n` +

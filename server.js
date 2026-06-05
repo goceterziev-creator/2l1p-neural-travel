@@ -1149,6 +1149,13 @@ const DESTINATION_INTELLIGENCE = [
     districts: []
   },
   {
+    key: "prague",
+    label: "\u041f\u0440\u0430\u0433\u0430",
+    aliases: ["prague", "praga", "praha", "\u043f\u0440\u0430\u0433\u0430"],
+    airports: ["prg"],
+    districts: ["old town", "stare mesto", "star\u00e9 m\u011bsto", "\u0441\u0442\u0430\u0440\u0438\u044f \u0433\u0440\u0430\u0434", "root"]
+  },
+  {
     key: "bari",
     label: "\u0411\u0430\u0440\u0438",
     aliases: ["bari", "\u0431\u0430\u0440\u0438"],
@@ -1605,6 +1612,8 @@ function translateOcrCity(value = "") {
     barcelona: "Барселона",
     bcn: "Барселона",
     prague: "Прага",
+    praga: "Прага",
+    praha: "Прага",
     prg: "Прага",
     milan: "Милано",
     milano: "Милано",
@@ -1957,7 +1966,7 @@ function parseWizzCheckout(rawText = "", { destination = "" } = {}) {
   if (!flight.route) missingFields.push("flight.route");
   if (!flight.departure || !flight.arrival) missingFields.push("flight.times");
   if (!flight.price) missingFields.push("flight.price");
-  if (!dateRange) missingFields.push("flight.dates");
+  if (!dateRange && !(wizzLegs.outbound.date && wizzLegs.inbound.date)) missingFields.push("flight.dates");
   return { flight, hotel: {}, metadata: buildOcrMetadata("wizz_checkout", flight, missingFields) };
 }
 
@@ -2477,6 +2486,11 @@ async function renderOfferHtml(offer, options = {}) {
       "бари": "Бари",
       barcelona: "Барселона",
       "барселона": "Барселона",
+      prague: "Прага",
+      praga: "Прага",
+      praha: "Прага",
+      prg: "Прага",
+      "прага": "Прага",
       tokyo: "Токио",
       "токио": "Токио",
       maldives: "Малдиви",
@@ -2485,6 +2499,33 @@ async function renderOfferHtml(offer, options = {}) {
       "малдивски": "Малдиви"
     };
     return names[destinationKey(raw)] || raw || "дестинацията";
+  }
+
+  function destinationStoryParagraphs(destination = "") {
+    const key = destinationKey(destination);
+    const stories = {
+      prague: [
+        "Прага е град на кули, площади и романтични улици. Само за няколко дни можете да посетите Стария град, Пражкия замък и Карловия мост.",
+        "Градът съчетава средновековна архитектура, гледки към река Вълтава и спокойна атмосфера за кратка европейска почивка."
+      ],
+      praga: [
+        "Прага е град на кули, площади и романтични улици. Само за няколко дни можете да посетите Стария град, Пражкия замък и Карловия мост.",
+        "Градът съчетава средновековна архитектура, гледки към река Вълтава и спокойна атмосфера за кратка европейска почивка."
+      ],
+      praha: [
+        "Прага е град на кули, площади и романтични улици. Само за няколко дни можете да посетите Стария град, Пражкия замък и Карловия мост.",
+        "Градът съчетава средновековна архитектура, гледки към река Вълтава и спокойна атмосфера за кратка европейска почивка."
+      ],
+      prg: [
+        "Прага е град на кули, площади и романтични улици. Само за няколко дни можете да посетите Стария град, Пражкия замък и Карловия мост.",
+        "Градът съчетава средновековна архитектура, гледки към река Вълтава и спокойна атмосфера за кратка европейска почивка."
+      ],
+      "прага": [
+        "Прага е град на кули, площади и романтични улици. Само за няколко дни можете да посетите Стария град, Пражкия замък и Карловия мост.",
+        "Градът съчетава средновековна архитектура, гледки към река Вълтава и спокойна атмосфера за кратка европейска почивка."
+      ]
+    };
+    return stories[key] || null;
   }
 
   function isResortDestination(value = "") {
@@ -2565,9 +2606,9 @@ async function renderOfferHtml(offer, options = {}) {
   function splitDescription(value = "") {
     const text = stripGeneratedHotelDescription(value);
     if (!text) {
-      return [
-        `${destinationName} е подбрана дестинация за удобно и приятно пътуване.`,
-        "Офертата комбинира полет, хотел и ясна крайна цена без скрити вътрешни разбивки."
+      return destinationStoryParagraphs(offer.destination) || [
+        `${destinationName} предлага ясна комбинация от полет, хотел и добре подреден бюджет.`,
+        "Офертата е структурирана така, че клиентът да вижда финалната цена и най-важната информация без излишни вътрешни разбивки."
       ];
     }
 
