@@ -1095,7 +1095,7 @@ function uniqueHotelImages(images = [], limit = 6, usedKeys = null) {
   return picked;
 }
 
-function arrangeHotelGalleryImages(images = [], limit = 2, usedKeys = null) {
+function arrangeHotelGalleryImages(images = [], limit = 3, usedKeys = null) {
   const candidates = safeArray(images).filter(Boolean);
   const arranged = candidates.length >= 3
     ? [candidates[0], candidates[candidates.length - 1], ...candidates.slice(1, -1)]
@@ -2748,7 +2748,7 @@ async function renderOfferHtml(offer, options = {}) {
     const providedImages = safeArray(hotel.images).filter(Boolean);
     const directImage = cleanText(hotel.image || hotel.imageUrl || hotel.photo || hotel.thumbnail);
     const primaryImages = providedImages.length ? providedImages : [directImage].filter(Boolean);
-    let images = arrangeHotelGalleryImages(primaryImages, 2, usedRenderedHotelImageKeys);
+    let images = arrangeHotelGalleryImages(primaryImages, 3, usedRenderedHotelImageKeys);
 
     if (!images.length && hotelFallbackImage) {
       images = uniqueHotelImages([hotelFallbackImage], 1, usedRenderedHotelImageKeys);
