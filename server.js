@@ -1761,6 +1761,7 @@ function extractOcrCityPair(rawText = "") {
 function detectOcrSource(rawText = "", kind = "flight") {
   const text = ocrCompactText(rawText).toLowerCase();
   if (kind === "hotel" && /booking|check.?in|check.?out|breakfast|room|reviews/.test(text)) return "booking_hotel_checkout";
+  if (kind === "flight" && /(turkish|lufthansa|qatar|emirates|air france|klm|layover|stopover|\b1\s*stop\b|flight to tokyo|tokyo haneda|narita)/.test(text)) return "connecting_flight_checkout";
   if (/(price details|your details|enter your details|choose your fare|check and pay)/.test(text)) return "booking_flight_checkout";
   if (/wizz|w6\s?\d{3,5}|basic fare|priority boarding/.test(text)) return "wizz_checkout";
   if (/ryanair|priority|small bag|personal item|cabin bag/.test(text)) return "ryanair_checkout";
@@ -1784,6 +1785,21 @@ const FLIGHT_OCR_CONFIDENCE_THRESHOLDS = {
   price: 0.8
 };
 
+function isConnectingFlightProfile(rawText = "", flight = {}) {
+  const text = ocrCompactText(rawText).toLowerCase();
+  const route = String(flight.route || "").toUpperCase();
+  const notes = String(flight.notes || "").toLowerCase();
+  const codes = uniqueAirportCodes([
+    ...detectAirportCodes(rawText),
+    ...(route.match(/\b[A-Z]{3}\b/g) || [])
+  ]);
+  return (
+    /(layover|stopover|\b1\s*stop\b|connecting flight|прекачване|via\s+)/i.test(`${text} ${notes}`) &&
+    codes.length >= 3 &&
+    /\bSOF\b/.test(route || ocrCompactText(rawText).toUpperCase())
+  );
+}
+
 function scoreFlightAirlineConfidence(flight = {}) {
   const airline = String(flight.airline || "").trim();
   if (!airline || /needs review|imported airline|not specified/i.test(airline)) return 0.35;
@@ -1795,6 +1811,7 @@ function scoreFlightRouteConfidence(flight = {}, rawText = "") {
   const route = String(flight.route || "").trim();
   const text = ocrCompactText(rawText).toUpperCase();
   if (!route || /needs review|detected from image/i.test(route)) return 0.35;
+  if (isConnectingFlightProfile(rawText, flight)) return 0.9;
   if (/\b(SOF|PRG|BCN|FCO|CIA|BRI|NRT|HND|MLE|IST)\b/.test(route.toUpperCase())) return 0.88;
   if (/\b(SOF|PRG|BCN|FCO|CIA|BRI|NRT|HND|MLE|IST)\b/.test(text) && /->|→|\//.test(route)) return 0.82;
   if (/->|→|\//.test(route) && route.length >= 10) return 0.74;
@@ -1807,6 +1824,7 @@ function scoreFlightDatesConfidence(flight = {}, rawText = "") {
   const combined = `${departure} ${arrival}`;
   const raw = ocrCompactText(rawText);
   if (/needs review/i.test(combined) || (!departure && !arrival)) return 0.35;
+  if (isConnectingFlightProfile(rawText, flight) && /\d{1,2}:\d{2}/.test(combined) && /\bJan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec\b/i.test(combined)) return 0.86;
   if (/\d{1,2}:\d{2}/.test(combined) && /\d{1,2}|\bJan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec\b/i.test(combined)) return 0.88;
   if (/\d{1,2}:\d{2}/.test(combined)) return 0.76;
   if (/\d{1,2}:\d{2}/.test(raw)) return 0.68;
@@ -1921,6 +1939,95 @@ function parseRyanairCheckout(rawText = "") {
   return { flight, hotel: {}, metadata: buildOcrMetadata("ryanair_checkout", flight, missingFields) };
 }
 
+function extractConnectingFlightTimeline(rawText = "") {
+  const compact = ocrCompactText(rawText);
+  const timeline = [];
+  const pattern = /\b((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s*[-–]\s*\d{1,2}:\d{2}\s*(?:AM|PM)?)\s+([A-Z]{3})\b/gi;
+  let match;
+  while ((match = pattern.exec(compact))) {
+    timeline.push({
+      when: match[1].replace(/\s+/g, " ").trim(),
+      code: match[2].toUpperCase()
+    });
+  }
+  return timeline;
+}
+
+function detectTokyoConnectingFlight(rawText = "") {
+  const text = ocrCompactText(rawText).toLowerCase();
+  const hasTokyo =
+    /tokyo|tokio|narita|haneda|\bnrt\b|\bhnd\b/.test(text);
+  if (!hasTokyo) return null;
+
+  const timeline = extractConnectingFlightTimeline(rawText);
+  const outboundStartIndex = timeline.findIndex((item) => item.code === "SOF");
+  const outboundEndIndex = timeline.findIndex((item, index) =>
+    index > outboundStartIndex && ["NRT", "HND"].includes(item.code)
+  );
+  const inboundStartIndex = timeline.findIndex((item, index) =>
+    index > outboundEndIndex && ["NRT", "HND"].includes(item.code)
+  );
+  const inboundEndIndex = timeline.map((item) => item.code).lastIndexOf("SOF");
+
+  if (outboundStartIndex < 0 || outboundEndIndex < 0 || inboundStartIndex < 0 || inboundEndIndex < 0) {
+    return null;
+  }
+
+  const outboundStart = timeline[outboundStartIndex];
+  const outboundEnd = timeline[outboundEndIndex];
+  const inboundStart = timeline[inboundStartIndex];
+  const inboundEnd = timeline[inboundEndIndex];
+  const outboundStops = timeline
+    .slice(outboundStartIndex + 1, outboundEndIndex)
+    .map((item) => item.code)
+    .filter((code) => !["SOF", "NRT", "HND"].includes(code));
+  const inboundStops = timeline
+    .slice(inboundStartIndex + 1, inboundEndIndex)
+    .map((item) => item.code)
+    .filter((code) => !["SOF", "NRT", "HND"].includes(code));
+  const allStops = uniqueAirportCodes([...outboundStops, ...inboundStops]);
+  const via = allStops.length ? `, via ${allStops.join(" + ")}` : "";
+
+  return {
+    airline: /turkish/i.test(rawText) ? "Turkish Airlines" : "Connecting airline",
+    route: `SOF -> ${outboundEnd.code} / ${inboundStart.code} -> SOF`,
+    departure: `SOF -> ${outboundEnd.code}, ${outboundStart.when} - ${outboundEnd.when}${via}`,
+    arrival: `${inboundStart.code} -> SOF, ${inboundStart.when} - ${inboundEnd.when}${via}`,
+    baggage: /checked bags?|carry-on|personal items?|included/i.test(rawText)
+      ? "Включен багаж според видимите условия на авиокомпанията"
+      : "Багаж според условията на авиокомпанията",
+    notes: [extractPassengerSummary(rawText), `Connecting flight detected${via}. Проверете финално часовете, багажа и условията преди резервация.`].filter(Boolean).join(" ")
+  };
+}
+
+function parseConnectingFlightCheckout(rawText = "", { destination = "" } = {}) {
+  const compact = ocrCompactText(rawText);
+  const tokyoFlight = detectTokyoConnectingFlight(rawText);
+  if (tokyoFlight) {
+    const price =
+      extractLabeledFlightPrice(compact) ||
+      extractFlightPriceFromText(compact) ||
+      extractWizzTotalPrice(compact);
+    const flight = {
+      ...tokyoFlight,
+      price
+    };
+    const missingFields = [];
+    if (!flight.departure || !flight.arrival) missingFields.push("flight.times");
+    if (!flight.price) missingFields.push("flight.price");
+    return { flight, hotel: {}, metadata: buildOcrMetadata("connecting_flight_checkout", flight, missingFields) };
+  }
+
+  const fallback = parseBookingFlightCheckout(rawText, { destination });
+  if (fallback?.flight) {
+    fallback.metadata = {
+      ...fallback.metadata,
+      source: "connecting_flight_checkout"
+    };
+  }
+  return fallback;
+}
+
 function parseWizzCheckout(rawText = "", { destination = "" } = {}) {
   const compact = ocrCompactText(rawText);
   const destinationAirport = resolveDestinationAirport(compact, destination);
@@ -1972,6 +2079,7 @@ function parseWizzCheckout(rawText = "", { destination = "" } = {}) {
 
 function parseOcrByProfile(rawText = "", { kind = "flight", destination = "" } = {}) {
   const source = detectOcrSource(rawText, kind);
+  if (source === "connecting_flight_checkout") return parseConnectingFlightCheckout(rawText, { destination });
   if (source === "booking_flight_checkout") return parseBookingFlightCheckout(rawText, { destination });
   if (source === "ryanair_checkout") return parseRyanairCheckout(rawText);
   if (source === "wizz_checkout") return parseWizzCheckout(rawText, { destination });
