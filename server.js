@@ -10,6 +10,7 @@ const crypto = require("crypto");
 const puppeteer = require("puppeteer");
 const multer = require("multer");
 const QRCode = require("qrcode");
+const sharp = require("sharp");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -1782,7 +1783,7 @@ function detectOcrSource(rawText = "", kind = "flight") {
   if (kind === "hotel" && /booking|check.?in|check.?out|breakfast|room|reviews/.test(text)) return "booking_hotel_checkout";
   const connectingAirportCount = kind === "flight" ? uniqueAirportCodes(detectAirportCodes(rawText)).length : 0;
   const connectingDateTimeCount = kind === "flight"
-    ? (text.match(/\b(?:mon|tue|wed|thu|fri|sat|sun),?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2}/g) || []).length
+    ? (text.match(/\b(?:mon|tue|wed|thu|fri|sat|sun)[,.]?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*\d{1,2}/g) || []).length
     : 0;
   if (kind === "flight" && connectingAirportCount >= 3 && connectingDateTimeCount >= 4) return "connecting_flight_checkout";
   if (kind === "flight" && /(turkish|lufthansa|qatar|emirates|air france|klm|layover|stopover|\b1\s*stop\b|flight to tokyo|tokyo haneda|narita)/.test(text)) return "connecting_flight_checkout";
@@ -1968,9 +1969,9 @@ function parseRyanairCheckout(rawText = "") {
 }
 
 function extractConnectingFlightTimeline(rawText = "") {
-  const compact = ocrCompactText(rawText);
+  const compact = normalizeConnectingOcrTimeText(ocrCompactText(rawText));
   const airportCodes = FLIGHT_AIRPORT_ALIASES.map((record) => record.code).join("|");
-  const dateTimePattern = /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM))?\b/gi;
+  const dateTimePattern = /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM))?\b/gi;
   const dateTimeMatches = [...compact.matchAll(dateTimePattern)];
   const timeline = [];
 
@@ -2000,6 +2001,18 @@ function extractConnectingFlightTimeline(rawText = "") {
   });
 
   return timeline;
+}
+
+function normalizeConnectingOcrTimeText(rawText = "") {
+  return String(rawText || "").replace(
+    /(\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?)(\d{3,4})\s*(AM|PM)\b/gi,
+    (_, prefix, digits, meridiem) => {
+      const cleanDigits = String(digits);
+      const hour = cleanDigits.length === 3 ? cleanDigits.slice(0, 1) : cleanDigits.slice(0, 2);
+      const minute = cleanDigits.slice(-2);
+      return `${prefix}${hour}:${minute} ${meridiem}`;
+    }
+  );
 }
 
 function inferConnectingAirline(rawText = "") {
@@ -4211,6 +4224,33 @@ await page.evaluateHandle("document.fonts.ready");
 
 const Tesseract = require("tesseract.js");
 
+async function recognizeFlightScreenshot(imageBuffer) {
+  const originalResult = await Tesseract.recognize(imageBuffer, "eng");
+  const originalText = originalResult.data.text || "";
+
+  try {
+    const metadata = await sharp(imageBuffer).metadata();
+    const width = Number(metadata.width || 0);
+    const height = Number(metadata.height || 0);
+    const shouldEnhance = width > 0 && (width <= 1000 || height > width * 1.25);
+    if (!shouldEnhance) return originalText;
+
+    const enhancedBuffer = await sharp(imageBuffer)
+      .resize({ width: Math.max(width * 3, 1600), kernel: "lanczos3" })
+      .grayscale()
+      .normalize()
+      .sharpen()
+      .png()
+      .toBuffer();
+    const enhancedResult = await Tesseract.recognize(enhancedBuffer, "eng");
+    const enhancedText = enhancedResult.data.text || "";
+    return [originalText, enhancedText].filter(Boolean).join("\n\n--- ENHANCED OCR ---\n\n");
+  } catch (error) {
+    console.warn("Enhanced flight OCR skipped:", error.message);
+    return originalText;
+  }
+}
+
 app.post("/api/import-image", requireCapability("imports.run"), upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
@@ -4220,8 +4260,7 @@ app.post("/api/import-image", requireCapability("imports.run"), upload.single("i
     const imageBuffer = req.file.buffer;
 
     // OCR
-    const result = await Tesseract.recognize(imageBuffer, "eng");
-const text = result.data.text || "";
+const text = await recognizeFlightScreenshot(imageBuffer);
 const cleanText = text.replace(/\s+/g, " ").trim();
 
 console.log("OCR TEXT:\n", text);
