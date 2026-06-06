@@ -1761,6 +1761,11 @@ function extractOcrCityPair(rawText = "") {
 function detectOcrSource(rawText = "", kind = "flight") {
   const text = ocrCompactText(rawText).toLowerCase();
   if (kind === "hotel" && /booking|check.?in|check.?out|breakfast|room|reviews/.test(text)) return "booking_hotel_checkout";
+  const connectingAirportCount = kind === "flight" ? uniqueAirportCodes(detectAirportCodes(rawText)).length : 0;
+  const connectingDateTimeCount = kind === "flight"
+    ? (text.match(/\b(?:mon|tue|wed|thu|fri|sat|sun),?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2}/g) || []).length
+    : 0;
+  if (kind === "flight" && connectingAirportCount >= 3 && connectingDateTimeCount >= 4) return "connecting_flight_checkout";
   if (kind === "flight" && /(turkish|lufthansa|qatar|emirates|air france|klm|layover|stopover|\b1\s*stop\b|flight to tokyo|tokyo haneda|narita)/.test(text)) return "connecting_flight_checkout";
   if (/(price details|your details|enter your details|choose your fare|check and pay)/.test(text)) return "booking_flight_checkout";
   if (/wizz|w6\s?\d{3,5}|basic fare|priority boarding/.test(text)) return "wizz_checkout";
@@ -1899,8 +1904,13 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
   if (/carry-on|cabin bag/i.test(compact) && /€\s*\d|eur\s*\d/i.test(compact)) baggage.push("видима опция за ръчен багаж срещу доплащане");
   if (/checked bag|hold luggage/i.test(compact) && /€\s*\d|eur\s*\d/i.test(compact)) baggage.push("видима опция за чекиран багаж срещу доплащане");
 
+  const inferredAirline = inferConnectingAirline(compact);
   const flight = {
-    airline: /ryanair/i.test(compact) ? "Ryanair" : "Не е посочено",
+    airline: /ryanair/i.test(compact)
+      ? "Ryanair"
+      : inferredAirline !== "Connecting airline"
+      ? inferredAirline
+      : "Не е посочено",
     route: `${fromCode} -> ${toCode} / ${toCode} -> ${fromCode}`,
     departure: dates[0] ? `${fromCode} -> ${toCode}, ${translateOcrDate(dates[0])}` : "",
     arrival: dates[1] ? `${toCode} -> ${fromCode}, ${translateOcrDate(dates[1])}` : "",
@@ -1908,7 +1918,6 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
     notes: [passengerSummary, "Данните са извлечени от Booking.com checkout screenshot."].filter(Boolean).join(" "),
     price
   };
-  if (/turkish/i.test(compact)) flight.airline = "Turkish Airlines";
   const missingFields = [];
   if (flight.airline === "Не е посочено") missingFields.push("flight.airline");
   if (!/\d{1,2}:\d{2}/.test(compact)) missingFields.push("flight.times");
@@ -1942,7 +1951,7 @@ function parseRyanairCheckout(rawText = "") {
 function extractConnectingFlightTimeline(rawText = "") {
   const compact = ocrCompactText(rawText);
   const airportCodes = FLIGHT_AIRPORT_ALIASES.map((record) => record.code).join("|");
-  const dateTimePattern = /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}\s*(?:AM|PM)\b/gi;
+  const dateTimePattern = /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM))?\b/gi;
   const dateTimeMatches = [...compact.matchAll(dateTimePattern)];
   const timeline = [];
 
@@ -1954,7 +1963,11 @@ function extractConnectingFlightTimeline(rawText = "") {
       start + 180
     );
     const followingText = compact.slice(start, end);
-    const code = followingText.match(new RegExp(`\\b(${airportCodes})\\b`, "i"))?.[1]?.toUpperCase() || "";
+    const precedingText = compact.slice(Math.max(0, Number(match.index || 0) - 120), Number(match.index || 0));
+    const code =
+      followingText.match(new RegExp(`\\b(${airportCodes})\\b`, "i"))?.[1]?.toUpperCase() ||
+      [...precedingText.matchAll(new RegExp(`\\b(${airportCodes})\\b`, "gi"))].pop()?.[1]?.toUpperCase() ||
+      "";
     if (!code) return;
 
     const event = {
@@ -1968,6 +1981,17 @@ function extractConnectingFlightTimeline(rawText = "") {
   });
 
   return timeline;
+}
+
+function inferConnectingAirline(rawText = "") {
+  const text = ocrCompactText(rawText);
+  if (/turkish airlines|\bTK\s?\d{2,4}\b/i.test(text)) return "Turkish Airlines";
+  if (/lufthansa|\bLH\s?\d{2,4}\b/i.test(text)) return "Lufthansa";
+  if (/qatar airways|\bQR\s?\d{2,4}\b/i.test(text)) return "Qatar Airways";
+  if (/emirates|\bEK\s?\d{2,4}\b/i.test(text)) return "Emirates";
+  if (/air france|\bAF\s?\d{2,4}\b/i.test(text)) return "Air France";
+  if (/\bKLM\b|\bKL\s?\d{2,4}\b/i.test(text)) return "KLM";
+  return "Connecting airline";
 }
 
 function detectTokyoConnectingFlight(rawText = "") {
@@ -2004,16 +2028,19 @@ function detectTokyoConnectingFlight(rawText = "") {
     .filter((code) => !["SOF", "NRT", "HND"].includes(code));
   const allStops = uniqueAirportCodes([...outboundStops, ...inboundStops]);
   const via = allStops.length ? `, via ${allStops.join(" + ")}` : "";
+  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|AF|KL)\s?\d{2,4}\b/gi) || [])]
+    .map((number) => number.replace(/\s+/g, " "));
+  const flightNumberSummary = flightNumbers.length ? `Полети: ${flightNumbers.join(", ")}.` : "";
 
   return {
-    airline: /turkish/i.test(rawText) ? "Turkish Airlines" : "Connecting airline",
+    airline: inferConnectingAirline(rawText),
     route: `SOF -> ${outboundEnd.code} / ${inboundStart.code} -> SOF`,
     departure: `SOF -> ${outboundEnd.code}, ${outboundStart.when} - ${outboundEnd.when}${via}`,
     arrival: `${inboundStart.code} -> SOF, ${inboundStart.when} - ${inboundEnd.when}${via}`,
     baggage: /checked bags?|carry-on|personal items?|included/i.test(rawText)
       ? "Включен багаж според видимите условия на авиокомпанията"
       : "Багаж според условията на авиокомпанията",
-    notes: [extractPassengerSummary(rawText), `Connecting flight detected${via}. Проверете финално часовете, багажа и условията преди резервация.`].filter(Boolean).join(" ")
+    notes: [extractPassengerSummary(rawText), flightNumberSummary, `Connecting flight detected${via}. Проверете финално часовете, багажа и условията преди резервация.`].filter(Boolean).join(" ")
   };
 }
 
