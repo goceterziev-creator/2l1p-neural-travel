@@ -2361,7 +2361,7 @@ async function renderOfferHtml(offer, options = {}) {
     const prices = optionPrices.map((item) => toNumber(item, 0)).filter((item) => item > 0);
     if (!price || prices.length < 2) {
       return {
-        label: "\u041A\u0443\u0440\u0438\u0440\u0430\u043D\u0430 \u043E\u043F\u0446\u0438\u044F",
+        label: "\u041F\u0440\u0435\u043F\u043E\u0440\u044A\u0447\u0430\u043D \u043E\u0442 AYA",
         toneClass: "alternative"
       };
     }
@@ -2758,7 +2758,7 @@ async function renderOfferHtml(offer, options = {}) {
       `Подбран хотел в ${destinationName} с удобства за комфортен престой.`;
     const isSelected = hasSelectedHotel ? Boolean(hotel.selected) : index === 0;
     const optionLabel = isSelected
-      ? "\u0418\u0437\u0431\u0440\u0430\u043d \u0445\u043e\u0442\u0435\u043b"
+      ? "\u0412\u0430\u0448\u0438\u044F\u0442 \u0445\u043E\u0442\u0435\u043B"
       : `\u0425\u043e\u0442\u0435\u043b \u043e\u043f\u0446\u0438\u044f ${index + 1}`;
     const hotelPrice = toNumber(hotel.price, 0);
     const calculatedOptionPrice = (flightOptionBase + hotelPrice + transferOptionBase) * markupMultiplier;
