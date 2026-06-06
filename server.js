@@ -1941,15 +1941,32 @@ function parseRyanairCheckout(rawText = "") {
 
 function extractConnectingFlightTimeline(rawText = "") {
   const compact = ocrCompactText(rawText);
+  const airportCodes = FLIGHT_AIRPORT_ALIASES.map((record) => record.code).join("|");
+  const dateTimePattern = /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}\s*(?:AM|PM)\b/gi;
+  const dateTimeMatches = [...compact.matchAll(dateTimePattern)];
   const timeline = [];
-  const pattern = /\b((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s*[-–]\s*\d{1,2}:\d{2}\s*(?:AM|PM)?)\s+([A-Z]{3})\b/gi;
-  let match;
-  while ((match = pattern.exec(compact))) {
-    timeline.push({
-      when: match[1].replace(/\s+/g, " ").trim(),
-      code: match[2].toUpperCase()
-    });
-  }
+
+  dateTimeMatches.forEach((match, index) => {
+    const start = Number(match.index || 0) + match[0].length;
+    const nextStart = dateTimeMatches[index + 1]?.index;
+    const end = Math.min(
+      Number.isFinite(nextStart) ? nextStart : compact.length,
+      start + 180
+    );
+    const followingText = compact.slice(start, end);
+    const code = followingText.match(new RegExp(`\\b(${airportCodes})\\b`, "i"))?.[1]?.toUpperCase() || "";
+    if (!code) return;
+
+    const event = {
+      when: match[0].replace(/\s+/g, " ").trim(),
+      code
+    };
+    const previous = timeline[timeline.length - 1];
+    if (!previous || previous.when !== event.when || previous.code !== event.code) {
+      timeline.push(event);
+    }
+  });
+
   return timeline;
 }
 
