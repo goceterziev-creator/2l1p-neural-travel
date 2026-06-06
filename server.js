@@ -1319,8 +1319,25 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
   return uniqueWarnings([...normalizeIncomingWarnings(rawBody.validationWarnings), ...warnings]);
 }
 
+function uniqueOfferFlights(flights = []) {
+  const seen = new Set();
+  return safeArray(flights).filter((flight) => {
+    const key = [
+      flight?.route,
+      flight?.departure,
+      flight?.arrival,
+      toNumber(flight?.price, 0).toFixed(2)
+    ]
+      .map((value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase())
+      .join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function normalizeOffer(body = {}) {
-const inputFlights = Array.isArray(body.flights) ? body.flights : [];
+const inputFlights = uniqueOfferFlights(Array.isArray(body.flights) ? body.flights : []);
 const inputHotels = Array.isArray(body.hotels) ? body.hotels : [];
 
 const calculatedFlightPrice = inputFlights.length
@@ -1567,6 +1584,8 @@ function extractOcrMoneyValues(rawText = "") {
 function extractLabeledFlightPrice(rawText = "") {
   const text = ocrCompactText(rawText);
   const match =
+    text.match(/\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i) ||
+    text.match(/\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)\b/i) ||
     text.match(/\bFLIGHTS?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)/i) ||
     text.match(/\bTOTAL(?:\s+price)?(?:\s+for\s+\d+\s+\w+)?\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i) ||
     text.match(/(?:\u20ac|EUR|EURO)(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i);

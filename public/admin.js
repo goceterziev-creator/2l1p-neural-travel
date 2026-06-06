@@ -27,9 +27,21 @@ const WORKSPACE_LAZY_FLAGS = {
 let flights = [];
 let hotels = [];
 
+function flightIdentityKey(flight = {}) {
+  const normalized = normalizeFlightFields(flight);
+  return [
+    normalized.route,
+    normalized.departure,
+    normalized.arrival,
+    Number(normalized.price || 0).toFixed(2)
+  ]
+    .map((value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase())
+    .join("|");
+}
+
 function addFlight(flight = {}) {
   const cleanFlight = normalizeFlightFields(flight);
-  flights.push({
+  const nextFlight = {
     airline: cleanFlight.airline || "",
     route: cleanFlight.route || "",
     departure: cleanFlight.departure || "",
@@ -37,7 +49,13 @@ function addFlight(flight = {}) {
     baggage: cleanFlight.baggage || "",
     notes: cleanFlight.notes || "",
     price: Number(cleanFlight.price || 0)
-  });
+  };
+  const existingIndex = flights.findIndex((item) => flightIdentityKey(item) === flightIdentityKey(nextFlight));
+  if (existingIndex >= 0) {
+    flights[existingIndex] = nextFlight;
+  } else {
+    flights.push(nextFlight);
+  }
 
   renderFlightCards();
   updateAutoPrice();
@@ -2567,20 +2585,6 @@ function renderFlightCards() {
 }
 
 
-function addFlight(flight = {}) {
-  flights.push({
-    airline: flight.airline || "",
-    route: flight.route || "",
-    departure: flight.departure || "",
-    arrival: flight.arrival || "",
-    baggage: flight.baggage || "",
-    notes: flight.notes || "",
-    price: Number(flight.price || 0)
-  });
-
-  renderFlightCards();
-  updateAutoPrice();
-}
 function removeFlight(index) {
   flights.splice(index, 1);
 
