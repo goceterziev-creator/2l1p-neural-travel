@@ -2015,6 +2015,38 @@ function normalizeConnectingOcrTimeText(rawText = "") {
   );
 }
 
+function sortConnectingTimelineChronologically(timeline = []) {
+  const months = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+  };
+
+  return safeArray(timeline)
+    .map((event, index) => {
+      const match = String(event?.when || "").match(
+        /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{1,2})(?:,?\s+(20\d{2}))?\s*(?:[-–—·•|]\s*)?(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i
+      );
+      if (!match) return { event, index, timestamp: Number.POSITIVE_INFINITY };
+
+      let hour = Number(match[4]);
+      const meridiem = String(match[6] || "").toUpperCase();
+      if (meridiem === "PM" && hour < 12) hour += 12;
+      if (meridiem === "AM" && hour === 12) hour = 0;
+
+      const year = Number(match[3] || new Date().getFullYear());
+      const timestamp = Date.UTC(
+        year,
+        months[String(match[1]).toLowerCase()],
+        Number(match[2]),
+        hour,
+        Number(match[5])
+      );
+      return { event, index, timestamp };
+    })
+    .sort((a, b) => a.timestamp - b.timestamp || a.index - b.index)
+    .map(({ event }) => event);
+}
+
 function inferConnectingAirline(rawText = "") {
   const text = ocrCompactText(rawText);
   if (/turkish airlines|\bTK\s?\d{2,4}\b/i.test(text)) return "Turkish Airlines";
@@ -2032,7 +2064,11 @@ function detectTokyoConnectingFlight(rawText = "") {
     /tokyo|tokio|narita|haneda|\bnrt\b|\bhnd\b/.test(text);
   if (!hasTokyo) return null;
 
-  const timeline = extractConnectingFlightTimeline(rawText);
+  // Multi-column Booking screenshots are often read out of visual order.
+  // Sort the extracted airport events before pairing outbound and return legs.
+  const timeline = sortConnectingTimelineChronologically(
+    extractConnectingFlightTimeline(rawText)
+  );
   const outboundStartIndex = timeline.findIndex((item) => item.code === "SOF");
   const outboundEndIndex = timeline.findIndex((item, index) =>
     index > outboundStartIndex && ["NRT", "HND"].includes(item.code)
