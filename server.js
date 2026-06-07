@@ -2004,7 +2004,9 @@ function extractConnectingFlightTimeline(rawText = "") {
 }
 
 function normalizeConnectingOcrTimeText(rawText = "") {
-  return String(rawText || "").replace(
+  const normalizedMeridiem = String(rawText || "")
+    .replace(/(\d{3,4})\s*2M\b/gi, "$1 PM");
+  return normalizedMeridiem.replace(
     /(\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?)(\d{3,4})\s*(AM|PM)\b/gi,
     (_, prefix, digits, meridiem) => {
       const cleanDigits = String(digits);
@@ -4287,8 +4289,12 @@ async function recognizeFlightScreenshot(imageBuffer) {
     const shouldEnhance = width > 0 && (width <= 1000 || height > width * 1.25);
     if (!shouldEnhance) return originalText;
 
+    // Mobile checkout screenshots are tall. Enhance only the itinerary area;
+    // the original OCR pass already preserves totals and baggage below it.
+    const itineraryHeight = Math.max(1, Math.min(height, Math.round(height * 0.68)));
     const enhancedBuffer = await sharp(imageBuffer)
-      .resize({ width: Math.max(width * 4, 2200), kernel: "lanczos3" })
+      .extract({ left: 0, top: 0, width, height: itineraryHeight })
+      .resize({ width: Math.max(Math.round(width * 3.7), 2100), kernel: "lanczos3" })
       .grayscale()
       .normalize()
       .sharpen({ sigma: 1 })
