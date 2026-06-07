@@ -2961,8 +2961,21 @@ async function renderOfferHtml(offer, options = {}) {
     `;
   }).join("");
 
-  const selectedHotelIndex = hotels.findIndex((hotel) => Boolean(hotel.selected));
-  const normalizedHotels = hotels.map((hotel, index) => ({
+  const hotelsWithImages = await Promise.all(hotels.map(async (hotel) => {
+    const existingImages = uniqueHotelImages(hotel.images || [], 6);
+    if (existingImages.length || !hotel.name) {
+      return { ...hotel, images: existingImages };
+    }
+
+    const resolvedImages = await findHotelImagesWithSerpApi(
+      hotel.name,
+      hotel.area || destinationName,
+      3
+    );
+    return { ...hotel, images: resolvedImages };
+  }));
+  const selectedHotelIndex = hotelsWithImages.findIndex((hotel) => Boolean(hotel.selected));
+  const normalizedHotels = hotelsWithImages.map((hotel, index) => ({
     ...hotel,
     selected: selectedHotelIndex >= 0 ? index === selectedHotelIndex : index === 0
   }));
@@ -2989,7 +3002,8 @@ async function renderOfferHtml(offer, options = {}) {
     let images = arrangeHotelGalleryImages(primaryImages, 3, usedRenderedHotelImageKeys);
 
     if (!images.length && hotelFallbackImage) {
-      images = uniqueHotelImages([hotelFallbackImage], 1, usedRenderedHotelImageKeys);
+      // A repeated destination fallback is preferable to an empty hotel card.
+      images = uniqueHotelImages([hotelFallbackImage], 1);
     }
 
     const description = cleanClientHotelDescription(hotel.description, hotel) ||
