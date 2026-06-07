@@ -2047,6 +2047,24 @@ function sortConnectingTimelineChronologically(timeline = []) {
     .map(({ event }) => event);
 }
 
+function preferredConnectingTimeline(rawText = "") {
+  const parts = String(rawText || "").split(/--- ENHANCED OCR ---/i);
+  const enhancedText = parts.length > 1 ? parts.slice(1).join(" ") : "";
+  const enhancedTimeline = sortConnectingTimelineChronologically(
+    extractConnectingFlightTimeline(enhancedText)
+  );
+  const codes = enhancedTimeline.map((event) => event.code);
+  const hasCompleteRoundTrip =
+    codes.indexOf("SOF") >= 0 &&
+    codes.some((code) => ["NRT", "HND"].includes(code)) &&
+    codes.filter((code) => code === "SOF").length >= 2 &&
+    codes.filter((code) => ["NRT", "HND"].includes(code)).length >= 2;
+
+  return hasCompleteRoundTrip
+    ? enhancedTimeline
+    : sortConnectingTimelineChronologically(extractConnectingFlightTimeline(rawText));
+}
+
 function inferConnectingAirline(rawText = "") {
   const text = ocrCompactText(rawText);
   if (/turkish airlines|\bTK\s?\d{2,4}\b/i.test(text)) return "Turkish Airlines";
@@ -2066,9 +2084,7 @@ function detectTokyoConnectingFlight(rawText = "") {
 
   // Multi-column Booking screenshots are often read out of visual order.
   // Sort the extracted airport events before pairing outbound and return legs.
-  const timeline = sortConnectingTimelineChronologically(
-    extractConnectingFlightTimeline(rawText)
-  );
+  const timeline = preferredConnectingTimeline(rawText);
   const outboundStartIndex = timeline.findIndex((item) => item.code === "SOF");
   const outboundEndIndex = timeline.findIndex((item, index) =>
     index > outboundStartIndex && ["NRT", "HND"].includes(item.code)
@@ -4272,10 +4288,10 @@ async function recognizeFlightScreenshot(imageBuffer) {
     if (!shouldEnhance) return originalText;
 
     const enhancedBuffer = await sharp(imageBuffer)
-      .resize({ width: Math.max(width * 3, 1600), kernel: "lanczos3" })
+      .resize({ width: Math.max(width * 4, 2200), kernel: "lanczos3" })
       .grayscale()
       .normalize()
-      .sharpen()
+      .sharpen({ sigma: 1 })
       .png()
       .toBuffer();
     const enhancedResult = await Tesseract.recognize(enhancedBuffer, "eng");
