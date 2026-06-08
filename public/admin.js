@@ -39,6 +39,14 @@ function flightIdentityKey(flight = {}) {
     .join("|");
 }
 
+function roundTripRouteKey(flight = {}) {
+  const route = String(normalizeFlightFields(flight).route || "")
+    .replace(/[→]/g, "->")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+  return route.includes("/") ? route : "";
+}
+
 function addFlight(flight = {}) {
   const cleanFlight = normalizeFlightFields(flight);
   const nextFlight = {
@@ -50,7 +58,11 @@ function addFlight(flight = {}) {
     notes: cleanFlight.notes || "",
     price: Number(cleanFlight.price || 0)
   };
-  const existingIndex = flights.findIndex((item) => flightIdentityKey(item) === flightIdentityKey(nextFlight));
+  const nextRoundTripRoute = roundTripRouteKey(nextFlight);
+  const existingIndex = flights.findIndex((item) =>
+    flightIdentityKey(item) === flightIdentityKey(nextFlight) ||
+    (nextRoundTripRoute && roundTripRouteKey(item) === nextRoundTripRoute)
+  );
   if (existingIndex >= 0) {
     flights[existingIndex] = nextFlight;
   } else {

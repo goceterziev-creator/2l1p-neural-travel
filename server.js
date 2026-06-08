@@ -2045,7 +2045,7 @@ function parseRyanairCheckout(rawText = "") {
 }
 
 function extractConnectingFlightTimeline(rawText = "") {
-  const compact = normalizeConnectingOcrTimeText(ocrCompactText(rawText));
+  const compact = normalizeConnectingOcrTimeText(normalizeLocalizedFlightTimelineText(ocrCompactText(rawText)));
   const airportCodes = FLIGHT_AIRPORT_ALIASES.map((record) => record.code).join("|");
   const dateTimePattern = /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM))?\b/gi;
   const dateTimeMatches = [...compact.matchAll(dateTimePattern)];
@@ -2079,6 +2079,36 @@ function extractConnectingFlightTimeline(rawText = "") {
   });
 
   return timeline;
+}
+
+function normalizeLocalizedFlightTimelineText(rawText = "") {
+  const replacements = [
+    [/\b(?:пон|понеделник)\.?\b/gi, "Mon"],
+    [/\b(?:вт|втор|вторник)\.?\b/gi, "Tue"],
+    [/\b(?:ср|сряда)\.?\b/gi, "Wed"],
+    [/\b(?:чт|четвъртък)\.?\b/gi, "Thu"],
+    [/\b(?:пет|петък)\.?\b/gi, "Fri"],
+    [/\b(?:съб|събота)\.?\b/gi, "Sat"],
+    [/\b(?:нед|неделя)\.?\b/gi, "Sun"],
+    [/\bяну(?:ари)?\.?\b/gi, "Jan"],
+    [/\bфев(?:руари)?\.?\b/gi, "Feb"],
+    [/\bмар(?:т)?\.?\b/gi, "Mar"],
+    [/\bапр(?:ил)?\.?\b/gi, "Apr"],
+    [/\bмай\.?\b/gi, "May"],
+    [/\bюни\.?\b/gi, "Jun"],
+    [/\bюли\.?\b/gi, "Jul"],
+    [/\bавг(?:уст)?\.?\b/gi, "Aug"],
+    [/\bсеп(?:тември)?\.?\b/gi, "Sep"],
+    [/\bокт(?:омври)?\.?\b/gi, "Oct"],
+    [/\bное(?:мври)?\.?\b/gi, "Nov"],
+    [/\bдек(?:ември)?\.?\b/gi, "Dec"],
+    [/(\d{1,2}:\d{2})\s*ч\.?/gi, "$1"]
+  ];
+  const localized = replacements.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), String(rawText || ""));
+  return localized.replace(
+    /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi,
+    "$1, $3 $2"
+  );
 }
 
 function normalizeConnectingOcrTimeText(rawText = "") {
@@ -2145,15 +2175,64 @@ function preferredConnectingTimeline(rawText = "") {
     : sortConnectingTimelineChronologically(extractConnectingFlightTimeline(rawText));
 }
 
-function inferConnectingAirline(rawText = "") {
+function inferConnectingAirlines(rawText = "") {
   const text = ocrCompactText(rawText);
-  if (/turkish airlines|\bTK\s?\d{2,4}\b/i.test(text)) return "Turkish Airlines";
-  if (/lufthansa|\bLH\s?\d{2,4}\b/i.test(text)) return "Lufthansa";
-  if (/qatar airways|\bQR\s?\d{2,4}\b/i.test(text)) return "Qatar Airways";
-  if (/emirates|\bEK\s?\d{2,4}\b/i.test(text)) return "Emirates";
-  if (/air france|\bAF\s?\d{2,4}\b/i.test(text)) return "Air France";
-  if (/\bKLM\b|\bKL\s?\d{2,4}\b/i.test(text)) return "KLM";
-  return "Connecting airline";
+  return [
+    [/turkish airlines|\bTK\s?\d{2,4}\b/i, "Turkish Airlines"],
+    [/lufthansa|\bLH\s?\d{2,4}\b/i, "Lufthansa"],
+    [/qatar airways|\bQR\s?\d{2,4}\b/i, "Qatar Airways"],
+    [/emirates|\bEK\s?\d{2,4}\b/i, "Emirates"],
+    [/etihad airways|\bEY\s?\d{2,4}\b/i, "Etihad Airways"],
+    [/air france|\bAF\s?\d{2,4}\b/i, "Air France"],
+    [/\bKLM\b|\bKL\s?\d{2,4}\b/i, "KLM"]
+  ]
+    .filter(([pattern]) => pattern.test(text))
+    .map(([, airline]) => airline);
+}
+
+function inferConnectingAirline(rawText = "") {
+  const airlines = inferConnectingAirlines(rawText);
+  return airlines.length ? airlines.join(" + ") : "Connecting airline";
+}
+
+function detectGenericConnectingFlight(rawText = "", destination = "") {
+  const destinationAirport = resolveDestinationAirport(rawText, destination);
+  if (!destinationAirport?.code || destinationAirport.code === "SOF") return null;
+
+  const timeline = sortConnectingTimelineChronologically(extractConnectingFlightTimeline(rawText));
+  const destinationCode = destinationAirport.code;
+  const outboundStartIndex = timeline.findIndex((item) => item.code === "SOF");
+  const outboundEndIndex = timeline.findIndex((item, index) => index > outboundStartIndex && item.code === destinationCode);
+  const inboundStartIndex = timeline.findIndex((item, index) => index > outboundEndIndex && item.code === destinationCode);
+  const inboundEndIndex = timeline.map((item) => item.code).lastIndexOf("SOF");
+  if (outboundStartIndex < 0 || outboundEndIndex < 0 || inboundStartIndex < 0 || inboundEndIndex <= inboundStartIndex) return null;
+
+  const outboundStart = timeline[outboundStartIndex];
+  const outboundEnd = timeline[outboundEndIndex];
+  const inboundStart = timeline[inboundStartIndex];
+  const inboundEnd = timeline[inboundEndIndex];
+  const stops = uniqueAirportCodes([
+    ...timeline.slice(outboundStartIndex + 1, outboundEndIndex).map((item) => item.code),
+    ...timeline.slice(inboundStartIndex + 1, inboundEndIndex).map((item) => item.code)
+  ].filter((code) => !["SOF", destinationCode].includes(code)));
+  const via = stops.length ? `, via ${stops.join(" + ")}` : "";
+  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL)\s?\d{2,4}\b/gi) || [])]
+    .map((number) => number.replace(/\s+/g, " "));
+
+  return {
+    airline: inferConnectingAirline(rawText),
+    route: `SOF -> ${destinationCode} / ${destinationCode} -> SOF`,
+    departure: `SOF -> ${destinationCode}, ${outboundStart.when} - ${outboundEnd.when}${via}`,
+    arrival: `${destinationCode} -> SOF, ${inboundStart.when} - ${inboundEnd.when}${via}`,
+    baggage: /checked bags?|carry-on|personal items?|included|включен багаж|ръчни багажи|ръчен багаж/i.test(rawText)
+      ? "Включен багаж според видимите условия на авиокомпаниите"
+      : "Не е посочено",
+    notes: [
+      extractPassengerSummary(rawText),
+      flightNumbers.length ? `Полети: ${flightNumbers.join(", ")}.` : "",
+      `Connecting flight detected${via}. Проверете финално часовете, багажа и условията преди резервация.`
+    ].filter(Boolean).join(" ")
+  };
 }
 
 function detectTokyoConnectingFlight(rawText = "") {
@@ -2211,14 +2290,15 @@ function detectTokyoConnectingFlight(rawText = "") {
 function parseConnectingFlightCheckout(rawText = "", { destination = "" } = {}) {
   const compact = ocrCompactText(rawText);
   const tokyoFlight = detectTokyoConnectingFlight(rawText);
-  if (tokyoFlight) {
+  const connectingFlight = tokyoFlight || detectGenericConnectingFlight(rawText, destination);
+  if (connectingFlight) {
     const price =
       extractBookingFlightTotalPrice(rawText) ||
       extractLabeledFlightPrice(compact) ||
       extractFlightPriceFromText(compact) ||
       extractWizzTotalPrice(compact);
     const flight = {
-      ...tokyoFlight,
+      ...connectingFlight,
       price
     };
     const missingFields = [];
