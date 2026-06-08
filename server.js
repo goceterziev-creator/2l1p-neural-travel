@@ -1692,6 +1692,43 @@ const FLIGHT_AIRPORT_ALIASES = [
   { code: "IST", city: "Истанбул", aliases: ["ist", "istanbul", "истанбул"] }
 ];
 
+const GLOBAL_AIRPORT_ALIAS_EXTENSIONS = [
+  {
+    code: "MLE",
+    aliases: [
+      "maldives",
+      "velana international airport",
+      "\u043c\u0430\u043b\u0434\u0438\u0432\u0438",
+      "\u0432\u0435\u043b\u0430\u043d\u0430",
+      "\u043c\u0435\u0436\u0434\u0443\u043d\u0430\u0440\u043e\u0434\u043d\u043e \u043b\u0435\u0442\u0438\u0449\u0435 \u0432\u0435\u043b\u0430\u043d\u0430"
+    ]
+  },
+  {
+    code: "DXB",
+    city: "Dubai",
+    aliases: [
+      "dxb",
+      "dubai",
+      "dubai international",
+      "dubai international airport",
+      "\u0434\u0443\u0431\u0430\u0439",
+      "\u043b\u0435\u0442\u0438\u0449\u0435 \u0434\u0443\u0431\u0430\u0439",
+      "\u043c\u0435\u0436\u0434\u0443\u043d\u0430\u0440\u043e\u0434\u043d\u043e \u043b\u0435\u0442\u0438\u0449\u0435 \u0434\u0443\u0431\u0430\u0439"
+    ]
+  },
+  { code: "DOH", city: "Doha", aliases: ["doh", "doha", "hamad international", "hamad international airport", "\u0434\u043e\u0445\u0430"] },
+  { code: "ATH", city: "Athens", aliases: ["ath", "athens", "athens international", "eleftherios venizelos", "\u0430\u0442\u0438\u043d\u0430"] }
+];
+
+GLOBAL_AIRPORT_ALIAS_EXTENSIONS.forEach((extension) => {
+  const existing = FLIGHT_AIRPORT_ALIASES.find((record) => record.code === extension.code);
+  if (existing) {
+    existing.aliases = [...new Set([...safeArray(existing.aliases), ...safeArray(extension.aliases)])];
+    return;
+  }
+  FLIGHT_AIRPORT_ALIASES.push(extension);
+});
+
 function airportAliasRecord(value = "") {
   const text = normalizeSearchText(value);
   if (!text) return null;
@@ -1721,6 +1758,20 @@ function resolveDestinationAirport(rawText = "", destination = "") {
     : FLIGHT_AIRPORT_ALIASES.find((record) => record.code === nonSofia[0]) || null;
 }
 
+function isValidOcrDay(value) {
+  const day = Number(value);
+  return Number.isInteger(day) && day >= 1 && day <= 31;
+}
+
+function extractValidOcrMonthDates(rawText = "") {
+  const compact = ocrCompactText(rawText);
+  const matches = compact.match(/(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s*)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|un)\s*(\d{1,2})/gi) || [];
+  return matches.filter((value) => {
+    const day = value.match(/(\d{1,2})\s*$/)?.[1];
+    return isValidOcrDay(day);
+  });
+}
+
 function extractPassengerSummary(rawText = "") {
   const text = ocrCompactText(rawText);
   const adultMatch = text.match(/\b(?:Adults?|Adult)\s*\(?\s*(\d+)\s*\)?|\b(\d+)\s*(?:adult|adults|traveler|travelers|passengers?)\b/i);
@@ -1741,11 +1792,13 @@ function extractFlightDateRange(rawText = "") {
     text.match(new RegExp(`(\\d{1,2})\\s*${month}\\s*[-–]\\s*(\\d{1,2})\\s*${month}\\s*(20\\d{2})`, "i"));
   if (!range) return null;
   if (range.length >= 7) {
+    if (!isValidOcrDay(range[1]) || !isValidOcrDay(range[4])) return null;
     return {
       outbound: `${range[1]} ${range[2]} ${range[3]}`,
       inbound: `${range[4]} ${range[5]} ${range[6]}`
     };
   }
+  if (!isValidOcrDay(range[1]) || !isValidOcrDay(range[3])) return null;
   return {
     outbound: `${range[1]} ${range[2]} ${range[5]}`,
     inbound: `${range[3]} ${range[4]} ${range[5]}`
@@ -1936,7 +1989,7 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
   const to = translateOcrCity(toRaw);
   const fromCode = /\bSOF\b|sofia|софия/i.test(compact) ? "SOF" : from;
   const toCode = destinationAirport?.code || to;
-  const dates = compact.match(/(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s*)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|un)\s*\d{1,2}/gi) || [];
+  const dates = extractValidOcrMonthDates(compact);
   const moneyValues = extractOcrMoneyValues(compact);
   const passengerSummary = extractPassengerSummary(compact);
   let price = moneyValues.length ? Math.max(...moneyValues) : 0;
@@ -1999,6 +2052,8 @@ function extractConnectingFlightTimeline(rawText = "") {
   const timeline = [];
 
   dateTimeMatches.forEach((match, index) => {
+    const day = match[0].match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{1,2})/i)?.[1];
+    if (!isValidOcrDay(day)) return;
     const start = Number(match.index || 0) + match[0].length;
     const nextStart = dateTimeMatches[index + 1]?.index;
     const end = Math.min(
@@ -4507,7 +4562,7 @@ function normalizeFlightFromDestination(destinationRaw, rawText) {
   const d = String(destinationRaw || "").toLowerCase();
   const t = String(rawText || "").toLowerCase();
 
-  if (d.includes("бари") || d.includes("bari") || t.includes("bari")) {
+  if (d.includes("бари") || d.includes("bari")) {
     return {
       airline: "Wizz Air",
       route: "SOF → BRI / BRI → SOF",
@@ -4519,7 +4574,7 @@ function normalizeFlightFromDestination(destinationRaw, rawText) {
     };
   }
 
-  if (d.includes("барселона") || d.includes("barcelona") || t.includes("bapcenona")) {
+  if (d.includes("барселона") || d.includes("barcelona")) {
     const timeMatches = String(rawText || "").match(/\d{1,2}:\d{2}/g) || [];
     const flightNumbers = String(rawText || "").match(/\bW6\s?\d{3,5}\b/gi) || [];
     const outboundNumber = flightNumbers[0]?.replace(/\s+/g, "") || "";
@@ -4540,7 +4595,7 @@ function normalizeFlightFromDestination(destinationRaw, rawText) {
     };
   }
 
-  if (d.includes("tokyo") || d.includes("токио") || t.includes("tokyo") || t.includes("narita") || t.includes("haneda")) {
+  if (d.includes("tokyo") || d.includes("токио")) {
     return {
       airline: "Turkish Airlines",
       route: "SOF → Tokyo / Tokyo → SOF",
