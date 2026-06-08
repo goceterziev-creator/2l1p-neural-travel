@@ -1587,9 +1587,10 @@ function extractLabeledFlightPrice(rawText = "") {
   const match =
     text.match(/\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i) ||
     text.match(/\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)\b/i) ||
+    text.match(/(?:\u20ac|EUR|EURO)(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b(?=.{0,120}\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\b)/i) ||
+    text.match(/([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)(?=.{0,120}\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\b)/i) ||
     text.match(/\bFLIGHTS?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)/i) ||
-    text.match(/\bTOTAL(?:\s+price)?(?:\s+for\s+\d+\s+\w+)?\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i) ||
-    text.match(/(?:\u20ac|EUR|EURO)(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i);
+    text.match(/\bTOTAL(?:\s+price)?(?:\s+for\s+\d+\s+\w+)?\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i);
 
   if (!match) return 0;
   const value = parseOcrMoneyValue(match[1] || "");
@@ -1600,9 +1601,16 @@ function extractFlightPriceFromText(rawText = "") {
   const labeled = extractLabeledFlightPrice(rawText);
   if (labeled > 0) return labeled;
 
-  const matches = ocrCompactText(rawText).match(/\d[\d\s,.]*\s?(?:\u20ac|eur)|(?:\u20ac|eur)(?:\s*euros?)?\s?\d[\d\s,.]*/gi) || [];
+  const text = ocrCompactText(rawText);
+  const pricePattern = /\d[\d\s,.]*\s?(?:\u20ac|eur)|(?:\u20ac|eur)(?:\s*euros?)?\s?\d[\d\s,.]*/gi;
+  const matches = [...text.matchAll(pricePattern)];
   const prices = matches
-    .map((value) => parseOcrMoneyValue(value))
+    .filter((match) => {
+      const context = text.slice(Math.max(0, Number(match.index || 0) - 90), Number(match.index || 0) + match[0].length + 40);
+      return !/\+\s*$/.test(text.slice(Math.max(0, Number(match.index || 0) - 3), Number(match.index || 0))) &&
+        !/(flexible ticket|travel protection|change fee|cancellation fee|extras you might like)/i.test(context);
+    })
+    .map((match) => parseOcrMoneyValue(match[0]))
     .filter((value) => Number.isFinite(value) && value > 0);
 
   return prices.length ? Math.max(...prices) : 0;
