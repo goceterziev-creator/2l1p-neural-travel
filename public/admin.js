@@ -2335,6 +2335,7 @@ async function uploadHotelImage() {
     });
 
     const h = data.hotel || {};
+    const hotelImportWarnings = Array.isArray(data.operatorWarnings) ? data.operatorWarnings : [];
     const hotelStayWarnings = getHotelStayMismatchWarnings(
       {
         travelDates: $("travelDates")?.value.trim() || "",
@@ -2373,7 +2374,9 @@ async function uploadHotelImage() {
     addHotel(h);
 
     calculatePricing();
-    alert("Hotel screenshot imported successfully.");
+    alert(hotelImportWarnings.length
+      ? `Hotel screenshot imported with warning:\n\n${hotelImportWarnings.join("\n")}`
+      : "Hotel screenshot imported successfully.");
   } catch (error) {
     console.error("Hotel image import failed:", error);
     alert(`Error: ${error.message}`);
@@ -3184,6 +3187,7 @@ const selectedDestination = getDestinationValue();
 const validationWarnings = [];
 
 validationWarnings.push(...flightImportWarnings);
+validationWarnings.push(...(Array.isArray(hotelData.operatorWarnings) ? hotelData.operatorWarnings : []));
 
 validationWarnings.push(
   ...getDestinationMismatchWarnings(selectedDestination, f, h)

@@ -1616,6 +1616,21 @@ function extractFlightPriceFromText(rawText = "") {
   return prices.length ? Math.max(...prices) : 0;
 }
 
+function extractBookingFlightTotalPrice(rawText = "") {
+  const fullText = ocrCompactText(rawText);
+  if (!/\btotal\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\b/i.test(fullText)) {
+    return 0;
+  }
+
+  // The original OCR pass retains the bottom checkout total more reliably.
+  // Enhanced OCR is optimized for the itinerary and may only retain extras.
+  const originalText = String(rawText || "").split(/--- ENHANCED OCR ---/i)[0];
+  const candidates = extractOcrMoneyValues(originalText);
+  const total = candidates.length ? Math.max(...candidates) : 0;
+  console.log("BOOKING PRICE CANDIDATES:", candidates, "SELECTED TOTAL:", total);
+  return total;
+}
+
 function normalizeGuestsText(value = "") {
   return String(value || "")
     .replace(/\u0432\u044A\u0437\u0440\u0430\u0441\u0442\u043D\u043D\u0438/gi, "\u0432\u044A\u0437\u0440\u0430\u0441\u0442\u043D\u0438")
@@ -2143,6 +2158,7 @@ function parseConnectingFlightCheckout(rawText = "", { destination = "" } = {}) 
   const tokyoFlight = detectTokyoConnectingFlight(rawText);
   if (tokyoFlight) {
     const price =
+      extractBookingFlightTotalPrice(rawText) ||
       extractLabeledFlightPrice(compact) ||
       extractFlightPriceFromText(compact) ||
       extractWizzTotalPrice(compact);
@@ -4996,7 +5012,10 @@ Rules:
       hotel,
       metadata,
       source: metadata.source,
-      missingFields: metadata.missingFields
+      missingFields: metadata.missingFields,
+      operatorWarnings: metadata.missingFields.includes("hotel.price")
+        ? ["Hotel price is not visible in the screenshot. Enter it manually."]
+        : []
     });
   } catch (err) {
     console.error("IMPORT HOTEL IMAGE ERROR:", err);
