@@ -3036,16 +3036,34 @@ async function renderOfferHtml(offer, options = {}) {
       : calculatedOptionPrice;
   });
 
-  const hotelCards = orderedHotels.map((hotel, index) => {
+  const hotelGalleries = [];
+  for (const hotel of orderedHotels) {
     const providedImages = safeArray(hotel.images).filter(Boolean);
     const directImage = cleanText(hotel.image || hotel.imageUrl || hotel.photo || hotel.thumbnail);
     const primaryImages = providedImages.length ? providedImages : [directImage].filter(Boolean);
     let images = arrangeHotelGalleryImages(primaryImages, 3, usedRenderedHotelImageKeys);
 
+    if (images.length < 3 && hotel.name) {
+      const extraImages = await findHotelImagesWithSerpApi(
+        hotel.name,
+        hotel.area || destinationName,
+        9
+      );
+      images = [
+        ...images,
+        ...arrangeHotelGalleryImages(extraImages, 3 - images.length, usedRenderedHotelImageKeys)
+      ];
+    }
+
     if (!images.length && hotelFallbackImage) {
       // A repeated destination fallback is preferable to an empty hotel card.
       images = uniqueHotelImages([hotelFallbackImage], 1);
     }
+    hotelGalleries.push(images);
+  }
+
+  const hotelCards = orderedHotels.map((hotel, index) => {
+    const images = hotelGalleries[index] || [];
 
     const description = cleanClientHotelDescription(hotel.description, hotel) ||
       `Подбран хотел в ${destinationName} с удобства за комфортен престой.`;
