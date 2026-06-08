@@ -2987,16 +2987,33 @@ async function renderOfferHtml(offer, options = {}) {
 
   const hotelsWithImages = await Promise.all(hotels.map(async (hotel) => {
     const existingImages = uniqueHotelImages(hotel.images || [], 6);
-    if (existingImages.length || !hotel.name) {
+    if (existingImages.length >= 3 || !hotel.name) {
       return { ...hotel, images: existingImages };
     }
 
     const resolvedImages = await findHotelImagesWithSerpApi(
       hotel.name,
       hotel.area || destinationName,
-      3
+      6
     );
-    return { ...hotel, images: resolvedImages };
+    const mergedImages = existingImages.slice();
+    const usedKeys = new Set(existingImages.flatMap((image) => {
+      const key = hotelImageKey(image);
+      const sceneKey = hotelImageSceneKey(image);
+      return [key, sceneKey ? `scene:${sceneKey}` : ""].filter(Boolean);
+    }));
+
+    for (const image of resolvedImages) {
+      const key = hotelImageKey(image);
+      const sceneKey = hotelImageSceneKey(image);
+      if (!key || usedKeys.has(key) || (sceneKey && usedKeys.has(`scene:${sceneKey}`))) continue;
+      mergedImages.push(image);
+      usedKeys.add(key);
+      if (sceneKey) usedKeys.add(`scene:${sceneKey}`);
+      if (mergedImages.length >= 3) break;
+    }
+
+    return { ...hotel, images: mergedImages };
   }));
   const selectedHotelIndex = hotelsWithImages.findIndex((hotel) => Boolean(hotel.selected));
   const normalizedHotels = hotelsWithImages.map((hotel, index) => ({
