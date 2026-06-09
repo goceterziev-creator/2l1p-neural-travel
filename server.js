@@ -1608,7 +1608,7 @@ function extractFlightPriceFromText(rawText = "") {
     .filter((match) => {
       const context = text.slice(Math.max(0, Number(match.index || 0) - 90), Number(match.index || 0) + match[0].length + 40);
       return !/\+\s*$/.test(text.slice(Math.max(0, Number(match.index || 0) - 3), Number(match.index || 0))) &&
-        !/(flexible ticket|travel protection|change fee|cancellation fee|extras you might like)/i.test(context);
+        !/(flexible ticket|travel protection|change fee|cancellation fee|extras you might like|\u0433\u044a\u0432\u043a\u0430\u0432 \u0431\u0438\u043b\u0435\u0442|\u0437\u0430\u0449\u0438\u0442\u0430 \u043f\u0440\u0438 \u043f\u044a\u0442\u0443\u0432\u0430\u043d\u0435|\u0447\u0435\u043a\u0438\u0440\u0430\u043d \u0431\u0430\u0433\u0430\u0436|\u0435\u043a\u0441\u0442\u0440\u0438)/i.test(context);
     })
     .map((match) => parseOcrMoneyValue(match[0]))
     .filter((value) => Number.isFinite(value) && value > 0);
@@ -1617,15 +1617,20 @@ function extractFlightPriceFromText(rawText = "") {
 }
 
 function extractBookingFlightTotalPrice(rawText = "") {
-  const fullText = ocrCompactText(rawText);
-  if (!/\btotal\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\b/i.test(fullText)) {
+  const originalText = String(rawText || "").split(/--- ENHANCED OCR ---/i)[0];
+  const fullText = ocrCompactText(originalText);
+  const totalLabelPattern = /\btotal\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\b|\u043e\u0431\u0449\u0430\s+\u0446\u0435\u043d\u0430(?:\s+\u0437\u0430\s+\u0432\u0441\u0438\u0447\u043a\u0438\s+\u043f\u044a\u0442\u043d\u0438\u0446\u0438)?/i;
+  const labelMatch = totalLabelPattern.exec(fullText);
+  if (!labelMatch) {
     return 0;
   }
 
   // The original OCR pass retains the bottom checkout total more reliably.
   // Enhanced OCR is optimized for the itinerary and may only retain extras.
-  const originalText = String(rawText || "").split(/--- ENHANCED OCR ---/i)[0];
-  const candidates = extractOcrMoneyValues(originalText);
+  const labelIndex = Number(labelMatch.index || 0);
+  const nearbyText = fullText.slice(Math.max(0, labelIndex - 180), labelIndex + labelMatch[0].length + 180);
+  const nearbyCandidates = extractOcrMoneyValues(nearbyText);
+  const candidates = nearbyCandidates.length ? nearbyCandidates : extractOcrMoneyValues(originalText);
   const total = candidates.length ? Math.max(...candidates) : 0;
   console.log("BOOKING PRICE CANDIDATES:", candidates, "SELECTED TOTAL:", total);
   return total;
@@ -1773,11 +1778,15 @@ function validateFlightAgainstDestination(flight = {}, rawText = "", destination
     return valueMonths.some((month) => !rawMonths.has(monthMap[month] || month)) ? "" : translated;
   };
   const extractedBaggage = extractFlightBaggageSummary(rawText);
+  const bookingTotalPrice = extractBookingFlightTotalPrice(rawText);
+  const hasBookingTotalLabel = bookingTotalPrice > 0 ||
+    /\btotal\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\b|\u043e\u0431\u0449\u0430\s+\u0446\u0435\u043d\u0430(?:\s+\u0437\u0430\s+\u0432\u0441\u0438\u0447\u043a\u0438\s+\u043f\u044a\u0442\u043d\u0438\u0446\u0438)?/i.test(normalizedRawText);
   const sanitizedFlight = {
     ...flight,
     departure: sanitizeTimelineValue(flight.departure),
     arrival: sanitizeTimelineValue(flight.arrival),
-    baggage: extractedBaggage !== "Не е посочено" ? extractedBaggage : flight.baggage
+    baggage: extractedBaggage !== "Не е посочено" ? extractedBaggage : flight.baggage,
+    price: bookingTotalPrice || (hasBookingTotalLabel ? 0 : flight.price)
   };
   const route = String(sanitizedFlight.route || "").toUpperCase();
   const routeCodes = uniqueAirportCodes(route.match(/\b[A-Z]{3}\b/g) || []);
@@ -2032,15 +2041,11 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
   const fromCode = /\bSOF\b|sofia|софия/i.test(compact) ? "SOF" : from;
   const toCode = destinationAirport?.code || to;
   const dates = extractValidOcrMonthDates(compact);
-  const moneyValues = extractOcrMoneyValues(compact);
   const passengerSummary = extractPassengerSummary(compact);
-  let price = moneyValues.length ? Math.max(...moneyValues) : 0;
+  let price = extractBookingFlightTotalPrice(rawText) || extractLabeledFlightPrice(rawText);
   if (/sofia/i.test(fromRaw) && /rome/i.test(toRaw) && price > 0 && price < 10) price = Number((price + 64).toFixed(2));
 
-  const baggage = [];
-  if (/personal item|fits under the seat|under the seat|included|incuded|ncuded/i.test(compact)) baggage.push("1 малък личен багаж включен");
-  if (/carry-on|cabin bag/i.test(compact) && /€\s*\d|eur\s*\d/i.test(compact)) baggage.push("видима опция за ръчен багаж срещу доплащане");
-  if (/checked bag|hold luggage/i.test(compact) && /€\s*\d|eur\s*\d/i.test(compact)) baggage.push("видима опция за чекиран багаж срещу доплащане");
+  const baggage = extractFlightBaggageSummary(rawText);
 
   const inferredAirline = inferConnectingAirline(compact);
   const flight = {
@@ -2052,7 +2057,7 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
     route: `${fromCode} -> ${toCode} / ${toCode} -> ${fromCode}`,
     departure: dates[0] ? `${fromCode} -> ${toCode}, ${translateOcrDate(dates[0])}` : "",
     arrival: dates[1] ? `${toCode} -> ${fromCode}, ${translateOcrDate(dates[1])}` : "",
-    baggage: baggage.join("; ") || "Не е посочено",
+    baggage,
     notes: [passengerSummary, "Данните са извлечени от Booking.com checkout screenshot."].filter(Boolean).join(" "),
     price
   };
