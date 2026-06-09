@@ -81,6 +81,13 @@ function checkSourceStability() {
   assert(server.includes('const OCR_ENGINE_VERSION = "8.3.2";'), "OCR_ENGINE_VERSION is not locked to 8.3.2");
   assert(server.includes("function buildValidationWarnings("), "buildValidationWarnings() missing");
   assert(server.includes("function sanitizeHotelImages("), "sanitizeHotelImages() missing");
+  assert(server.includes("function parsePlainTicket("), "plain-ticket structural parser missing");
+  assert(server.includes('return "plain_ticket";'), "plain-ticket profile lock missing");
+  assert(
+    server.indexOf('return "plain_ticket";') < server.indexOf('return "connecting_flight_checkout";'),
+    "plain-ticket profile must run before connecting-flight fallback"
+  );
+  assert(server.includes('buildOcrMetadata("plain_ticket"'), "plain-ticket metadata contract missing");
   assert(!/writeDb\(|fs\.writeFileSync\(|fs\.renameSync\(/.test(renderBlock), "renderOfferHtml must not mutate persisted data");
 
   record("source stability", "pass", { renderCount, readDbCount, writeDbCount, ocrEngineVersion: "8.3.2" });

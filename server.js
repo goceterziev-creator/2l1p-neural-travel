@@ -1721,7 +1721,11 @@ const GLOBAL_AIRPORT_ALIAS_EXTENSIONS = [
     ]
   },
   { code: "DOH", city: "Doha", aliases: ["doh", "doha", "hamad international", "hamad international airport", "\u0434\u043e\u0445\u0430"] },
-  { code: "ATH", city: "Athens", aliases: ["ath", "athens", "athens international", "eleftherios venizelos", "\u0430\u0442\u0438\u043d\u0430"] }
+  { code: "ATH", city: "Athens", aliases: ["ath", "athens", "athens international", "eleftherios venizelos", "\u0430\u0442\u0438\u043d\u0430"] },
+  { code: "TIA", city: "Tirana", aliases: ["tia", "tirana", "tirana international", "\u0442\u0438\u0440\u0430\u043d\u0430"] },
+  { code: "HRG", city: "Hurghada", aliases: ["hrg", "hurghada", "\u0445\u0443\u0440\u0433\u0430\u0434\u0430"] },
+  { code: "TLV", city: "Tel Aviv", aliases: ["tlv", "tel aviv", "ben gurion", "\u0442\u0435\u043b \u0430\u0432\u0438\u0432"] },
+  { code: "AUH", city: "Abu Dhabi", aliases: ["auh", "abu dhabi", "zayed international", "\u0430\u0431\u0443 \u0434\u0430\u0431\u0438"] }
 ];
 
 GLOBAL_AIRPORT_ALIAS_EXTENSIONS.forEach((extension) => {
@@ -1896,6 +1900,83 @@ function extractWizzLegInfo(rawText = "") {
   };
 }
 
+function inferPlainTicketAirline(rawText = "") {
+  const text = ocrCompactText(rawText);
+  const airlines = [
+    [/wizz(?:\s+air)?|\bW6\s?\d{3,5}\b/i, "Wizz Air"],
+    [/ryanair|\bFR\s?\d{3,5}\b/i, "Ryanair"],
+    [/easyjet|\bU2\s?\d{3,5}\b/i, "easyJet"],
+    [/pegasus|\bPC\s?\d{3,5}\b/i, "Pegasus Airlines"],
+    [/air arabia|\bG9\s?\d{3,5}\b/i, "Air Arabia"],
+    [/flydubai|\bFZ\s?\d{3,5}\b/i, "flydubai"],
+    [/emirates|\bEK\s?\d{3,5}\b/i, "Emirates"],
+    [/etihad|\bEY\s?\d{3,5}\b/i, "Etihad Airways"]
+  ];
+  return airlines.find(([pattern]) => pattern.test(text))?.[1] || "";
+}
+
+function extractPlainTicketLegInfo(rawText = "") {
+  const text = ocrCompactText(rawText);
+  const outboundText = text.match(/OUTBOUND(?:\s+FLIGHT)?(.*?)(?:INBOUND(?:\s+FLIGHT)?|RETURN(?:\s+FLIGHT)?|$)/i)?.[1] || "";
+  const inboundText = text.match(/(?:INBOUND|RETURN)(?:\s+FLIGHT)?(.*)/i)?.[1] || "";
+  const month = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)";
+  const parseLeg = (section = "") => {
+    const date = section.match(new RegExp(`(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(\\d{1,2}\\s*${month}\\s*(?:20\\d{2})?)`, "i"))?.[1] || "";
+    const times = section.match(/\b\d{1,2}:\d{2}\b/g) || [];
+    const number = section.match(/\b(?:[A-Z]{1,3}|[A-Z]\d|\d[A-Z])\s?\d{3,5}\b/i)?.[0]?.replace(/\s+/g, " ") || "";
+    return {
+      date: date ? translateOcrDate(date) : "",
+      start: times[0] || "",
+      end: times[1] || "",
+      number
+    };
+  };
+  return {
+    outbound: parseLeg(outboundText),
+    inbound: parseLeg(inboundText)
+  };
+}
+
+function extractPlainTicketRoute(rawText = "", destination = "") {
+  const text = ocrCompactText(rawText);
+  const header = text.match(/\b([A-Z]{3})\s*[-\u2013\u2014]\s*([A-Z]{3})\b(?:\s*\(\s*return\s*\))?/i);
+  if (header) return { from: header[1].toUpperCase(), to: header[2].toUpperCase() };
+  const destinationAirport = resolveDestinationAirport(rawText, destination);
+  return destinationAirport?.code ? { from: "SOF", to: destinationAirport.code } : null;
+}
+
+function parsePlainTicket(rawText = "", { destination = "" } = {}) {
+  const compact = ocrCompactText(rawText);
+  const routePair = extractPlainTicketRoute(compact, destination);
+  const legs = extractPlainTicketLegInfo(compact);
+  const airline = inferPlainTicketAirline(compact);
+  const price = extractWizzTotalPrice(compact) || extractLabeledFlightPrice(compact) || extractFlightPriceFromText(compact);
+  const fromCode = routePair?.from || "";
+  const toCode = routePair?.to || "";
+  const route = fromCode && toCode ? `${fromCode} -> ${toCode} / ${toCode} -> ${fromCode}` : "";
+  const departure = route && (legs.outbound.date || legs.outbound.start)
+    ? `${fromCode} -> ${toCode}${legs.outbound.date ? `, ${legs.outbound.date}` : ""}${legs.outbound.start && legs.outbound.end ? `, ${legs.outbound.start} - ${legs.outbound.end}` : ""}${legs.outbound.number ? `, ${legs.outbound.number}` : ""}`
+    : "";
+  const arrival = route && (legs.inbound.date || legs.inbound.start)
+    ? `${toCode} -> ${fromCode}${legs.inbound.date ? `, ${legs.inbound.date}` : ""}${legs.inbound.start && legs.inbound.end ? `, ${legs.inbound.start} - ${legs.inbound.end}` : ""}${legs.inbound.number ? `, ${legs.inbound.number}` : ""}`
+    : "";
+  const flight = {
+    airline,
+    route,
+    departure,
+    arrival,
+    baggage: extractFlightBaggageSummary(rawText),
+    notes: "Данните са извлечени от структуриран екран за избор на двупосочен полет.",
+    price
+  };
+  const missingFields = [];
+  if (!flight.airline) missingFields.push("flight.airline");
+  if (!flight.route) missingFields.push("flight.route");
+  if (!flight.departure || !flight.arrival) missingFields.push("flight.times");
+  if (!flight.price) missingFields.push("flight.price");
+  return { flight, hotel: {}, metadata: buildOcrMetadata("plain_ticket", flight, missingFields) };
+}
+
 function extractOcrCityPair(rawText = "") {
   const match = ocrCompactText(rawText).match(/\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\s+to\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\b/);
   if (!match) return null;
@@ -1908,6 +1989,7 @@ function extractOcrCityPair(rawText = "") {
 function detectOcrSource(rawText = "", kind = "flight") {
   const text = normalizeLocalizedFlightTimelineText(ocrCompactText(rawText)).toLowerCase();
   if (kind === "hotel" && /booking|check.?in|check.?out|breakfast|room|reviews/.test(text)) return "booking_hotel_checkout";
+  if (kind === "flight" && /outbound(?:\s+flight)?/.test(text) && /(?:inbound|return)(?:\s+flight)?/.test(text)) return "plain_ticket";
   const connectingAirportCount = kind === "flight" ? uniqueAirportCodes(detectAirportCodes(rawText)).length : 0;
   const connectingDateTimeCount = kind === "flight"
     ? (text.match(/\b(?:mon|tue|wed|thu|fri|sat|sun)[,.]?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*\d{1,2}/g) || []).length
@@ -2441,6 +2523,7 @@ function parseWizzCheckout(rawText = "", { destination = "" } = {}) {
 
 function parseOcrByProfile(rawText = "", { kind = "flight", destination = "" } = {}) {
   const source = detectOcrSource(rawText, kind);
+  if (source === "plain_ticket") return parsePlainTicket(rawText, { destination });
   if (source === "connecting_flight_checkout") return parseConnectingFlightCheckout(rawText, { destination });
   if (source === "booking_flight_checkout") return parseBookingFlightCheckout(rawText, { destination });
   if (source === "ryanair_checkout") return parseRyanairCheckout(rawText);
