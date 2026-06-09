@@ -2244,6 +2244,11 @@ async function uploadFlightImage() {
     const f = normalizeFlightFields(data.flight || {});
     const flightPrice = getImportedFlightPrice(data, f);
     const importWarnings = getFlightImportWarnings(data);
+    const blockingWarnings = getBlockingFlightImportWarnings(f, flightPrice);
+    if (blockingWarnings.length) {
+      alert(formatBlockedFlightImportMessage(blockingWarnings, importWarnings));
+      return;
+    }
     mergeCurrentValidationWarnings(importWarnings);
     console.log("FLIGHT IMPORT RESPONSE:", {
       flightAirline: f.airline,
@@ -2320,6 +2325,33 @@ function shouldReviewFlightImport(data = {}) {
     data?.risk?.requiresOperatorReview ||
     data?.flightConfidence?.risk?.requiresOperatorReview
   );
+}
+
+function getBlockingFlightImportWarnings(flight = {}, flightPrice = 0) {
+  const airline = String(flight?.airline || "").trim().toLowerCase();
+  const missingAirline = !airline || [
+    "не е посочено",
+    "airline needs review",
+    "connecting airline"
+  ].includes(airline);
+  const warnings = [];
+  if (missingAirline) warnings.push("Авиокомпанията не е разпозната надеждно.");
+  if (Number(flightPrice || 0) <= 0) warnings.push("Крайната цена на полета не е разпозната надеждно.");
+  return warnings;
+}
+
+function formatBlockedFlightImportMessage(blockingWarnings = [], importWarnings = []) {
+  const details = [...new Set([
+    ...blockingWarnings,
+    ...importWarnings
+  ].map((warning) => String(warning || "").trim()).filter(Boolean))];
+  return [
+    "Flight import stopped. Existing flight data was not changed.",
+    "",
+    ...details.map((warning) => `• ${warning}`),
+    "",
+    "Използвайте по-ясна снимка или въведете полета ръчно."
+  ].join("\n");
 }
 
 async function uploadHotelImage() {
@@ -3173,11 +3205,16 @@ async function autoBuildOffer() {
     const f = flightData.flight || {};
     const flightPrice = getImportedFlightPrice(flightData, f);
     const flightImportWarnings = getFlightImportWarnings(flightData);
+    const blockingFlightWarnings = getBlockingFlightImportWarnings(f, flightPrice);
     console.log("AUTO FLIGHT IMPORT RESPONSE:", {
       flightAirline: f.airline,
       flightRoute: f.route,
       flightPrice
     });
+    if (blockingFlightWarnings.length) {
+      alert(formatBlockedFlightImportMessage(blockingFlightWarnings, flightImportWarnings));
+      return;
+    }
 
     // 2) Import hotel screenshot
   const hotelForm = new FormData();
