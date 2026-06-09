@@ -1757,6 +1757,49 @@ function resolveDestinationAirport(rawText = "", destination = "") {
     : FLIGHT_AIRPORT_ALIASES.find((record) => record.code === nonSofia[0]) || null;
 }
 
+function validateFlightAgainstDestination(flight = {}, rawText = "", destination = "") {
+  const destinationAirport = airportAliasRecord(destination);
+  if (!destinationAirport?.code || destinationAirport.code === "SOF") return flight;
+
+  const expectedCode = destinationAirport.code;
+  const normalizedRawText = normalizeLocalizedFlightTimelineText(ocrCompactText(rawText));
+  const rawMonths = new Set((normalizedRawText.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi) || []).map((month) => month.slice(0, 3).toLowerCase()));
+  const sanitizeTimelineValue = (value = "") => {
+    const translated = String(value || "");
+    if (!rawMonths.size) return translated;
+    const valueMonths = (translated.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|яну|фев|мар|апр|май|юни|юли|авг|сеп|окт|ное|дек)\b/gi) || [])
+      .map((month) => month.slice(0, 3).toLowerCase());
+    const monthMap = { яну: "jan", фев: "feb", мар: "mar", апр: "apr", май: "may", юни: "jun", юли: "jul", авг: "aug", сеп: "sep", окт: "oct", ное: "nov", дек: "dec" };
+    return valueMonths.some((month) => !rawMonths.has(monthMap[month] || month)) ? "" : translated;
+  };
+  const extractedBaggage = extractFlightBaggageSummary(rawText);
+  const sanitizedFlight = {
+    ...flight,
+    departure: sanitizeTimelineValue(flight.departure),
+    arrival: sanitizeTimelineValue(flight.arrival),
+    baggage: extractedBaggage !== "Не е посочено" ? extractedBaggage : flight.baggage
+  };
+  const route = String(sanitizedFlight.route || "").toUpperCase();
+  const routeCodes = uniqueAirportCodes(route.match(/\b[A-Z]{3}\b/g) || []);
+  const knownRouteCodes = routeCodes.filter((code) => FLIGHT_AIRPORT_ALIASES.some((record) => record.code === code));
+  const routeIsRoundTrip = route.includes("/") && knownRouteCodes.includes("SOF") && knownRouteCodes.includes(expectedCode);
+  if (routeIsRoundTrip) return sanitizedFlight;
+
+  const inferredAirline = inferConnectingAirline(rawText);
+  return {
+    ...sanitizedFlight,
+    airline: inferredAirline !== "Connecting airline" ? inferredAirline : (sanitizedFlight.airline || "Airline needs review"),
+    route: `SOF -> ${expectedCode} / ${expectedCode} -> SOF`,
+    departure: "",
+    arrival: "",
+    baggage: extractFlightBaggageSummary(rawText),
+    notes: [
+      String(flight.notes || "").trim(),
+      `Route normalized to the selected destination (${expectedCode}). Operator review required.`
+    ].filter(Boolean).join(" ")
+  };
+}
+
 function isValidOcrDay(value) {
   const day = Number(value);
   return Number.isInteger(day) && day >= 1 && day <= 31;
@@ -1854,13 +1897,13 @@ function extractOcrCityPair(rawText = "") {
 }
 
 function detectOcrSource(rawText = "", kind = "flight") {
-  const text = ocrCompactText(rawText).toLowerCase();
+  const text = normalizeLocalizedFlightTimelineText(ocrCompactText(rawText)).toLowerCase();
   if (kind === "hotel" && /booking|check.?in|check.?out|breakfast|room|reviews/.test(text)) return "booking_hotel_checkout";
   const connectingAirportCount = kind === "flight" ? uniqueAirportCodes(detectAirportCodes(rawText)).length : 0;
   const connectingDateTimeCount = kind === "flight"
     ? (text.match(/\b(?:mon|tue|wed|thu|fri|sat|sun)[,.]?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*\d{1,2}/g) || []).length
     : 0;
-  if (kind === "flight" && connectingAirportCount >= 3 && connectingDateTimeCount >= 4) return "connecting_flight_checkout";
+  if (kind === "flight" && connectingAirportCount >= 3) return "connecting_flight_checkout";
   if (kind === "flight" && /(turkish|lufthansa|qatar|emirates|etihad|air france|klm|layover|stopover|\b[12]\s*stops?\b|flight to tokyo|tokyo haneda|narita)/.test(text)) return "connecting_flight_checkout";
   if (/(price details|your details|enter your details|choose your fare|check and pay)/.test(text)) return "booking_flight_checkout";
   if (/wizz|w6\s?\d{3,5}|basic fare|priority boarding/.test(text)) return "wizz_checkout";
@@ -4562,6 +4605,11 @@ const profileImport = parseOcrByProfile(text, {
 });
 
 if (profileImport?.flight) {
+  profileImport.flight = validateFlightAgainstDestination(
+    profileImport.flight,
+    text,
+    req.body?.destination || ""
+  );
   const flightPrice = Number(profileImport.flight.price || 0);
   profileImport.flight.price = flightPrice;
   const flightConfidence = buildFlightOcrConfidence(text, profileImport.flight, profileImport.metadata);
@@ -5119,6 +5167,8 @@ if (
   flight.baggage = "Small cabin/personal item included according to airline conditions; verify baggage before booking.";
   flight.notes = "Mixed-carrier Rome route normalized from screenshot. Confirm flight times, baggage, seats and fare rules before booking.";
 }
+
+flight = validateFlightAgainstDestination(flight, text, req.body?.destination || "");
 
 console.log("FLIGHT IMPORT RESPONSE:", {
   flightAirline: flight.airline,
