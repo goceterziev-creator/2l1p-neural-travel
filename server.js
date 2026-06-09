@@ -1669,9 +1669,8 @@ function translateOcrCity(value = "") {
 
 function translateOcrDate(value = "") {
   const days = { Mon: "пон.", Tue: "вт.", Wed: "ср.", Thu: "чт.", Fri: "пет.", Sat: "съб.", Sun: "нед." };
-  const months = { Jan: "яну", Feb: "фев", Mar: "мар", Apr: "апр", May: "май", Jun: "юни", Jul: "юли", Aug: "авг", Sep: "сеп", Oct: "окт", Nov: "ное", Dec: "дек", un: "юни" };
+  const months = { Jan: "яну", Feb: "фев", Mar: "мар", Apr: "апр", May: "май", Jun: "юни", Jul: "юли", Aug: "авг", Sep: "сеп", Oct: "окт", Nov: "ное", Dec: "дек" };
   return String(value || "")
-    .replace(/\bun\b/i, "Jun")
     .replace(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/gi, (match) => days[match.slice(0, 3)] || match)
     .replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi, (match) => months[match.slice(0, 3)] || match)
     .trim();
@@ -1765,7 +1764,7 @@ function isValidOcrDay(value) {
 
 function extractValidOcrMonthDates(rawText = "") {
   const compact = ocrCompactText(rawText);
-  const matches = compact.match(/(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s*)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|un)\s*(\d{1,2})/gi) || [];
+  const matches = compact.match(/(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s*)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{1,2})/gi) || [];
   return matches.filter((value) => {
     const day = value.match(/(\d{1,2})\s*$/)?.[1];
     return isValidOcrDay(day);
@@ -1862,7 +1861,7 @@ function detectOcrSource(rawText = "", kind = "flight") {
     ? (text.match(/\b(?:mon|tue|wed|thu|fri|sat|sun)[,.]?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*\d{1,2}/g) || []).length
     : 0;
   if (kind === "flight" && connectingAirportCount >= 3 && connectingDateTimeCount >= 4) return "connecting_flight_checkout";
-  if (kind === "flight" && /(turkish|lufthansa|qatar|emirates|air france|klm|layover|stopover|\b1\s*stop\b|flight to tokyo|tokyo haneda|narita)/.test(text)) return "connecting_flight_checkout";
+  if (kind === "flight" && /(turkish|lufthansa|qatar|emirates|etihad|air france|klm|layover|stopover|\b[12]\s*stops?\b|flight to tokyo|tokyo haneda|narita)/.test(text)) return "connecting_flight_checkout";
   if (/(price details|your details|enter your details|choose your fare|check and pay)/.test(text)) return "booking_flight_checkout";
   if (/wizz|w6\s?\d{3,5}|basic fare|priority boarding/.test(text)) return "wizz_checkout";
   if (/ryanair|priority|small bag|personal item|cabin bag/.test(text)) return "ryanair_checkout";
@@ -2083,25 +2082,25 @@ function extractConnectingFlightTimeline(rawText = "") {
 
 function normalizeLocalizedFlightTimelineText(rawText = "") {
   const replacements = [
-    [/\b(?:пон|понеделник)\.?\b/gi, "Mon"],
-    [/\b(?:вт|втор|вторник)\.?\b/gi, "Tue"],
-    [/\b(?:ср|сряда)\.?\b/gi, "Wed"],
-    [/\b(?:чт|четвъртък)\.?\b/gi, "Thu"],
-    [/\b(?:пет|петък)\.?\b/gi, "Fri"],
-    [/\b(?:съб|събота)\.?\b/gi, "Sat"],
-    [/\b(?:нед|неделя)\.?\b/gi, "Sun"],
-    [/\bяну(?:ари)?\.?\b/gi, "Jan"],
-    [/\bфев(?:руари)?\.?\b/gi, "Feb"],
-    [/\bмар(?:т)?\.?\b/gi, "Mar"],
-    [/\bапр(?:ил)?\.?\b/gi, "Apr"],
-    [/\bмай\.?\b/gi, "May"],
-    [/\bюни\.?\b/gi, "Jun"],
-    [/\bюли\.?\b/gi, "Jul"],
-    [/\bавг(?:уст)?\.?\b/gi, "Aug"],
-    [/\bсеп(?:тември)?\.?\b/gi, "Sep"],
-    [/\bокт(?:омври)?\.?\b/gi, "Oct"],
-    [/\bное(?:мври)?\.?\b/gi, "Nov"],
-    [/\bдек(?:ември)?\.?\b/gi, "Dec"],
+    [/(?:пон|понеделник)\.?(?=\s|,|$)/gi, "Mon"],
+    [/(?:вт|втор|вторник)\.?(?=\s|,|$)/gi, "Tue"],
+    [/(?:ср|сряда)\.?(?=\s|,|$)/gi, "Wed"],
+    [/(?:чт|четвъртък)\.?(?=\s|,|$)/gi, "Thu"],
+    [/(?:пет|петък)\.?(?=\s|,|$)/gi, "Fri"],
+    [/(?:съб|събота)\.?(?=\s|,|$)/gi, "Sat"],
+    [/(?:нед|неделя)\.?(?=\s|,|$)/gi, "Sun"],
+    [/яну(?:ари)?\.?(?=\s|,|$)/gi, "Jan"],
+    [/фев(?:руари)?\.?(?=\s|,|$)/gi, "Feb"],
+    [/мар(?:т)?\.?(?=\s|,|$)/gi, "Mar"],
+    [/апр(?:ил)?\.?(?=\s|,|$)/gi, "Apr"],
+    [/май\.?(?=\s|,|$)/gi, "May"],
+    [/юни\.?(?=\s|,|$)/gi, "Jun"],
+    [/юли\.?(?=\s|,|$)/gi, "Jul"],
+    [/авг(?:уст)?\.?(?=\s|,|$)/gi, "Aug"],
+    [/сеп(?:тември)?\.?(?=\s|,|$)/gi, "Sep"],
+    [/окт(?:омври)?\.?(?=\s|,|$)/gi, "Oct"],
+    [/ное(?:мври)?\.?(?=\s|,|$)/gi, "Nov"],
+    [/дек(?:ември)?\.?(?=\s|,|$)/gi, "Dec"],
     [/(\d{1,2}:\d{2})\s*ч\.?/gi, "$1"]
   ];
   const localized = replacements.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), String(rawText || ""));
@@ -2195,6 +2194,22 @@ function inferConnectingAirline(rawText = "") {
   return airlines.length ? airlines.join(" + ") : "Connecting airline";
 }
 
+function extractFlightBaggageSummary(rawText = "") {
+  const text = ocrCompactText(rawText);
+  const carryOn = text.match(/\b(\d+)\s*(?:carry-on bags?|cabin bags?|hand baggage|ръчни багажа|ръчен багаж)(?=\s|,|;|$)/i)?.[1];
+  const checked = text.match(/\b(\d+)\s*(?:checked bags?|checked baggage|чекирани багажа|чекиран багаж)(?=\s|,|;|$)/i)?.[1];
+  const personal = text.match(/\b(\d+)\s*(?:personal items?|лични багажа|личен багаж)(?=\s|,|;|$)/i)?.[1];
+  const dimensions = text.match(/\b\d{2}\s*[xх×]\s*\d{2}\s*[xх×]\s*\d{2}\s*(?:cm|см)(?=\s|,|;|$)/i)?.[0] || "";
+  const parts = [];
+  if (personal) parts.push(`${personal} личен багаж`);
+  if (carryOn) parts.push(`${carryOn} ръчни багажа${dimensions ? ` (${dimensions})` : ""}`);
+  if (checked) parts.push(`${checked} чекирани багажа`);
+  if (parts.length) return parts.join("; ");
+  return /included|включен багаж|багаж.*включен|ръчен багаж/i.test(text)
+    ? "Включен багаж според видимите условия на авиокомпаниите"
+    : "Не е посочено";
+}
+
 function detectGenericConnectingFlight(rawText = "", destination = "") {
   const destinationAirport = resolveDestinationAirport(rawText, destination);
   if (!destinationAirport?.code || destinationAirport.code === "SOF") return null;
@@ -2211,26 +2226,36 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
   const outboundEnd = timeline[outboundEndIndex];
   const inboundStart = timeline[inboundStartIndex];
   const inboundEnd = timeline[inboundEndIndex];
-  const stops = uniqueAirportCodes([
-    ...timeline.slice(outboundStartIndex + 1, outboundEndIndex).map((item) => item.code),
-    ...timeline.slice(inboundStartIndex + 1, inboundEndIndex).map((item) => item.code)
-  ].filter((code) => !["SOF", destinationCode].includes(code)));
-  const via = stops.length ? `, via ${stops.join(" + ")}` : "";
+  const outboundStops = uniqueAirportCodes(
+    timeline.slice(outboundStartIndex + 1, outboundEndIndex)
+      .map((item) => item.code)
+      .filter((code) => !["SOF", destinationCode].includes(code))
+  );
+  const inboundStops = uniqueAirportCodes(
+    timeline.slice(inboundStartIndex + 1, inboundEndIndex)
+      .map((item) => item.code)
+      .filter((code) => !["SOF", destinationCode].includes(code))
+  );
+  const outboundVia = outboundStops.length ? `, via ${outboundStops.join(" + ")}` : "";
+  const inboundVia = inboundStops.length ? `, via ${inboundStops.join(" + ")}` : "";
+  const stopSummary = [
+    outboundStops.length ? `Отиване: ${outboundStops.length} ${outboundStops.length === 1 ? "прекачване" : "прекачвания"} през ${outboundStops.join(" + ")}.` : "",
+    inboundStops.length ? `Връщане: ${inboundStops.length} ${inboundStops.length === 1 ? "прекачване" : "прекачвания"} през ${inboundStops.join(" + ")}.` : ""
+  ].filter(Boolean).join(" ");
   const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL)\s?\d{2,4}\b/gi) || [])]
     .map((number) => number.replace(/\s+/g, " "));
 
   return {
     airline: inferConnectingAirline(rawText),
     route: `SOF -> ${destinationCode} / ${destinationCode} -> SOF`,
-    departure: `SOF -> ${destinationCode}, ${outboundStart.when} - ${outboundEnd.when}${via}`,
-    arrival: `${destinationCode} -> SOF, ${inboundStart.when} - ${inboundEnd.when}${via}`,
-    baggage: /checked bags?|carry-on|personal items?|included|включен багаж|ръчни багажи|ръчен багаж/i.test(rawText)
-      ? "Включен багаж според видимите условия на авиокомпаниите"
-      : "Не е посочено",
+    departure: `SOF -> ${destinationCode}, ${outboundStart.when} - ${outboundEnd.when}${outboundVia}`,
+    arrival: `${destinationCode} -> SOF, ${inboundStart.when} - ${inboundEnd.when}${inboundVia}`,
+    baggage: extractFlightBaggageSummary(rawText),
     notes: [
       extractPassengerSummary(rawText),
       flightNumbers.length ? `Полети: ${flightNumbers.join(", ")}.` : "",
-      `Connecting flight detected${via}. Проверете финално часовете, багажа и условията преди резервация.`
+      stopSummary,
+      "Проверете финално часовете, багажа и условията преди резервация."
     ].filter(Boolean).join(" ")
   };
 }
