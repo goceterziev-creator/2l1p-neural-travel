@@ -2960,6 +2960,11 @@ async function renderOfferHtml(offer, options = {}) {
       .replace(/Couples in particular like.*$/i, "")
       .replace(/Двойките особено харесват.*$/i, "")
       .replace(/Може да отговаряте.*?дати\./i, "")
+      .replace(/подходящ(?:а|о|и)?\s+за\s+\d+\s+(?:човек|души|гост(?:и)?)/gi, "")
+      .replace(/suitable\s+for\s+\d+\s+(?:person|people|guests?)/gi, "")
+      .replace(/\s+([,.;:!?])/g, "$1")
+      .replace(/([,;:])\s*([,;:])/g, "$1")
+      .replace(/,\s*\./g, ".")
       .replace(/\s+/g, " ")
       .trim();
 

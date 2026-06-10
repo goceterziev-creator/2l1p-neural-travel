@@ -2855,6 +2855,7 @@ function destinationAlias(value = "") {
 
   if (text.includes("rim")) return "rome";
   if (text.includes("prague") || text.includes("praga") || text.includes("praha") || text.includes("prg") || text.includes("прага")) return "prague";
+  if (text.includes("milan") || text.includes("milano") || text.includes("милано") || text.includes("mxp") || text.includes("bgy")) return "milan";
   if (text.includes("maldives") || text.includes("maldive") || text.includes("малдив")) return "maldives";
   return text;
 }
@@ -3329,6 +3330,11 @@ if (validationWarnings.length) {
       praha: "Прага",
       prg: "Прага",
       "прага": "Прага",
+      milan: "Милано",
+      milano: "Милано",
+      "милано": "Милано",
+      mxp: "Милано",
+      bgy: "Милано",
       tokyo: "Токио",
       "токио": "Токио",
       maldives: "Малдиви",
@@ -3341,6 +3347,8 @@ if (validationWarnings.length) {
         "Рим съчетава антична история, впечатляваща архитектура и жива градска атмосфера. Колизеумът, Ватиканът, Фонтанът ди Треви и малките улички около площадите превръщат пътуването в класически city break.",
       barcelona:
         "Барселона комбинира море, архитектура и градска енергия. Гауди, Готическият квартал, плажовете и оживените булеварди я правят отличен избор за кратко европейско пътуване.",
+      milan:
+        "Милано съчетава елегантна архитектура, италианска мода и оживена градска атмосфера. Дуомото, галерията „Виторио Емануеле II“ и кварталите Брера и Навили превръщат града в отличен избор за стилен city break.",
       tokyo:
         "Токио съчетава модерни квартали, традиционни храмове и впечатляваща градска култура. Градът е подходящ за пътуване с много открития, силна кухня и различни лица във всеки район.",
       maldives:
