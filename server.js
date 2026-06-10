@@ -3068,7 +3068,10 @@ async function renderOfferHtml(offer, options = {}) {
       "малдиви": "Малдиви",
       "малдивски": "Малдиви"
     };
-    return names[destinationKey(raw)] || raw || "дестинацията";
+    const fallback = raw && raw === raw.toLowerCase()
+      ? raw.replace(/(^|[\s-])([\p{L}])/gu, (_, separator, letter) => `${separator}${letter.toUpperCase()}`)
+      : raw;
+    return names[destinationKey(raw)] || fallback || "дестинацията";
   }
 
   function destinationStoryParagraphs(destination = "") {
@@ -3095,12 +3098,36 @@ async function renderOfferHtml(offer, options = {}) {
         "Градът съчетава средновековна архитектура, гледки към река Вълтава и спокойна атмосфера за кратка европейска почивка."
       ]
     };
-    return stories[key] || null;
+    if (stories[key]) return stories[key];
+
+    const name = displayDestination(destination);
+    if (isResortDestination(destination)) {
+      return [
+        `${name} предлага спокойна resort атмосфера, красиви природни гледки и условия за пълноценна почивка.`,
+        "Подбраните варианти съчетават комфортно настаняване, ясна крайна цена и удобен маршрут."
+      ];
+    }
+
+    if (/beach|beachfront|плаж|coast|крайбреж|sea|море|seaside/i.test(String(destination || ""))) {
+      return [
+        `${name} съчетава морска атмосфера, време за почивка и възможности за разходки и местни преживявания.`,
+        "Офертата е подредена за удобен престой с ясен маршрут, подходящо настаняване и прозрачна крайна цена."
+      ];
+    }
+
+    return [
+      `${name} предлага възможност да усетите местната атмосфера, кухня и най-характерните части на дестинацията.`,
+      "Офертата е подредена за удобен city break с ясен маршрут, подходящо настаняване и прозрачна крайна цена."
+    ];
   }
 
   function isResortDestination(value = "") {
     const key = destinationKey(value);
-    return key === "maldives" || key === "maldive" || key === "малдиви" || key === "малдивски";
+    return key === "maldives" ||
+      key === "maldive" ||
+      key === "малдиви" ||
+      key === "малдивски" ||
+      /atoll|island|остров|resort|лагун/i.test(String(value || ""));
   }
 
   function normalizeHeroParagraphs(paragraphs = [], destination = "") {

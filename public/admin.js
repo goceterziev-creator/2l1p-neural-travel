@@ -2860,6 +2860,41 @@ function destinationAlias(value = "") {
   return text;
 }
 
+function destinationPresentationType(destination = "", hotel = {}) {
+  const text = normalizeText([
+    destination,
+    hotel.name,
+    hotel.area,
+    hotel.room,
+    hotel.meal,
+    hotel.description
+  ].filter(Boolean).join(" "));
+
+  if (/maldiv|atoll|island|остров|resort|water villa|overwater|лагун/.test(text)) return "resort";
+  if (/beach|beachfront|плаж|coast|крайбреж|sea view|морска гледка|seaside/.test(text)) return "seaside";
+  return "citybreak";
+}
+
+function buildGlobalDestinationStory(destinationName = "", type = "citybreak") {
+  const name = destinationName.trim() || "Избраната дестинация";
+
+  if (type === "resort") {
+    return `${name} предлага спокойна resort атмосфера, красиви природни гледки и условия за пълноценна почивка. Подходящ избор за време край водата, релакс и комфортен престой.`;
+  }
+
+  if (type === "seaside") {
+    return `${name} съчетава морска атмосфера, време за почивка и възможности за разходки и местни преживявания. Дестинацията е подходяща за спокоен престой и разнообразни дни край морето.`;
+  }
+
+  return `${name} предлага възможност да усетите местната атмосфера, кухня и най-характерните части на града. Подходящ избор за city break с време за разходки, култура и местни преживявания.`;
+}
+
+function formatDestinationDisplayName(value = "") {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  if (!text || text !== text.toLowerCase()) return text;
+  return text.replace(/(^|[\s-])([\p{L}])/gu, (_, separator, letter) => `${separator}${letter.toUpperCase()}`);
+}
+
 const DESTINATION_QA_PROFILES = [
   {
     key: "tokyo",
@@ -3354,9 +3389,8 @@ if (validationWarnings.length) {
       maldives:
         "Малдивите са island escape дестинация с кристални лагуни, водни вили и спокойна premium resort атмосфера. Подходящи са за плажна почивка, романтично пътуване и пълен релакс."
     };
-    const destinationName = destinationNames[destinationKey] || destination.trim() || "Дестинацията";
-    const resortDestinations = new Set(["maldives", "малдиви"]);
-    const hotelType = resortDestinations.has(destinationKey) ? "resort" : "citybreak";
+    const destinationName = destinationNames[destinationKey] || formatDestinationDisplayName(destination) || "Дестинацията";
+    const hotelType = destinationPresentationType(destination, h);
     const hotelHighlights = (window.HOTEL_TAGS?.[hotelType] || [])
       .map(item => `• ${item}`)
       .join("\n");
@@ -3365,7 +3399,7 @@ if (validationWarnings.length) {
       const baseDescription =
         window.DESTINATION_DESCRIPTIONS?.[destinationKey] ||
         destinationStories[destinationKey] ||
-        `${destinationName} предлага ясна комбинация от полет, хотел и добре подреден бюджет.`;
+        buildGlobalDestinationStory(destinationName, hotelType);
 
       $("destinationDescription").value =
         `${baseDescription.trim()}\n\n` +
