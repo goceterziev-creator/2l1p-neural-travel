@@ -2649,14 +2649,30 @@ function renderHotelCards() {
   box.innerHTML = hotels.map((h, i) => `
     <div class="hotel-card">
 
-      <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;updateAutoPrice();" />
-      <input placeholder="Stars" value="${escapeHtml(h.stars || "")}" onchange="hotels[${i}].stars=this.value;updateAutoPrice();" />
-      <input placeholder="Area" value="${escapeHtml(h.area || "")}" onchange="hotels[${i}].area=this.value;updateAutoPrice();" />
-      <input placeholder="Distance" value="${escapeHtml(h.distance || "")}" onchange="hotels[${i}].distance=this.value;updateAutoPrice();" />
-      <input placeholder="Room" value="${escapeHtml(h.room || "")}" onchange="hotels[${i}].room=this.value;updateAutoPrice();" />
-      <input placeholder="Meal" value="${escapeHtml(h.meal || "")}" onchange="hotels[${i}].meal=this.value;updateAutoPrice();" />
-      <input placeholder="Rooms Left" value="${escapeHtml(h.roomsLeft || "")}" onchange="hotels[${i}].roomsLeft=this.value;updateAutoPrice();" />
-      <input type="number" step="0.01" placeholder="Price" value="${Number(h.price || 0)}" onchange="hotels[${i}].price=Number(this.value||0);updateAutoPrice();" />
+      <label>Hotel Name
+        <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;updateAutoPrice();" />
+      </label>
+      <label>Stars
+        <input placeholder="Not specified" value="${escapeHtml(h.stars || "")}" onchange="hotels[${i}].stars=this.value;updateAutoPrice();" />
+      </label>
+      <label>Area
+        <input placeholder="Not specified" value="${escapeHtml(h.area || "")}" onchange="hotels[${i}].area=this.value;updateAutoPrice();" />
+      </label>
+      <label>Distance
+        <input placeholder="Not specified" value="${escapeHtml(h.distance || "")}" onchange="hotels[${i}].distance=this.value;updateAutoPrice();" />
+      </label>
+      <label>Room
+        <input placeholder="Not specified" value="${escapeHtml(h.room || "")}" onchange="hotels[${i}].room=this.value;updateAutoPrice();" />
+      </label>
+      <label>Meal
+        <input placeholder="Not specified" value="${escapeHtml(h.meal || "")}" onchange="hotels[${i}].meal=this.value;updateAutoPrice();" />
+      </label>
+      <label>Rooms Left
+        <input placeholder="Not specified" value="${escapeHtml(h.roomsLeft || "")}" onchange="hotels[${i}].roomsLeft=this.value;updateAutoPrice();" />
+      </label>
+      <label>Hotel Price
+        <input type="number" step="0.01" placeholder="0.00" value="${Number(h.price || 0)}" onchange="hotels[${i}].price=Number(this.value||0);updateAutoPrice();" />
+      </label>
 
       <label>
         <input
