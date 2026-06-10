@@ -82,7 +82,9 @@ function checkSourceStability() {
   assert(server.includes("function buildValidationWarnings("), "buildValidationWarnings() missing");
   assert(server.includes("function sanitizeHotelImages("), "sanitizeHotelImages() missing");
   assert(server.includes("function parsePlainTicket("), "plain-ticket structural parser missing");
+  assert(server.includes("function plainTicketLegsAreDistinct("), "plain-ticket duplicate-leg guard missing");
   assert(server.includes('return "plain_ticket";'), "plain-ticket profile lock missing");
+  assert(!server.includes("RETURN(?:\\s+FLIGHT)?"), "plain-ticket return marker must not match header '(return)'");
   assert(
     server.indexOf('return "plain_ticket";') < server.indexOf('return "connecting_flight_checkout";'),
     "plain-ticket profile must run before connecting-flight fallback"

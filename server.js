@@ -1917,8 +1917,9 @@ function inferPlainTicketAirline(rawText = "") {
 
 function extractPlainTicketLegInfo(rawText = "") {
   const text = ocrCompactText(rawText);
-  const outboundText = text.match(/OUTBOUND(?:\s+FLIGHT)?(.*?)(?:INBOUND(?:\s+FLIGHT)?|RETURN(?:\s+FLIGHT)?|$)/i)?.[1] || "";
-  const inboundText = text.match(/(?:INBOUND|RETURN)(?:\s+FLIGHT)?(.*)/i)?.[1] || "";
+  const inboundMarker = /(?:INBOUND(?:\s+FLIGHT)?|RETURN\s+FLIGHT)/i;
+  const outboundText = text.match(/OUTBOUND(?:\s+FLIGHT)?(.*?)(?:INBOUND(?:\s+FLIGHT)?|RETURN\s+FLIGHT|$)/i)?.[1] || "";
+  const inboundText = text.match(new RegExp(`${inboundMarker.source}(.*)`, "i"))?.[1] || "";
   const month = "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)";
   const parseLeg = (section = "") => {
     const date = section.match(new RegExp(`(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(\\d{1,2}\\s*${month}\\s*(?:20\\d{2})?)`, "i"))?.[1] || "";
@@ -1937,6 +1938,16 @@ function extractPlainTicketLegInfo(rawText = "") {
   };
 }
 
+function plainTicketLegsAreDistinct(legs = {}) {
+  const identity = (leg = {}) => [leg.date, leg.start, leg.end, leg.number]
+    .map((value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase())
+    .filter(Boolean)
+    .join("|");
+  const outbound = identity(legs.outbound);
+  const inbound = identity(legs.inbound);
+  return Boolean(outbound && inbound && outbound !== inbound);
+}
+
 function extractPlainTicketRoute(rawText = "", destination = "") {
   const text = ocrCompactText(rawText);
   const header = text.match(/\b([A-Z]{3})\s*[-\u2013\u2014]\s*([A-Z]{3})\b(?:\s*\(\s*return\s*\))?/i);
@@ -1949,6 +1960,7 @@ function parsePlainTicket(rawText = "", { destination = "" } = {}) {
   const compact = ocrCompactText(rawText);
   const routePair = extractPlainTicketRoute(compact, destination);
   const legs = extractPlainTicketLegInfo(compact);
+  const hasDistinctLegs = plainTicketLegsAreDistinct(legs);
   const airline = inferPlainTicketAirline(compact);
   const price = extractWizzTotalPrice(compact) || extractLabeledFlightPrice(compact) || extractFlightPriceFromText(compact);
   const fromCode = routePair?.from || "";
@@ -1957,7 +1969,7 @@ function parsePlainTicket(rawText = "", { destination = "" } = {}) {
   const departure = route && (legs.outbound.date || legs.outbound.start)
     ? `${fromCode} -> ${toCode}${legs.outbound.date ? `, ${legs.outbound.date}` : ""}${legs.outbound.start && legs.outbound.end ? `, ${legs.outbound.start} - ${legs.outbound.end}` : ""}${legs.outbound.number ? `, ${legs.outbound.number}` : ""}`
     : "";
-  const arrival = route && (legs.inbound.date || legs.inbound.start)
+  const arrival = route && hasDistinctLegs && (legs.inbound.date || legs.inbound.start)
     ? `${toCode} -> ${fromCode}${legs.inbound.date ? `, ${legs.inbound.date}` : ""}${legs.inbound.start && legs.inbound.end ? `, ${legs.inbound.start} - ${legs.inbound.end}` : ""}${legs.inbound.number ? `, ${legs.inbound.number}` : ""}`
     : "";
   const flight = {
@@ -1989,7 +2001,7 @@ function extractOcrCityPair(rawText = "") {
 function detectOcrSource(rawText = "", kind = "flight") {
   const text = normalizeLocalizedFlightTimelineText(ocrCompactText(rawText)).toLowerCase();
   if (kind === "hotel" && /booking|check.?in|check.?out|breakfast|room|reviews/.test(text)) return "booking_hotel_checkout";
-  if (kind === "flight" && /outbound(?:\s+flight)?/.test(text) && /(?:inbound|return)(?:\s+flight)?/.test(text)) return "plain_ticket";
+  if (kind === "flight" && /outbound(?:\s+flight)?/.test(text) && /(?:inbound(?:\s+flight)?|return\s+flight)/.test(text)) return "plain_ticket";
   const connectingAirportCount = kind === "flight" ? uniqueAirportCodes(detectAirportCodes(rawText)).length : 0;
   const connectingDateTimeCount = kind === "flight"
     ? (text.match(/\b(?:mon|tue|wed|thu|fri|sat|sun)[,.]?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*\d{1,2}/g) || []).length
