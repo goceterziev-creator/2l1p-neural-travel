@@ -1175,9 +1175,24 @@ const DESTINATION_INTELLIGENCE = [
 function destinationProfile(destination = "") {
   const text = normalizeSearchText(destination);
   if (!text) return null;
-  return DESTINATION_INTELLIGENCE.find((profile) =>
+  const knownProfile = DESTINATION_INTELLIGENCE.find((profile) =>
     [...profile.aliases, ...profile.airports, ...profile.districts].some((needle) => text.includes(normalizeSearchText(needle)))
-  ) || null;
+  );
+  if (knownProfile) return knownProfile;
+
+  const airport = airportAliasRecord(destination);
+  if (!airport) return null;
+  const cityAirports = FLIGHT_AIRPORT_ALIASES.filter((record) =>
+    normalizeSearchText(record.city) === normalizeSearchText(airport.city)
+  );
+
+  return {
+    key: airport.code.toLowerCase(),
+    label: airport.city || airport.code,
+    aliases: [...new Set(cityAirports.flatMap((record) => [record.city, ...safeArray(record.aliases)]).filter(Boolean))],
+    airports: [...new Set(cityAirports.flatMap((record) => [record.code, ...safeArray(record.aliases)]).filter(Boolean))],
+    districts: []
+  };
 }
 
 function findDestinationSignal(profile, text = "", groups = ["aliases", "airports", "districts"]) {
@@ -3191,6 +3206,8 @@ async function renderOfferHtml(offer, options = {}) {
       .map((part) => cleanText(part))
       .filter(Boolean)
       .filter((part) => {
+        if (/^\u0414\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f\u0442\u0430\s+\u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\s+\u044f\u0441\u043d\u0430\s+\u043a\u043e\u043c\u0431\u0438\u043d\u0430\u0446\u0438\u044f\b/i.test(part)) return false;
+        if (/^[^.!?]{1,80}\s+\u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\s+\u044f\u0441\u043d\u0430\s+\u043a\u043e\u043c\u0431\u0438\u043d\u0430\u0446\u0438\u044f\s+\u043e\u0442\s+\u043f\u043e\u043b\u0435\u0442,\s*\u0445\u043e\u0442\u0435\u043b\b/i.test(part)) return false;
         if (/^\u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430\s+\u043a\u043e\u043c\u0431\u0438\u043d\u0438\u0440\u0430\s+\u0443\u0434\u043e\u0431\u0435\u043d\s+\u043f\u043e\u043b\u0435\u0442,\s*\u0445\u043e\u0442\u0435\u043b\b/i.test(part)) return false;
         if (/^\u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430\s+\u043a\u043e\u043c\u0431\u0438\u043d\u0438\u0440\u0430\s+\u0443\u0434\u043e\u0431\u0435\u043d\s+\u043f\u043e\u043b\u0435\u0442,\s*\u043f\u043e\u0434\u0431\u0440\u0430\u043d\u0438\s+\u0432\u0430\u0440\u0438\u0430\u043d\u0442\u0438\b/i.test(part)) return false;
         if (/^\u0425\u043e\u0442\u0435\u043b\u044a\u0442\s+\u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\b/i.test(part)) return false;
