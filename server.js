@@ -2186,7 +2186,6 @@ function buildFlightOcrConfidence(rawText = "", flight = {}, metadata = {}) {
   };
   const warnings = [];
   const isMobileScreenshot = detectMobileScreenshotRisk(rawText);
-  if (isMobileScreenshot) warnings.push("Mobile screenshot detected.");
   if (confidence.airline < FLIGHT_OCR_CONFIDENCE_THRESHOLDS.airline) warnings.push("Airline confidence below production threshold.");
   if (confidence.route < FLIGHT_OCR_CONFIDENCE_THRESHOLDS.route) warnings.push("Route confidence below production threshold.");
   if (confidence.dates < FLIGHT_OCR_CONFIDENCE_THRESHOLDS.dates) warnings.push("Flight date/time confidence below production threshold.");
