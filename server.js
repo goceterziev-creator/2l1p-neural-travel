@@ -1696,7 +1696,7 @@ function buildFlightPriceCandidateTrace(rawText = "", selectedPrice = 0) {
 
   return matches.map((match) => {
     const raw = String(match[0] || "").trim();
-    const value = parseOcrMoneyValue(raw);
+    const value = parseCollapsedFlightMoneyValue(raw);
     const start = Number(match.index || 0);
     const context = compact.slice(Math.max(0, start - 120), start + raw.length + 120).trim();
     const isExtra = /flexible ticket|travel protection|change fee|cancellation fee|extras you might like|гъвкав билет|защита при пътуване|чекиран багаж|екстри/i.test(context);
@@ -1709,6 +1709,7 @@ function buildFlightPriceCandidateTrace(rawText = "", selectedPrice = 0) {
       : hasTotalLabel
       ? "included_total_or_flight_label"
       : "included_unlabeled_price";
+    const confidence = !value ? 0 : isExtra ? 0.1 : hasTotalLabel ? 0.92 : 0.62;
 
     return {
       raw,
@@ -1717,9 +1718,86 @@ function buildFlightPriceCandidateTrace(rawText = "", selectedPrice = 0) {
       context,
       included,
       reason,
+      confidence,
       selected: value > 0 && Math.abs(value - Number(selectedPrice || 0)) < 0.005
     };
   });
+}
+
+function buildFlightTimeCandidateTrace(rawText = "") {
+  const compact = ocrCompactText(rawText);
+  return [...compact.matchAll(/\b\d{1,2}:\d{2}\s*(?:AM|PM|\u0447\.?)?/gi)].map((match) => {
+    const start = Number(match.index || 0);
+    return {
+      raw: String(match[0] || "").trim(),
+      context: compact.slice(Math.max(0, start - 90), start + match[0].length + 90).trim()
+    };
+  });
+}
+
+function buildFlightDateCandidateTrace(rawText = "") {
+  const normalized = normalizeLocalizedFlightTimelineText(ocrCompactText(rawText));
+  const patterns = [
+    /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?/gi,
+    /\b\d{1,2}[.\/-]\d{1,2}[.\/-](?:20)?\d{2}\b/g
+  ];
+  const matches = patterns.flatMap((pattern) => [...normalized.matchAll(pattern)]);
+  return matches.map((match) => {
+    const start = Number(match.index || 0);
+    return {
+      raw: String(match[0] || "").trim(),
+      context: normalized.slice(Math.max(0, start - 90), start + match[0].length + 90).trim()
+    };
+  });
+}
+
+function buildFlightAirportCandidateTrace(rawText = "") {
+  const compact = ocrCompactText(rawText);
+  return uniqueAirportCodes(detectAirportCodes(rawText)).map((code) => {
+    const match = new RegExp(`\\b${code}\\b`, "i").exec(compact);
+    const start = Number(match?.index || 0);
+    return {
+      code,
+      city: airportAliasRecord(code)?.city || "",
+      context: match
+        ? compact.slice(Math.max(0, start - 90), start + code.length + 90).trim()
+        : ""
+    };
+  });
+}
+
+function buildBookingAndroidFlightProfileTrace(rawText = "") {
+  const compact = ocrCompactText(rawText);
+  const normalized = normalizeLocalizedFlightTimelineText(compact);
+  const sectionLabels = [
+    ...compact.matchAll(/flight\s+to\s+[\p{L}\s-]{2,40}|\u043f\u043e\u043b\u0435\u0442\s+\u0434\u043e\s+[\p{L}\s-]{2,40}/giu)
+  ].map((match) => String(match[0] || "").replace(/\s+/g, " ").trim());
+  const localizedTimes = (compact.match(/\b\d{1,2}:\d{2}\s*\u0447\.?/gi) || []).length;
+  const amPmTimes = (compact.match(/\b\d{1,2}:\d{2}\s*(?:AM|PM)\b/gi) || []).length;
+  const airportCount = uniqueAirportCodes(detectAirportCodes(rawText)).length;
+  const signals = {
+    bookingBrand: /booking(?:\.com)?/i.test(compact),
+    routeSections: sectionLabels.length,
+    localizedTimes,
+    amPmTimes,
+    airportCount,
+    totalLabel: /total\s+price|total\b|\u043e\u0431\u0449\u0430\s+\u0446\u0435\u043d\u0430/i.test(compact),
+    localizedTimeline: normalized !== compact
+  };
+  const detected = (
+    signals.bookingBrand &&
+    (signals.routeSections >= 1 || localizedTimes + amPmTimes >= 2 || airportCount >= 3)
+  ) || (
+    signals.routeSections >= 2 &&
+    localizedTimes + amPmTimes >= 2 &&
+    airportCount >= 3
+  );
+  return {
+    detected,
+    profile: detected ? "booking_android_flight_modal" : "not_detected",
+    sectionLabels,
+    signals
+  };
 }
 
 function normalizeGuestsText(value = "") {
@@ -2210,7 +2288,8 @@ function traceFlightOcrDecision(rawText = "", flight = {}, flightConfidence = {}
   if (!flightOcrTraceEnabled()) return;
 
   const source = String(metadata.source || detectOcrSource(rawText, "flight"));
-  if (!/booking|connecting/i.test(source)) return;
+  const screenshotProfile = buildBookingAndroidFlightProfileTrace(rawText);
+  if (!/booking|connecting/i.test(source) && !screenshotProfile.detected) return;
 
   const selectedFlightPrice = Number(flight.price || 0);
   const missingFields = safeArray(metadata.missingFields);
@@ -2227,13 +2306,24 @@ function traceFlightOcrDecision(rawText = "", flight = {}, flightConfidence = {}
     : "PASS";
   const priceCandidates = buildFlightPriceCandidateTrace(rawText, selectedFlightPrice);
   const selectedCandidate = priceCandidates.find((candidate) => candidate.selected) || null;
+  const validationReasons = uniqueWarnings([...blockingReasons, ...reviewWarnings]);
 
   console.log("GT63 FLIGHT OCR TRACE:", JSON.stringify({
     source,
+    screenshotProfile,
     rawOcrText: String(rawText || ""),
+    timeCandidates: buildFlightTimeCandidateTrace(rawText),
+    dateCandidates: buildFlightDateCandidateTrace(rawText),
+    airportCandidates: buildFlightAirportCandidateTrace(rawText),
     priceCandidates,
     selectedFlightPrice,
     selectedPriceReason: selectedCandidate?.reason || (selectedFlightPrice ? "selected_value_not_found_in_currency_candidates" : "no_price_selected"),
+    selectedFlightTimes: {
+      departure: String(flight.departure || ""),
+      arrival: String(flight.arrival || "")
+    },
+    selectedFlightAirline: String(flight.airline || ""),
+    selectedFlightRoute: String(flight.route || ""),
     confidence: {
       airline: Number(flightConfidence?.airline?.confidence || 0),
       route: Number(flightConfidence?.route?.confidence || 0),
@@ -2244,7 +2334,8 @@ function traceFlightOcrDecision(rawText = "", flight = {}, flightConfidence = {}
     missingFields,
     decision,
     blockingReasons,
-    reviewWarnings
+    reviewWarnings,
+    validationReasons
   }, null, 2));
 }
 
