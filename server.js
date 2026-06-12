@@ -1736,17 +1736,12 @@ function buildFlightTimeCandidateTrace(rawText = "") {
 }
 
 function buildFlightDateCandidateTrace(rawText = "") {
-  const normalized = normalizeLocalizedFlightTimelineText(ocrCompactText(rawText));
-  const patterns = [
-    /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?/gi,
-    /\b\d{1,2}[.\/-]\d{1,2}[.\/-](?:20)?\d{2}\b/g
-  ];
-  const matches = patterns.flatMap((pattern) => [...normalized.matchAll(pattern)]);
-  return matches.map((match) => {
-    const start = Number(match.index || 0);
+  const normalized = normalizeConnectingOcrTimeText(normalizeLocalizedFlightTimelineText(ocrCompactText(rawText)));
+  return extractGlobalFlightDateTimeCandidates(rawText).map((candidate) => {
+    const start = Math.max(0, normalized.toLowerCase().indexOf(candidate.toLowerCase()));
     return {
-      raw: String(match[0] || "").trim(),
-      context: normalized.slice(Math.max(0, start - 90), start + match[0].length + 90).trim()
+      raw: candidate,
+      context: normalized.slice(Math.max(0, start - 90), start + candidate.length + 90).trim()
     };
   });
 }
@@ -2409,7 +2404,7 @@ function parseRyanairCheckout(rawText = "") {
 function extractConnectingFlightTimeline(rawText = "") {
   const compact = normalizeConnectingOcrTimeText(normalizeLocalizedFlightTimelineText(ocrCompactText(rawText)));
   const airportCodes = FLIGHT_AIRPORT_ALIASES.map((record) => record.code).join("|");
-  const dateTimePattern = /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM))?\b/gi;
+  const dateTimePattern = globalFlightDateTimePattern();
   const dateTimeMatches = [...compact.matchAll(dateTimePattern)];
   const timeline = [];
 
@@ -2460,17 +2455,71 @@ function normalizeLocalizedFlightTimelineText(rawText = "") {
     [/юни\.?(?=\s|,|$)/gi, "Jun"],
     [/юли\.?(?=\s|,|$)/gi, "Jul"],
     [/авг(?:уст)?\.?(?=\s|,|$)/gi, "Aug"],
-    [/сеп(?:тември)?\.?(?=\s|,|$)/gi, "Sep"],
+    [/сеп(?:т|тември)?\.?(?=\s|,|$)/gi, "Sep"],
     [/окт(?:омври)?\.?(?=\s|,|$)/gi, "Oct"],
     [/ное(?:мври)?\.?(?=\s|,|$)/gi, "Nov"],
     [/дек(?:ември)?\.?(?=\s|,|$)/gi, "Dec"],
     [/(\d{1,2}:\d{2})\s*ч\.?/gi, "$1"]
   ];
-  const localized = replacements.reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), String(rawText || ""));
-  return localized.replace(
-    /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi,
-    "$1, $3 $2"
+  const localized = replacements
+    .reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), String(rawText || ""))
+    .replace(/\bSept\.?(?=\s|,|$)/gi, "Sep");
+  return localized
+    .replace(
+      /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[.,]*\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi,
+      "$1, $3 $2"
+    )
+    .replace(
+      /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[.,]*\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/gi,
+      "$1, $2 $3"
+    )
+    .replace(/\s*[·•]\s*/g, " · ");
+}
+
+function globalFlightDateTimePattern() {
+  return /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM))?\b/gi;
+}
+
+function extractGlobalFlightDateTimeCandidates(rawText = "") {
+  const normalized = normalizeConnectingOcrTimeText(
+    normalizeLocalizedFlightTimelineText(ocrCompactText(rawText))
   );
+  const seen = new Set();
+  return [...normalized.matchAll(globalFlightDateTimePattern())]
+    .map((match) => String(match[0] || "").replace(/\s+/g, " ").trim())
+    .filter((candidate) => {
+      const day = candidate.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{1,2})/i)?.[1];
+      if (!isValidOcrDay(day)) return false;
+      const key = candidate.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {}) {
+  if (flight?.departure && flight?.arrival) return { flight, metadata };
+
+  const candidates = extractGlobalFlightDateTimeCandidates(rawText);
+  if (candidates.length < 2) return { flight, metadata };
+
+  const routeLegs = [...String(flight?.route || "").matchAll(/\b([A-Z]{3})\s*(?:->|→)\s*([A-Z]{3})\b/g)]
+    .map((match) => `${match[1]} -> ${match[2]}`);
+  const departurePrefix = routeLegs[0] || "";
+  const arrivalPrefix = routeLegs[routeLegs.length - 1] || "";
+  const enrichedFlight = {
+    ...flight,
+    departure: flight.departure || [departurePrefix, candidates[0]].filter(Boolean).join(", "),
+    arrival: flight.arrival || [arrivalPrefix, candidates[candidates.length - 1]].filter(Boolean).join(", ")
+  };
+  const missingFields = safeArray(metadata?.missingFields);
+  const enrichedMetadata = {
+    ...metadata,
+    missingFields: enrichedFlight.departure && enrichedFlight.arrival
+      ? missingFields.filter((field) => field !== "flight.times")
+      : missingFields
+  };
+  return { flight: enrichedFlight, metadata: enrichedMetadata };
 }
 
 function normalizeConnectingOcrTimeText(rawText = "") {
@@ -4956,12 +5005,16 @@ if (flightOcrTraceEnabled()) {
   console.log("OCR TEXT:\n", text);
 }
 
-const profileImport = parseOcrByProfile(text, {
+let profileImport = parseOcrByProfile(text, {
   kind: "flight",
   destination: req.body?.destination || ""
 });
 
 if (profileImport?.flight) {
+  profileImport = {
+    ...profileImport,
+    ...enrichFlightOfferLevelDateTimes(text, profileImport.flight, profileImport.metadata)
+  };
   profileImport.flight = validateFlightAgainstDestination(
     profileImport.flight,
     text,
