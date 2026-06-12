@@ -1628,7 +1628,8 @@ function extractFlightPriceFromText(rawText = "") {
     .map((match) => parseOcrMoneyValue(match[0]))
     .filter((value) => Number.isFinite(value) && value > 0);
 
-  return prices.length ? Math.max(...prices) : 0;
+  const collapsedTotal = extractBottomCollapsedFlightTotal(rawText);
+  return Math.max(0, ...prices, collapsedTotal);
 }
 
 function extractBookingFlightTotalPrice(rawText = "") {
@@ -1648,6 +1649,40 @@ function extractBookingFlightTotalPrice(rawText = "") {
   const candidates = nearbyCandidates.length ? nearbyCandidates : extractOcrMoneyValues(originalText);
   const total = candidates.length ? Math.max(...candidates) : 0;
   return total;
+}
+
+function parseCollapsedFlightMoneyValue(value = "") {
+  const raw = String(value || "").trim();
+  if (/[,\.]/.test(raw)) return parseOcrMoneyValue(raw);
+
+  const digits = raw.replace(/\D/g, "");
+  if (!/^\d{5,8}$/.test(digits)) return 0;
+
+  const parsed = Number(digits) / 100;
+  return Number.isFinite(parsed) && parsed >= 20 && parsed <= 100000 ? parsed : 0;
+}
+
+function extractBottomCollapsedFlightTotal(rawText = "") {
+  const originalText = String(rawText || "").split(/--- ENHANCED OCR ---/i)[0];
+  const compact = ocrCompactText(originalText);
+  if (!compact) return 0;
+
+  // Mobile OCR frequently drops the decimal separator from sticky checkout
+  // totals (for example "2 414,28 EUR" becomes "241428 EUR"). Recover this
+  // globally for flight screenshots, but only near the bottom and away from
+  // optional extras and fees.
+  const tail = compact.slice(Math.floor(compact.length * 0.65));
+  const matches = [...tail.matchAll(/(?:EUR|EURO|\u20ac)\s*\d{5,8}|\d{5,8}\s*(?:EUR|EURO|\u20ac)/gi)];
+  const candidates = matches
+    .map((match) => {
+      const start = Number(match.index || 0);
+      const context = tail.slice(Math.max(0, start - 140), start + match[0].length + 80);
+      const excluded = /flexible ticket|travel protection|change fee|cancellation fee|extras you might like|checked baggage/i.test(context);
+      return excluded ? 0 : parseCollapsedFlightMoneyValue(match[0]);
+    })
+    .filter((value) => value > 0);
+
+  return candidates.length ? candidates[candidates.length - 1] : 0;
 }
 
 function flightOcrTraceEnabled() {
@@ -2229,7 +2264,10 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
   const toCode = destinationAirport?.code || to;
   const dates = extractValidOcrMonthDates(compact);
   const passengerSummary = extractPassengerSummary(compact);
-  let price = extractBookingFlightTotalPrice(rawText) || extractLabeledFlightPrice(rawText);
+  let price =
+    extractBookingFlightTotalPrice(rawText) ||
+    extractLabeledFlightPrice(rawText) ||
+    extractBottomCollapsedFlightTotal(rawText);
   if (/sofia/i.test(fromRaw) && /rome/i.test(toRaw) && price > 0 && price < 10) price = Number((price + 64).toFixed(2));
 
   const baggage = extractFlightBaggageSummary(rawText);
