@@ -1593,7 +1593,7 @@ function parseOcrMoneyValue(value = "") {
 function extractOcrMoneyValues(rawText = "") {
   const matches = ocrCompactText(rawText).match(/(?:EUR|EURO|\u20ac)(?:\s*euros?)?\s*\d[\d\s,.]*|\d[\d\s,.]*\s*(?:EUR|EURO|\u20ac)/gi) || [];
   return matches
-    .map((value) => parseOcrMoneyValue(value))
+    .map((value) => parseCollapsedFlightMoneyValue(value))
     .filter((value) => Number.isFinite(value) && value > 0);
 }
 
@@ -1625,7 +1625,7 @@ function extractFlightPriceFromText(rawText = "") {
       return !/\+\s*$/.test(text.slice(Math.max(0, Number(match.index || 0) - 3), Number(match.index || 0))) &&
         !/(flexible ticket|travel protection|change fee|cancellation fee|extras you might like|\u0433\u044a\u0432\u043a\u0430\u0432 \u0431\u0438\u043b\u0435\u0442|\u0437\u0430\u0449\u0438\u0442\u0430 \u043f\u0440\u0438 \u043f\u044a\u0442\u0443\u0432\u0430\u043d\u0435|\u0447\u0435\u043a\u0438\u0440\u0430\u043d \u0431\u0430\u0433\u0430\u0436|\u0435\u043a\u0441\u0442\u0440\u0438)/i.test(context);
     })
-    .map((match) => parseOcrMoneyValue(match[0]))
+    .map((match) => parseCollapsedFlightMoneyValue(match[0]))
     .filter((value) => Number.isFinite(value) && value > 0);
 
   const collapsedTotal = extractBottomCollapsedFlightTotal(rawText);
@@ -1656,7 +1656,7 @@ function parseCollapsedFlightMoneyValue(value = "") {
   if (/[,\.]/.test(raw)) return parseOcrMoneyValue(raw);
 
   const digits = raw.replace(/\D/g, "");
-  if (!/^\d{5,8}$/.test(digits)) return 0;
+  if (!/^\d{6,8}$/.test(digits)) return 0;
 
   const parsed = Number(digits) / 100;
   return Number.isFinite(parsed) && parsed >= 20 && parsed <= 100000 ? parsed : 0;

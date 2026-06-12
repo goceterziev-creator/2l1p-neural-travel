@@ -2302,11 +2302,11 @@ function getImportedFlightPrice(data = {}, flight = {}) {
 }
 
 function getFlightImportWarnings(data = {}) {
-  return [
+  return [...new Set([
     ...(Array.isArray(data.operatorWarnings) ? data.operatorWarnings : []),
     ...(Array.isArray(data?.risk?.warnings) ? data.risk.warnings : []),
     ...(Array.isArray(data?.flightConfidence?.risk?.warnings) ? data.flightConfidence.risk.warnings : [])
-  ].map((warning) => String(warning || "").trim()).filter(Boolean);
+  ].map((warning) => String(warning || "").trim()).filter(Boolean))];
 }
 
 function mergeCurrentValidationWarnings(warnings = []) {
