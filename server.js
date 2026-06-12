@@ -1647,8 +1647,44 @@ function extractBookingFlightTotalPrice(rawText = "") {
   const nearbyCandidates = extractOcrMoneyValues(nearbyText);
   const candidates = nearbyCandidates.length ? nearbyCandidates : extractOcrMoneyValues(originalText);
   const total = candidates.length ? Math.max(...candidates) : 0;
-  console.log("BOOKING PRICE CANDIDATES:", candidates, "SELECTED TOTAL:", total);
   return total;
+}
+
+function flightOcrTraceEnabled() {
+  return /^(1|true|yes|on)$/i.test(String(process.env.GT63_TRACE_FLIGHT_OCR || ""));
+}
+
+function buildFlightPriceCandidateTrace(rawText = "", selectedPrice = 0) {
+  const text = String(rawText || "");
+  const compact = ocrCompactText(text);
+  const matches = [...compact.matchAll(/(?:EUR|EURO|\u20ac)(?:\s*euros?)?\s*\d[\d\s,.]*|\d[\d\s,.]*\s*(?:EUR|EURO|\u20ac)/gi)];
+
+  return matches.map((match) => {
+    const raw = String(match[0] || "").trim();
+    const value = parseOcrMoneyValue(raw);
+    const start = Number(match.index || 0);
+    const context = compact.slice(Math.max(0, start - 120), start + raw.length + 120).trim();
+    const isExtra = /flexible ticket|travel protection|change fee|cancellation fee|extras you might like|гъвкав билет|защита при пътуване|чекиран багаж|екстри/i.test(context);
+    const hasTotalLabel = /total\s+price|обща\s+цена|flight\s+price|flights?\b/i.test(context);
+    const included = value > 0 && !isExtra;
+    const reason = !value
+      ? "invalid_numeric_value"
+      : isExtra
+      ? "excluded_extra_or_fee"
+      : hasTotalLabel
+      ? "included_total_or_flight_label"
+      : "included_unlabeled_price";
+
+    return {
+      raw,
+      value,
+      currency: /(?:EUR|EURO|\u20ac)/i.test(raw) ? "EUR" : "",
+      context,
+      included,
+      reason,
+      selected: value > 0 && Math.abs(value - Number(selectedPrice || 0)) < 0.005
+    };
+  });
 }
 
 function normalizeGuestsText(value = "") {
@@ -2134,6 +2170,48 @@ function buildFlightOcrConfidence(rawText = "", flight = {}, metadata = {}) {
       warnings: uniqueWarnings(warnings)
     }
   };
+}
+
+function traceFlightOcrDecision(rawText = "", flight = {}, flightConfidence = {}, metadata = {}) {
+  if (!flightOcrTraceEnabled()) return;
+
+  const source = String(metadata.source || detectOcrSource(rawText, "flight"));
+  if (!/booking|connecting/i.test(source)) return;
+
+  const selectedFlightPrice = Number(flight.price || 0);
+  const missingFields = safeArray(metadata.missingFields);
+  const blockingReasons = [];
+  if (!flight.airline || /not specified|не е посочено|needs review|imported airline/i.test(String(flight.airline))) {
+    blockingReasons.push("Missing or invalid flight.airline.");
+  }
+  if (!selectedFlightPrice) blockingReasons.push("Missing or invalid flight.price.");
+  const reviewWarnings = safeArray(flightConfidence?.risk?.warnings);
+  const decision = blockingReasons.length
+    ? "REJECT"
+    : flightConfidence?.risk?.requiresOperatorReview
+    ? "REVIEW"
+    : "PASS";
+  const priceCandidates = buildFlightPriceCandidateTrace(rawText, selectedFlightPrice);
+  const selectedCandidate = priceCandidates.find((candidate) => candidate.selected) || null;
+
+  console.log("GT63 FLIGHT OCR TRACE:", JSON.stringify({
+    source,
+    rawOcrText: String(rawText || ""),
+    priceCandidates,
+    selectedFlightPrice,
+    selectedPriceReason: selectedCandidate?.reason || (selectedFlightPrice ? "selected_value_not_found_in_currency_candidates" : "no_price_selected"),
+    confidence: {
+      airline: Number(flightConfidence?.airline?.confidence || 0),
+      route: Number(flightConfidence?.route?.confidence || 0),
+      dateTime: Number(flightConfidence?.outboundDate?.confidence || 0),
+      price: Number(flightConfidence?.price?.confidence || 0)
+    },
+    thresholds: flightConfidence?.thresholds || FLIGHT_OCR_CONFIDENCE_THRESHOLDS,
+    missingFields,
+    decision,
+    blockingReasons,
+    reviewWarnings
+  }, null, 2));
 }
 
 function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
@@ -4746,7 +4824,9 @@ app.post("/api/import-image", requireCapability("imports.run"), upload.single("i
 const text = await recognizeFlightScreenshot(imageBuffer);
 const cleanText = text.replace(/\s+/g, " ").trim();
 
-console.log("OCR TEXT:\n", text);
+if (flightOcrTraceEnabled()) {
+  console.log("OCR TEXT:\n", text);
+}
 
 const profileImport = parseOcrByProfile(text, {
   kind: "flight",
@@ -4762,6 +4842,7 @@ if (profileImport?.flight) {
   const flightPrice = Number(profileImport.flight.price || 0);
   profileImport.flight.price = flightPrice;
   const flightConfidence = buildFlightOcrConfidence(text, profileImport.flight, profileImport.metadata);
+  traceFlightOcrDecision(text, profileImport.flight, flightConfidence, profileImport.metadata);
   console.log("FLIGHT IMPORT RESPONSE:", {
     flightAirline: profileImport.flight.airline,
     flightRoute: profileImport.flight.route,
