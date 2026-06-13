@@ -2511,9 +2511,19 @@ function extractGlobalFlightDateTimeCandidates(rawText = "") {
     });
 }
 
-function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {}) {
-  if (flight?.departure && flight?.arrival) return { flight, metadata };
+function cleanupFlightDateTimeDisplay(value = "", fallbackCandidate = "") {
+  const display = String(value || "").replace(/\s+/g, " ").trim();
+  if (!display) return display;
 
+  const malformed = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{3,4}:\d{2}\b/i.test(display);
+  if (!malformed || !fallbackCandidate) return display;
+
+  const dateStart = display.search(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+  const prefix = dateStart >= 0 ? display.slice(0, dateStart).replace(/[\s,]+$/, "") : "";
+  return [prefix, fallbackCandidate].filter(Boolean).join(", ");
+}
+
+function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {}) {
   const candidates = extractGlobalFlightDateTimeCandidates(rawText);
   if (candidates.length < 2) return { flight, metadata };
 
@@ -2521,10 +2531,12 @@ function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {
     .map((match) => `${match[1]} -> ${match[2]}`);
   const departurePrefix = routeLegs[0] || "";
   const arrivalPrefix = routeLegs[routeLegs.length - 1] || "";
+  const cleanedDeparture = cleanupFlightDateTimeDisplay(flight.departure, candidates[0]);
+  const cleanedArrival = cleanupFlightDateTimeDisplay(flight.arrival, candidates[candidates.length - 1]);
   const enrichedFlight = {
     ...flight,
-    departure: flight.departure || [departurePrefix, candidates[0]].filter(Boolean).join(", "),
-    arrival: flight.arrival || [arrivalPrefix, candidates[candidates.length - 1]].filter(Boolean).join(", ")
+    departure: cleanedDeparture || [departurePrefix, candidates[0]].filter(Boolean).join(", "),
+    arrival: cleanedArrival || [arrivalPrefix, candidates[candidates.length - 1]].filter(Boolean).join(", ")
   };
   const missingFields = safeArray(metadata?.missingFields);
   const enrichedMetadata = {
@@ -5707,6 +5719,7 @@ if (require.main === module) app.listen(PORT, () => {
 
 module.exports = {
   buildBookingAndroidFlightProfileTrace,
+  cleanupFlightDateTimeDisplay,
   enrichFlightOfferLevelDateTimes,
   extractGlobalFlightDateTimeCandidates
 };

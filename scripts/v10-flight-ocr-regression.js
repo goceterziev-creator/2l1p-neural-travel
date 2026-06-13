@@ -4,6 +4,7 @@ process.env.DB_FILE = process.env.DB_FILE || "storage/generated/V10_FLIGHT_OCR_T
 
 const {
   buildBookingAndroidFlightProfileTrace,
+  cleanupFlightDateTimeDisplay,
   enrichFlightOfferLevelDateTimes,
   extractGlobalFlightDateTimeCandidates
 } = require("../server");
@@ -46,5 +47,26 @@ const enriched = enrichFlightOfferLevelDateTimes(
 assert.match(enriched.flight.departure, /SOF -> MLE, Sep 1 21:10/i);
 assert.match(enriched.flight.arrival, /MLE -> SOF, Sep 16 09:00/i);
 assert.ok(!enriched.metadata.missingFields.includes("flight.times"));
+
+assert.equal(
+  cleanupFlightDateTimeDisplay("SOF -> MLE, Sep 211:04", "Sep 1 21:10"),
+  "SOF -> MLE, Sep 1 21:10"
+);
+assert.equal(
+  cleanupFlightDateTimeDisplay("MLE -> SOF, Sep 1609:00", "Sep 16 09:00"),
+  "MLE -> SOF, Sep 16 09:00"
+);
+assert.equal(
+  cleanupFlightDateTimeDisplay("SOF -> MLE, Sep 109:00", "Sep 1 09:00"),
+  "SOF -> MLE, Sep 1 09:00"
+);
+assert.equal(
+  cleanupFlightDateTimeDisplay("SOF -> MLE, Sep 1 21:10", "Sep 1 21:10"),
+  "SOF -> MLE, Sep 1 21:10"
+);
+assert.equal(
+  cleanupFlightDateTimeDisplay("MLE -> SOF, 16.09 09:00", "Sep 16 09:00"),
+  "MLE -> SOF, 16.09 09:00"
+);
 
 console.log("V10 FLIGHT OCR REGRESSION PASS");
