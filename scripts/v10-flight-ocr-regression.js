@@ -84,5 +84,12 @@ const malformedProductionEnriched = enrichFlightOfferLevelDateTimes(
 );
 assert.equal(malformedProductionEnriched.flight.departure, "SOF -> MLE, Sep 1 21:10");
 assert.equal(malformedProductionEnriched.flight.arrival, "MLE -> SOF, Sep 16 09:00");
+assert.deepEqual(
+  extractGlobalFlightDateTimeCandidates(
+    "Flight to Maldives Sep 211:04 SOF Airport Return Sep 16 09:00 SOF Airport"
+  ),
+  ["Sep 1 21:10", "Sep 16 09:00"],
+  "malformed OCR date/time tokens must be repaired before candidate selection"
+);
 
 console.log("V10 FLIGHT OCR REGRESSION PASS");

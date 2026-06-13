@@ -2511,11 +2511,8 @@ function extractGlobalFlightDateTimeCandidates(rawText = "") {
     });
 }
 
-function cleanupFlightDateTimeDisplay(value = "", fallbackCandidate = "") {
-  const display = String(value || "").replace(/\s+/g, " ").trim();
-  if (!display) return display;
-
-  const repairedDisplay = display
+function normalizeMalformedMonthDateTimeTokens(value = "") {
+  return String(value || "")
     .replace(
       /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d)(\d)(\d):0?4\b/gi,
       (_, month, hourTens, day, minuteTens) => `${month} ${day} ${hourTens}${day}:${minuteTens}0`
@@ -2524,6 +2521,13 @@ function cleanupFlightDateTimeDisplay(value = "", fallbackCandidate = "") {
       /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(\d{2}):(\d{2})\b/gi,
       "$1 $2 $3:$4"
     );
+}
+
+function cleanupFlightDateTimeDisplay(value = "", fallbackCandidate = "") {
+  const display = String(value || "").replace(/\s+/g, " ").trim();
+  if (!display) return display;
+
+  const repairedDisplay = normalizeMalformedMonthDateTimeTokens(display);
   if (repairedDisplay !== display) return repairedDisplay;
 
   const malformed = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{3,4}:\d{2}\b/i.test(display);
@@ -2564,7 +2568,7 @@ function normalizeConnectingOcrTimeText(rawText = "") {
       /(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?)(\d{4})[4u]?\b/gi,
       (_, prefix, digits) => `${prefix}${digits.slice(0, 2)}:${digits.slice(2)}`
     );
-  return normalizedMeridiem.replace(
+  const normalizedTimes = normalizedMeridiem.replace(
     /(\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?)(\d{3,4})\s*(AM|PM)\b/gi,
     (_, prefix, digits, meridiem) => {
       const cleanDigits = String(digits);
@@ -2573,6 +2577,7 @@ function normalizeConnectingOcrTimeText(rawText = "") {
       return `${prefix}${hour}:${minute} ${meridiem}`;
     }
   );
+  return normalizeMalformedMonthDateTimeTokens(normalizedTimes);
 }
 
 function sortConnectingTimelineChronologically(timeline = []) {
