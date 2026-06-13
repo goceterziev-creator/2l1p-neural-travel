@@ -5,6 +5,7 @@ process.env.DB_FILE = process.env.DB_FILE || "storage/generated/V10_FLIGHT_OCR_T
 const {
   buildBookingAndroidFlightProfileTrace,
   cleanupFlightDateTimeDisplay,
+  enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
   extractGlobalFlightDateTimeCandidates
 } = require("../server");
@@ -91,5 +92,15 @@ assert.deepEqual(
   ["Sep 1 21:10", "Sep 16 09:00"],
   "malformed OCR date/time tokens must be repaired before candidate selection"
 );
+
+const stopEnriched = enrichFlightStopSummary(
+  fuzzyFlightOcr,
+  enriched.flight,
+  "Maldives"
+);
+assert.match(stopEnriched.departure, /via IST/i);
+assert.match(stopEnriched.arrival, /via AUH \+ ATH/i);
+assert.match(stopEnriched.notes, /Outbound via IST/i);
+assert.match(stopEnriched.notes, /Return via AUH \+ ATH/i);
 
 console.log("V10 FLIGHT OCR REGRESSION PASS");

@@ -1918,6 +1918,35 @@ function uniqueAirportCodes(codes = []) {
   return [...new Set(codes.map((code) => String(code || "").toUpperCase()).filter(Boolean))];
 }
 
+function extractRoundTripStopSummary(rawText = "", flight = {}) {
+  const knownCodes = new Set(FLIGHT_AIRPORT_ALIASES.map((record) => record.code));
+  const sequence = [...String(rawText || "").matchAll(/\b[A-Z]{3}\b/g)]
+    .map((match) => String(match[0] || "").toUpperCase())
+    .filter((code) => knownCodes.has(code));
+  const routeCodes = [...String(flight.route || "").matchAll(/\b([A-Z]{3})\s*(?:->|→)\s*([A-Z]{3})\b/g)];
+  const destinationCode = routeCodes[0]?.[2]?.toUpperCase() || "";
+  if (!destinationCode || destinationCode === "SOF") return null;
+
+  const outboundStartIndex = sequence.indexOf("SOF");
+  const outboundEndIndex = sequence.indexOf(destinationCode, outboundStartIndex + 1);
+  const inboundStartIndex = sequence.indexOf(destinationCode, outboundEndIndex + 1);
+  const inboundEndIndex = sequence.lastIndexOf("SOF");
+  if (outboundStartIndex < 0 || outboundEndIndex < 0 || inboundStartIndex < 0 || inboundEndIndex <= inboundStartIndex) {
+    return null;
+  }
+
+  return {
+    outbound: uniqueAirportCodes(
+      sequence.slice(outboundStartIndex + 1, outboundEndIndex)
+        .filter((code) => !["SOF", destinationCode].includes(code))
+    ),
+    inbound: uniqueAirportCodes(
+      sequence.slice(inboundStartIndex + 1, inboundEndIndex)
+        .filter((code) => !["SOF", destinationCode].includes(code))
+    )
+  };
+}
+
 function resolveDestinationAirport(rawText = "", destination = "") {
   const destinationRecord = airportAliasRecord(destination);
   const codes = uniqueAirportCodes(detectAirportCodes(rawText));
@@ -2559,6 +2588,39 @@ function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {
       : missingFields
   };
   return { flight: enrichedFlight, metadata: enrichedMetadata };
+}
+
+function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
+  const connectingFlight = detectGenericConnectingFlight(rawText, destination);
+  const fallbackStops = extractRoundTripStopSummary(rawText, flight);
+  const outboundVia =
+    String(connectingFlight?.departure || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
+    fallbackStops?.outbound?.join(" + ") ||
+    "";
+  const inboundVia =
+    String(connectingFlight?.arrival || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
+    fallbackStops?.inbound?.join(" + ") ||
+    "";
+  if (!outboundVia && !inboundVia) return flight;
+  const appendVia = (value, via) => {
+    const text = String(value || "").trim();
+    if (!text || !via || /\bvia\b/i.test(text)) return text;
+    return `${text}, via ${via}`;
+  };
+  const stopNotes = [
+    outboundVia ? `Outbound via ${outboundVia}.` : "",
+    inboundVia ? `Return via ${inboundVia}.` : ""
+  ].filter(Boolean).join(" ");
+  const notes = String(flight.notes || "").trim();
+
+  return {
+    ...flight,
+    departure: appendVia(flight.departure, outboundVia),
+    arrival: appendVia(flight.arrival, inboundVia),
+    notes: stopNotes && !notes.includes(stopNotes)
+      ? [notes, stopNotes].filter(Boolean).join(" ")
+      : notes
+  };
 }
 
 function normalizeConnectingOcrTimeText(rawText = "") {
@@ -5064,6 +5126,11 @@ if (profileImport?.flight) {
     text,
     req.body?.destination || ""
   );
+  profileImport.flight = enrichFlightStopSummary(
+    text,
+    profileImport.flight,
+    req.body?.destination || ""
+  );
   const flightPrice = Number(profileImport.flight.price || 0);
   profileImport.flight.price = flightPrice;
   const flightConfidence = buildFlightOcrConfidence(text, profileImport.flight, profileImport.metadata);
@@ -5734,6 +5801,7 @@ if (require.main === module) app.listen(PORT, () => {
 module.exports = {
   buildBookingAndroidFlightProfileTrace,
   cleanupFlightDateTimeDisplay,
+  enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
   extractGlobalFlightDateTimeCandidates
 };
