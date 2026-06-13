@@ -1765,31 +1765,33 @@ function buildBookingAndroidFlightProfileTrace(rawText = "") {
   const compact = ocrCompactText(rawText);
   const normalized = normalizeLocalizedFlightTimelineText(compact);
   const sectionLabels = [
-    ...compact.matchAll(/flight\s+to\s+[\p{L}\s-]{2,40}|\u043f\u043e\u043b\u0435\u0442\s+\u0434\u043e\s+[\p{L}\s-]{2,40}/giu)
+    ...compact.matchAll(/flight\s+to\s+[\p{L}\s-]{2,40}|\u043f\u043e\u043b\u0435\u0442\s+\u0434\u043e\s+[\p{L}\s-]{2,40}|\b(?:monet|toner|noaem)\s+go\b[^|]{0,40}/giu)
   ].map((match) => String(match[0] || "").replace(/\s+/g, " ").trim());
   const localizedTimes = (compact.match(/\b\d{1,2}:\d{2}\s*\u0447\.?/gi) || []).length;
   const amPmTimes = (compact.match(/\b\d{1,2}:\d{2}\s*(?:AM|PM)\b/gi) || []).length;
+  const fuzzyDateTimes = extractGlobalFlightDateTimeCandidates(rawText).length;
   const airportCount = uniqueAirportCodes(detectAirportCodes(rawText)).length;
   const signals = {
-    bookingBrand: /booking(?:\.com)?/i.test(compact),
+    bookingBrand: /\b(?:book(?:ing)?|dooking|ooking)(?:\.co[m]?)?\b|hts?\.book/i.test(compact),
     routeSections: sectionLabels.length,
     localizedTimes,
     amPmTimes,
+    fuzzyDateTimes,
     airportCount,
     totalLabel: /total\s+price|total\b|\u043e\u0431\u0449\u0430\s+\u0446\u0435\u043d\u0430/i.test(compact),
     localizedTimeline: normalized !== compact
   };
   const detected = (
     signals.bookingBrand &&
-    (signals.routeSections >= 1 || localizedTimes + amPmTimes >= 2 || airportCount >= 3)
+    (signals.routeSections >= 1 || localizedTimes + amPmTimes + fuzzyDateTimes >= 2 || airportCount >= 3)
   ) || (
     signals.routeSections >= 2 &&
-    localizedTimes + amPmTimes >= 2 &&
+    localizedTimes + amPmTimes + fuzzyDateTimes >= 2 &&
     airportCount >= 3
   );
   return {
     detected,
-    profile: detected ? "booking_android_flight_modal" : "not_detected",
+    profile: detected ? "booking_flight_modal" : "not_detected",
     sectionLabels,
     signals
   };
@@ -2439,6 +2441,9 @@ function extractConnectingFlightTimeline(rawText = "") {
 }
 
 function normalizeLocalizedFlightTimelineText(rawText = "") {
+  const separated = String(rawText || "")
+    .replace(/(\d)(?=(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept|avg|abr|abg|juli|yuli|juni|yuni|mai)\b)/gi, "$1 ")
+    .replace(/\b(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept|avg|abr|abg|juli|yuli|juni|yuni|mai)(?=\d)/gi, "$& ");
   const replacements = [
     [/(?:пон|понеделник)\.?(?=\s|,|$)/gi, "Mon"],
     [/(?:вт|втор|вторник)\.?(?=\s|,|$)/gi, "Tue"],
@@ -2462,8 +2467,13 @@ function normalizeLocalizedFlightTimelineText(rawText = "") {
     [/(\d{1,2}:\d{2})\s*ч\.?/gi, "$1"]
   ];
   const localized = replacements
-    .reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), String(rawText || ""))
-    .replace(/\bSept\.?(?=\s|,|$)/gi, "Sep");
+    .reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), separated)
+    .replace(/\bSept\.?(?=\s|,|$)/gi, "Sep")
+    .replace(/\b(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept)\b\.?/gi, "Sep")
+    .replace(/\b(?:avg|abr|abg)\b\.?/gi, "Aug")
+    .replace(/\b(?:juli|yuli)\b\.?/gi, "Jul")
+    .replace(/\b(?:juni|yuni)\b\.?/gi, "Jun")
+    .replace(/\b(?:mai)\b\.?/gi, "May");
   return localized
     .replace(
       /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[.,]*\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi,
@@ -2473,11 +2483,15 @@ function normalizeLocalizedFlightTimelineText(rawText = "") {
       /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*[.,]*\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/gi,
       "$1, $2 $3"
     )
+    .replace(
+      /\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi,
+      "$2 $1"
+    )
     .replace(/\s*[·•]\s*/g, " · ");
 }
 
 function globalFlightDateTimePattern() {
-  return /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM))?\b/gi;
+  return /\b(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM))?\b/gi;
 }
 
 function extractGlobalFlightDateTimeCandidates(rawText = "") {
@@ -2524,7 +2538,11 @@ function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {
 
 function normalizeConnectingOcrTimeText(rawText = "") {
   const normalizedMeridiem = String(rawText || "")
-    .replace(/(\d{3,4})\s*2M\b/gi, "$1 PM");
+    .replace(/(\d{3,4})\s*2M\b/gi, "$1 PM")
+    .replace(
+      /(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?)(\d{4})[4u]?\b/gi,
+      (_, prefix, digits) => `${prefix}${digits.slice(0, 2)}:${digits.slice(2)}`
+    );
   return normalizedMeridiem.replace(
     /(\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*\d{1,2}(?:,?\s+20\d{2})?\s*(?:[-–—·•|]\s*)?)(\d{3,4})\s*(AM|PM)\b/gi,
     (_, prefix, digits, meridiem) => {
@@ -2545,7 +2563,7 @@ function sortConnectingTimelineChronologically(timeline = []) {
   return safeArray(timeline)
     .map((event, index) => {
       const match = String(event?.when || "").match(
-        /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{1,2})(?:,?\s+(20\d{2}))?\s*(?:[-–—·•|]\s*)?(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i
+        /\b(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{1,2})(?:,?\s+(20\d{2}))?\s*(?:[-–—·•|]\s*)?(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i
       );
       if (!match) return { event, index, timestamp: Number.POSITIVE_INFINITY };
 
@@ -5682,7 +5700,13 @@ Rules:
   }
 });
 
-app.listen(PORT, () => {
+if (require.main === module) app.listen(PORT, () => {
   console.log(`🚀 2L1P Neural Travel running on http://localhost:${PORT}`);
   console.log(`🏠 Admin: http://localhost:${PORT}/admin`);
 });
+
+module.exports = {
+  buildBookingAndroidFlightProfileTrace,
+  enrichFlightOfferLevelDateTimes,
+  extractGlobalFlightDateTimeCandidates
+};

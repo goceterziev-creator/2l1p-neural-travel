@@ -5,6 +5,7 @@ const BASE_URL = process.env.SMOKE_BASE_URL || process.env.LIVE_BASE_URL || `htt
 const CHECK_TARGETS = [
   "server.js",
   "public/admin.js",
+  "scripts/v10-flight-ocr-regression.js",
   "scripts/smoke-test.js",
   "scripts/v9-architecture-check.js",
   "scripts/v9-boundary-test.js"
@@ -69,6 +70,7 @@ async function main() {
   }
 
   try {
+    await runNode(["scripts/v10-flight-ocr-regression.js"]);
     await runNode(["scripts/smoke-test.js"], { env: { SMOKE_BASE_URL: BASE_URL } });
     await runNode(["scripts/v9-architecture-check.js"]);
   } finally {
