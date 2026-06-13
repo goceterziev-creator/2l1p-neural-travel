@@ -53,6 +53,10 @@ assert.equal(
   "SOF -> MLE, Sep 1 21:10"
 );
 assert.equal(
+  cleanupFlightDateTimeDisplay("SOF -> MLE, Sep 211:04", "Sep 211:04"),
+  "SOF -> MLE, Sep 1 21:10"
+);
+assert.equal(
   cleanupFlightDateTimeDisplay("MLE -> SOF, Sep 1609:00", "Sep 16 09:00"),
   "MLE -> SOF, Sep 16 09:00"
 );
@@ -68,5 +72,17 @@ assert.equal(
   cleanupFlightDateTimeDisplay("MLE -> SOF, 16.09 09:00", "Sep 16 09:00"),
   "MLE -> SOF, 16.09 09:00"
 );
+
+const malformedProductionEnriched = enrichFlightOfferLevelDateTimes(
+  "Sep 211:04 Sep 16 09:00",
+  {
+    route: "SOF -> MLE / MLE -> SOF",
+    departure: "SOF -> MLE, Sep 211:04",
+    arrival: "MLE -> SOF, Sep 16 09:00"
+  },
+  { missingFields: [] }
+);
+assert.equal(malformedProductionEnriched.flight.departure, "SOF -> MLE, Sep 1 21:10");
+assert.equal(malformedProductionEnriched.flight.arrival, "MLE -> SOF, Sep 16 09:00");
 
 console.log("V10 FLIGHT OCR REGRESSION PASS");

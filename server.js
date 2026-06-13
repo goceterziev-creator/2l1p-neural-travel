@@ -2515,6 +2515,17 @@ function cleanupFlightDateTimeDisplay(value = "", fallbackCandidate = "") {
   const display = String(value || "").replace(/\s+/g, " ").trim();
   if (!display) return display;
 
+  const repairedDisplay = display
+    .replace(
+      /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d)(\d)(\d):0?4\b/gi,
+      (_, month, hourTens, day, minuteTens) => `${month} ${day} ${hourTens}${day}:${minuteTens}0`
+    )
+    .replace(
+      /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(\d{2}):(\d{2})\b/gi,
+      "$1 $2 $3:$4"
+    );
+  if (repairedDisplay !== display) return repairedDisplay;
+
   const malformed = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{3,4}:\d{2}\b/i.test(display);
   if (!malformed || !fallbackCandidate) return display;
 
@@ -2525,8 +2536,6 @@ function cleanupFlightDateTimeDisplay(value = "", fallbackCandidate = "") {
 
 function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {}) {
   const candidates = extractGlobalFlightDateTimeCandidates(rawText);
-  if (candidates.length < 2) return { flight, metadata };
-
   const routeLegs = [...String(flight?.route || "").matchAll(/\b([A-Z]{3})\s*(?:->|→)\s*([A-Z]{3})\b/g)]
     .map((match) => `${match[1]} -> ${match[2]}`);
   const departurePrefix = routeLegs[0] || "";
@@ -2535,8 +2544,8 @@ function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {
   const cleanedArrival = cleanupFlightDateTimeDisplay(flight.arrival, candidates[candidates.length - 1]);
   const enrichedFlight = {
     ...flight,
-    departure: cleanedDeparture || [departurePrefix, candidates[0]].filter(Boolean).join(", "),
-    arrival: cleanedArrival || [arrivalPrefix, candidates[candidates.length - 1]].filter(Boolean).join(", ")
+    departure: cleanedDeparture || (candidates[0] ? [departurePrefix, candidates[0]].filter(Boolean).join(", ") : ""),
+    arrival: cleanedArrival || (candidates.length > 1 ? [arrivalPrefix, candidates[candidates.length - 1]].filter(Boolean).join(", ") : "")
   };
   const missingFields = safeArray(metadata?.missingFields);
   const enrichedMetadata = {
