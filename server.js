@@ -2783,9 +2783,39 @@ function preferredConnectingTimeline(rawText = "") {
     : sortConnectingTimelineChronologically(extractConnectingFlightTimeline(rawText));
 }
 
+function cleanFlightAirlineLabel(value = "") {
+  const seen = new Set();
+  return String(value || "")
+    .split(/\s*\+\s*/)
+    .map((label) => label
+      .replace(/^[^A-Za-z\u00C0-\u024F]+/, "")
+      .replace(/^(?:travel operated by|operated by|flight|carrier|airline|by)\s+/i, "")
+      .replace(/\s+/g, " ")
+      .trim())
+    .filter((label) => {
+      const key = label.toLowerCase();
+      if (!label || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(" + ");
+}
+
+function extractVisibleAirlineLabels(rawText = "") {
+  const candidates = String(rawText || "").match(
+    /\b(?:[\p{L}][\p{L}&.'-]*\s+){0,3}(?:Airlines|Airways|Air)\b/giu
+  ) || [];
+  return candidates
+    .map(cleanFlightAirlineLabel)
+    .filter((label) =>
+      label &&
+      !/^(?:air|airline|airlines|airways|connecting airline|unknown airline|flight airline)$/i.test(label)
+    );
+}
+
 function inferConnectingAirlines(rawText = "") {
   const text = ocrCompactText(rawText);
-  return [
+  const knownAirlines = [
     [/turkish airlines|\bTK\s?\d{2,4}\b/i, "Turkish Airlines"],
     [/lufthansa|\bLH\s?\d{2,4}\b/i, "Lufthansa"],
     [/qatar airways|\bQR\s?\d{2,4}\b/i, "Qatar Airways"],
@@ -2796,11 +2826,17 @@ function inferConnectingAirlines(rawText = "") {
   ]
     .filter(([pattern]) => pattern.test(text))
     .map(([, airline]) => airline);
+  return cleanFlightAirlineLabel([
+    ...extractVisibleAirlineLabels(rawText),
+    ...knownAirlines
+  ].join(" + "))
+    .split(/\s*\+\s*/)
+    .filter(Boolean);
 }
 
 function inferConnectingAirline(rawText = "") {
   const airlines = inferConnectingAirlines(rawText);
-  return airlines.length ? airlines.join(" + ") : "Connecting airline";
+  return airlines.length ? cleanFlightAirlineLabel(airlines.join(" + ")) : "Airline needs review";
 }
 
 function extractFlightBaggageSummary(rawText = "") {
@@ -5896,5 +5932,6 @@ module.exports = {
   enrichFlightOfferLevelDateTimes,
   extractGlobalFlightDateTimeCandidates,
   extractPreferredRoundTripStopSummary,
-  getFlightCoreBlockingReasons
+  getFlightCoreBlockingReasons,
+  inferConnectingAirline
 };

@@ -8,7 +8,8 @@ const {
   enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
   extractGlobalFlightDateTimeCandidates,
-  getFlightCoreBlockingReasons
+  getFlightCoreBlockingReasons,
+  inferConnectingAirline
 } = require("../server");
 
 const fuzzyFlightOcr = `
@@ -105,6 +106,7 @@ assert.match(stopEnriched.notes, /Outbound via IST/i);
 assert.match(stopEnriched.notes, /Return via AUH \+ ATH/i);
 
 const noisyAustrianRoundTripOcr = `
+Travel operated by Austrian Airlines
 Sep 1 08:00 SOF
 Sep 1 10:00 IST
 Sep 2 08:00 NRT
@@ -131,6 +133,11 @@ const austrianStops = enrichFlightStopSummary(
 assert.match(austrianStops.departure, /via VIE/i);
 assert.match(austrianStops.arrival, /via VIE/i);
 assert.doesNotMatch(austrianStops.notes, /via IST/i);
+assert.equal(
+  inferConnectingAirline("Travel operated by Austrian Airlines Austrian Airlines"),
+  "Austrian Airlines",
+  "visible airline labels should be globally extracted and deduplicated"
+);
 
 assert.deepEqual(
   getFlightCoreBlockingReasons({
