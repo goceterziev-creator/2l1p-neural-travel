@@ -7,7 +7,8 @@ const {
   cleanupFlightDateTimeDisplay,
   enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
-  extractGlobalFlightDateTimeCandidates
+  extractGlobalFlightDateTimeCandidates,
+  getFlightCoreBlockingReasons
 } = require("../server");
 
 const fuzzyFlightOcr = `
@@ -102,5 +103,54 @@ assert.match(stopEnriched.departure, /via IST/i);
 assert.match(stopEnriched.arrival, /via AUH \+ ATH/i);
 assert.match(stopEnriched.notes, /Outbound via IST/i);
 assert.match(stopEnriched.notes, /Return via AUH \+ ATH/i);
+
+const noisyAustrianRoundTripOcr = `
+Sep 1 08:00 SOF
+Sep 1 10:00 IST
+Sep 2 08:00 NRT
+Sep 15 10:00 NRT
+Sep 15 18:00 IST
+Sep 15 21:00 SOF
+--- ENHANCED OCR ---
+Sep 1 08:00 SOF
+Sep 1 10:00 VIE
+Sep 2 08:00 NRT
+Sep 15 10:00 NRT
+Sep 15 18:00 VIE
+Sep 15 21:00 SOF
+`;
+const austrianStops = enrichFlightStopSummary(
+  noisyAustrianRoundTripOcr,
+  {
+    route: "SOF -> NRT / NRT -> SOF",
+    departure: "SOF -> NRT, Sep 1 08:00",
+    arrival: "NRT -> SOF, Sep 15 21:00",
+    notes: ""
+  }
+);
+assert.match(austrianStops.departure, /via VIE/i);
+assert.match(austrianStops.arrival, /via VIE/i);
+assert.doesNotMatch(austrianStops.notes, /via IST/i);
+
+assert.deepEqual(
+  getFlightCoreBlockingReasons({
+    airline: "",
+    route: "SOF -> NRT / NRT -> SOF",
+    departure: "SOF -> NRT, Sep 1 08:00",
+    arrival: "NRT -> SOF, Sep 15 21:00",
+    price: 1200
+  }),
+  [],
+  "missing airline alone must remain a review item"
+);
+assert.deepEqual(
+  getFlightCoreBlockingReasons({ airline: "Austrian Airlines", route: "", departure: "", arrival: "", price: 0 }),
+  [
+    "Missing or invalid flight.route.",
+    "Missing or invalid flight.times.",
+    "Missing or invalid flight.price."
+  ],
+  "missing core fields must block import"
+);
 
 console.log("V10 FLIGHT OCR REGRESSION PASS");

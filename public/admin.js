@@ -2328,14 +2328,11 @@ function shouldReviewFlightImport(data = {}) {
 }
 
 function getBlockingFlightImportWarnings(flight = {}, flightPrice = 0) {
-  const airline = String(flight?.airline || "").trim().toLowerCase();
-  const missingAirline = !airline || [
-    "не е посочено",
-    "airline needs review",
-    "connecting airline"
-  ].includes(airline);
   const warnings = [];
-  if (missingAirline) warnings.push("Авиокомпанията не е разпозната надеждно.");
+  if (!String(flight?.route || "").trim()) warnings.push("Маршрутът на полета не е разпознат надеждно.");
+  if (!String(flight?.departure || "").trim() || !String(flight?.arrival || "").trim()) {
+    warnings.push("Датите или часовете на полета не са разпознати надеждно.");
+  }
   if (Number(flightPrice || 0) <= 0) warnings.push("Крайната цена на полета не е разпозната надеждно.");
   return warnings;
 }

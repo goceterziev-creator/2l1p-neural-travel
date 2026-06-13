@@ -1918,7 +1918,74 @@ function uniqueAirportCodes(codes = []) {
   return [...new Set(codes.map((code) => String(code || "").toUpperCase()).filter(Boolean))];
 }
 
+function extractRoundTripRouteEndpoints(flight = {}) {
+  const routeCodes = [...String(flight.route || "").matchAll(/\b([A-Z]{3})\s*(?:->|\u2192)\s*([A-Z]{3})\b/g)];
+  return {
+    origin: routeCodes[0]?.[1]?.toUpperCase() || "",
+    destination: routeCodes[0]?.[2]?.toUpperCase() || ""
+  };
+}
+
+function scoreRoundTripTimeline(timeline = [], flight = {}) {
+  const { origin, destination } = extractRoundTripRouteEndpoints(flight);
+  if (!origin || !destination || origin === destination) return -1;
+  const codes = safeArray(timeline).map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+  const originCount = codes.filter((code) => code === origin).length;
+  const destinationCount = codes.filter((code) => code === destination).length;
+  if (!originCount || !destinationCount) return -1;
+  return (
+    Math.min(codes.length, 12) +
+    Math.min(originCount, 2) * 4 +
+    Math.min(destinationCount, 2) * 4 +
+    (codes[0] === origin ? 3 : 0) +
+    (codes[codes.length - 1] === origin ? 3 : 0)
+  );
+}
+
+function preferredRoundTripTimeline(rawText = "", flight = {}) {
+  const parts = String(rawText || "").split(/--- ENHANCED OCR ---/i);
+  const candidates = parts
+    .map((text, index) => ({
+      index,
+      timeline: sortConnectingTimelineChronologically(extractConnectingFlightTimeline(text))
+    }))
+    .filter((candidate) => candidate.timeline.length)
+    .map((candidate) => ({
+      ...candidate,
+      score: scoreRoundTripTimeline(candidate.timeline, flight)
+    }))
+    .sort((a, b) => b.score - a.score || b.index - a.index);
+  return candidates[0]?.timeline || [];
+}
+
+function extractPreferredRoundTripStopSummary(rawText = "", flight = {}) {
+  const { origin, destination } = extractRoundTripRouteEndpoints(flight);
+  if (!origin || !destination || origin === destination) return null;
+  const sequence = preferredRoundTripTimeline(rawText, flight)
+    .map((event) => String(event?.code || "").toUpperCase())
+    .filter(Boolean);
+  const outboundStartIndex = sequence.indexOf(origin);
+  const outboundEndIndex = sequence.indexOf(destination, outboundStartIndex + 1);
+  const inboundStartIndex = sequence.indexOf(destination, outboundEndIndex + 1);
+  const inboundEndIndex = sequence.lastIndexOf(origin);
+  if (outboundStartIndex < 0 || outboundEndIndex < 0 || inboundStartIndex < 0 || inboundEndIndex <= inboundStartIndex) {
+    return null;
+  }
+  return {
+    outbound: uniqueAirportCodes(
+      sequence.slice(outboundStartIndex + 1, outboundEndIndex)
+        .filter((code) => ![origin, destination].includes(code))
+    ),
+    inbound: uniqueAirportCodes(
+      sequence.slice(inboundStartIndex + 1, inboundEndIndex)
+        .filter((code) => ![origin, destination].includes(code))
+    )
+  };
+}
+
 function extractRoundTripStopSummary(rawText = "", flight = {}) {
+  const preferredStops = extractPreferredRoundTripStopSummary(rawText, flight);
+  if (preferredStops) return preferredStops;
   const knownCodes = new Set(FLIGHT_AIRPORT_ALIASES.map((record) => record.code));
   const sequence = [...String(rawText || "").matchAll(/\b[A-Z]{3}\b/g)]
     .map((match) => String(match[0] || "").toUpperCase())
@@ -2310,6 +2377,16 @@ function buildFlightOcrConfidence(rawText = "", flight = {}, metadata = {}) {
   };
 }
 
+function getFlightCoreBlockingReasons(flight = {}, flightPrice = 0) {
+  const reasons = [];
+  if (!String(flight.route || "").trim()) reasons.push("Missing or invalid flight.route.");
+  if (!String(flight.departure || "").trim() || !String(flight.arrival || "").trim()) {
+    reasons.push("Missing or invalid flight.times.");
+  }
+  if (Number(flightPrice || flight.price || 0) <= 0) reasons.push("Missing or invalid flight.price.");
+  return reasons;
+}
+
 function traceFlightOcrDecision(rawText = "", flight = {}, flightConfidence = {}, metadata = {}) {
   if (!flightOcrTraceEnabled()) return;
 
@@ -2319,11 +2396,7 @@ function traceFlightOcrDecision(rawText = "", flight = {}, flightConfidence = {}
 
   const selectedFlightPrice = Number(flight.price || 0);
   const missingFields = safeArray(metadata.missingFields);
-  const blockingReasons = [];
-  if (!flight.airline || /not specified|не е посочено|needs review|imported airline/i.test(String(flight.airline))) {
-    blockingReasons.push("Missing or invalid flight.airline.");
-  }
-  if (!selectedFlightPrice) blockingReasons.push("Missing or invalid flight.price.");
+  const blockingReasons = getFlightCoreBlockingReasons(flight, selectedFlightPrice);
   const reviewWarnings = safeArray(flightConfidence?.risk?.warnings);
   const decision = blockingReasons.length
     ? "REJECT"
@@ -2348,7 +2421,13 @@ function traceFlightOcrDecision(rawText = "", flight = {}, flightConfidence = {}
       departure: String(flight.departure || ""),
       arrival: String(flight.arrival || "")
     },
+    airlineCandidates: inferConnectingAirlines(rawText),
     selectedFlightAirline: String(flight.airline || ""),
+    selectedAirlineConfidence: Number(flightConfidence?.airline?.confidence || 0),
+    airlineProductionThreshold: Number(
+      flightConfidence?.thresholds?.airline ||
+      FLIGHT_OCR_CONFIDENCE_THRESHOLDS.airline
+    ),
     selectedFlightRoute: String(flight.route || ""),
     confidence: {
       airline: Number(flightConfidence?.airline?.confidence || 0),
@@ -2432,9 +2511,18 @@ function parseRyanairCheckout(rawText = "") {
   return { flight, hotel: {}, metadata: buildOcrMetadata("ryanair_checkout", flight, missingFields) };
 }
 
+function isPlausibleIataCode(value = "") {
+  const code = String(value || "").trim();
+  if (!/^[A-Z]{3}$/.test(code)) return false;
+  return !new Set([
+    "AIR", "AND", "ARR", "BAG", "DEP", "EUR", "FLY", "FROM",
+    "LEG", "THE", "TOO", "USD", "VIA"
+  ]).has(code);
+}
+
 function extractConnectingFlightTimeline(rawText = "") {
   const compact = normalizeConnectingOcrTimeText(normalizeLocalizedFlightTimelineText(ocrCompactText(rawText)));
-  const airportCodes = FLIGHT_AIRPORT_ALIASES.map((record) => record.code).join("|");
+  const airportCodes = "[A-Z]{3}";
   const dateTimePattern = globalFlightDateTimePattern();
   const dateTimeMatches = [...compact.matchAll(dateTimePattern)];
   const timeline = [];
@@ -2450,10 +2538,13 @@ function extractConnectingFlightTimeline(rawText = "") {
     );
     const followingText = compact.slice(start, end);
     const precedingText = compact.slice(Math.max(0, Number(match.index || 0) - 120), Number(match.index || 0));
-    const code =
-      followingText.match(new RegExp(`\\b(${airportCodes})\\b`, "i"))?.[1]?.toUpperCase() ||
-      [...precedingText.matchAll(new RegExp(`\\b(${airportCodes})\\b`, "gi"))].pop()?.[1]?.toUpperCase() ||
-      "";
+    const followingCodes = [...followingText.matchAll(new RegExp(`\\b(${airportCodes})\\b`, "g"))]
+      .map((candidate) => candidate[1])
+      .filter(isPlausibleIataCode);
+    const precedingCodes = [...precedingText.matchAll(new RegExp(`\\b(${airportCodes})\\b`, "g"))]
+      .map((candidate) => candidate[1])
+      .filter(isPlausibleIataCode);
+    const code = followingCodes[0] || precedingCodes.pop() || "";
     if (!code) return;
 
     const event = {
@@ -2594,12 +2685,12 @@ function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
   const connectingFlight = detectGenericConnectingFlight(rawText, destination);
   const fallbackStops = extractRoundTripStopSummary(rawText, flight);
   const outboundVia =
-    String(connectingFlight?.departure || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
     fallbackStops?.outbound?.join(" + ") ||
+    String(connectingFlight?.departure || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
     "";
   const inboundVia =
-    String(connectingFlight?.arrival || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
     fallbackStops?.inbound?.join(" + ") ||
+    String(connectingFlight?.arrival || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
     "";
   if (!outboundVia && !inboundVia) return flight;
   const appendVia = (value, via) => {
@@ -5803,5 +5894,7 @@ module.exports = {
   cleanupFlightDateTimeDisplay,
   enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
-  extractGlobalFlightDateTimeCandidates
+  extractGlobalFlightDateTimeCandidates,
+  extractPreferredRoundTripStopSummary,
+  getFlightCoreBlockingReasons
 };
