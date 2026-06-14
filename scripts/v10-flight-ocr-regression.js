@@ -228,4 +228,34 @@ assert.deepEqual(
   "OCR-deformed Bulgarian dates must not hard-stop an otherwise complete flight"
 );
 
+const productionFuzzyBulgarianMonthDateOcr = `
+25 map (an)
+12:30 Coduma (SOF)
+11:55 Tomo (NRT)
+
+8amp (em)
+22:25 Tokuno (NRT)
+23 Codus (SOF)
+`;
+const productionFuzzyDateCandidates = extractGlobalFlightDateTimeCandidates(
+  productionFuzzyBulgarianMonthDateOcr
+);
+assert.deepEqual(
+  productionFuzzyDateCandidates,
+  ["Mar 25 12:30", "Apr 8 22:25"],
+  "production OCR variants map, amp, an and em should normalize without treating ordinary map text as a month"
+);
+const productionFuzzyDateEnriched = enrichFlightOfferLevelDateTimes(
+  productionFuzzyBulgarianMonthDateOcr,
+  { airline: "Airline", route: "SOF -> NRT / NRT -> SOF", departure: "", arrival: "", price: 100 },
+  { missingFields: ["flight.times"] }
+);
+assert.match(productionFuzzyDateEnriched.flight.departure, /Mar 25 12:30/);
+assert.match(productionFuzzyDateEnriched.flight.arrival, /Apr 8 22:25/);
+assert.deepEqual(
+  getFlightCoreBlockingReasons(productionFuzzyDateEnriched.flight, 100),
+  [],
+  "production fuzzy date variants must not hard-stop an otherwise complete flight"
+);
+
 console.log("V10 FLIGHT OCR REGRESSION PASS");
