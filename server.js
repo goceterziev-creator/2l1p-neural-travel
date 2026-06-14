@@ -2567,6 +2567,7 @@ function normalizeLocalizedFlightTimelineText(rawText = "") {
   const replacements = [
     [/\(\s*(?:\u043f\u043d|\u0432\u0442|\u0441\u0440|\u0447\u0442|\u043f\u0442|\u0441\u0431|\u043d\u0434)\.?\s*\)/gi, ""],
     [/\(\s*(?:chet|cht|ur|un|ut|an|em)\.?\s*\)/gi, ""],
+    [/\bsamp\b\.?/gi, "8 Apr"],
     [/\b(\d{1,2})\s+map\b\.?/gi, "$1 Mar"],
     [/\b(\d{1,2})\s+amp\b\.?/gi, "$1 Apr"],
     [/\b(?:mart|mar|mapr|mapt)\b\.?/gi, "Mar"],

@@ -233,7 +233,7 @@ const productionFuzzyBulgarianMonthDateOcr = `
 12:30 Coduma (SOF)
 11:55 Tomo (NRT)
 
-8amp (em)
+samp (em)
 22:25 Tokuno (NRT)
 23 Codus (SOF)
 `;
@@ -243,7 +243,7 @@ const productionFuzzyDateCandidates = extractGlobalFlightDateTimeCandidates(
 assert.deepEqual(
   productionFuzzyDateCandidates,
   ["Mar 25 12:30", "Apr 8 22:25"],
-  "production OCR variants map, amp, an and em should normalize without treating ordinary map text as a month"
+  "production OCR variants map, samp, an and em should normalize without treating ordinary map text as a month"
 );
 const productionFuzzyDateEnriched = enrichFlightOfferLevelDateTimes(
   productionFuzzyBulgarianMonthDateOcr,
