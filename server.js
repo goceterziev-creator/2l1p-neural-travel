@@ -2562,10 +2562,13 @@ function extractConnectingFlightTimeline(rawText = "") {
 
 function normalizeLocalizedFlightTimelineText(rawText = "") {
   const separated = String(rawText || "")
-    .replace(/(\d)(?=(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept|avg|abr|abg|juli|yuli|juni|yuni|mai)\b)/gi, "$1 ")
-    .replace(/\b(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept|avg|abr|abg|juli|yuli|juni|yuni|mai)(?=\d)/gi, "$& ");
+    .replace(/(\d)(?=(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept|avg|abr|abg|juli|yuli|juni|yuni|mai|mart|mar|mapr|mapt|april|apr|anp|anpr)\b)/gi, "$1 ")
+    .replace(/\b(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept|avg|abr|abg|juli|yuli|juni|yuni|mai|mart|mar|mapr|mapt|april|apr|anp|anpr)(?=\d)/gi, "$& ");
   const replacements = [
     [/\(\s*(?:\u043f\u043d|\u0432\u0442|\u0441\u0440|\u0447\u0442|\u043f\u0442|\u0441\u0431|\u043d\u0434)\.?\s*\)/gi, ""],
+    [/\(\s*(?:chet|cht|ur|un|ut)\.?\s*\)/gi, ""],
+    [/\b(?:mart|mar|mapr|mapt)\b\.?/gi, "Mar"],
+    [/\b(?:april|apr|anp|anpr|anp\u0438\u043b)\b\.?/gi, "Apr"],
     [/(?:\u043f\u043d|\u043f\u043e\u043d\u0435\u0434\u0435\u043b\u043d\u0438\u043a)\.?(?=\s|,|$)/gi, "Mon"],
     [/(?:\u0432\u0442|\u0432\u0442\u043e\u0440\u043d\u0438\u043a)\.?(?=\s|,|$)/gi, "Tue"],
     [/(?:\u0441\u0440|\u0441\u0440\u044f\u0434\u0430)\.?(?=\s|,|$)/gi, "Wed"],

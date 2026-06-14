@@ -191,4 +191,41 @@ assert.ok(
   "day + localized month + time must pass date confidence without a year"
 );
 
+const fuzzyBulgarianMonthDateOcr = `
+25 mapr (ur)
+12:30 Coduma (SOF)
+11:55 Tomo (NRT)
+
+8 anp (ur)
+22:25 Tokuno (NRT)
+23 Codus (SOF)
+`;
+const fuzzyBulgarianDateCandidates = extractGlobalFlightDateTimeCandidates(fuzzyBulgarianMonthDateOcr);
+assert.deepEqual(
+  fuzzyBulgarianDateCandidates,
+  ["Mar 25 12:30", "Apr 8 22:25"],
+  "OCR-deformed Bulgarian month tokens should produce global date candidates"
+);
+const fuzzyBulgarianDateEnriched = enrichFlightOfferLevelDateTimes(
+  fuzzyBulgarianMonthDateOcr,
+  { airline: "Airline", route: "SOF -> NRT / NRT -> SOF", departure: "", arrival: "", price: 100 },
+  { missingFields: ["flight.times"] }
+);
+assert.match(fuzzyBulgarianDateEnriched.flight.departure, /Mar 25 12:30/);
+assert.match(fuzzyBulgarianDateEnriched.flight.arrival, /Apr 8 22:25/);
+assert.ok(!fuzzyBulgarianDateEnriched.metadata.missingFields.includes("flight.times"));
+assert.ok(
+  buildFlightOcrConfidence(
+    fuzzyBulgarianMonthDateOcr,
+    fuzzyBulgarianDateEnriched.flight,
+    fuzzyBulgarianDateEnriched.metadata
+  ).outboundDate.confidence >= 0.8,
+  "OCR-deformed day + month + time must pass date confidence without inventing a missing time"
+);
+assert.deepEqual(
+  getFlightCoreBlockingReasons(fuzzyBulgarianDateEnriched.flight, 100),
+  [],
+  "OCR-deformed Bulgarian dates must not hard-stop an otherwise complete flight"
+);
+
 console.log("V10 FLIGHT OCR REGRESSION PASS");
