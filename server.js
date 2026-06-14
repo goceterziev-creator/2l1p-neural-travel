@@ -2392,7 +2392,6 @@ function traceFlightOcrDecision(rawText = "", flight = {}, flightConfidence = {}
 
   const source = String(metadata.source || detectOcrSource(rawText, "flight"));
   const screenshotProfile = buildBookingAndroidFlightProfileTrace(rawText);
-  if (!/booking|connecting/i.test(source) && !screenshotProfile.detected) return;
 
   const selectedFlightPrice = Number(flight.price || 0);
   const missingFields = safeArray(metadata.missingFields);
@@ -5843,6 +5842,8 @@ if (
   flight.notes = "Mixed-carrier Rome route normalized from screenshot. Confirm flight times, baggage, seats and fare rules before booking.";
 }
 
+const genericDateTimeEnrichment = enrichFlightOfferLevelDateTimes(text, flight, {});
+flight = genericDateTimeEnrichment.flight;
 flight = validateFlightAgainstDestination(flight, text, req.body?.destination || "");
 
 console.log("FLIGHT IMPORT RESPONSE:", {
@@ -5851,6 +5852,7 @@ console.log("FLIGHT IMPORT RESPONSE:", {
   flightPrice: Number(flight.price || 0)
 });
 const flightConfidence = buildFlightOcrConfidence(text, flight);
+traceFlightOcrDecision(text, flight, flightConfidence, genericDateTimeEnrichment.metadata);
 
 return res.json({
   success: true,
