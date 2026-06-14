@@ -9,7 +9,8 @@ const {
   enrichFlightOfferLevelDateTimes,
   extractGlobalFlightDateTimeCandidates,
   getFlightCoreBlockingReasons,
-  inferConnectingAirline
+  inferConnectingAirline,
+  buildFlightOcrConfidence
 } = require("../server");
 
 const fuzzyFlightOcr = `
@@ -158,6 +159,36 @@ assert.deepEqual(
     "Missing or invalid flight.price."
   ],
   "missing core fields must block import"
+);
+
+const bulgarianMonthDateOcr = `
+25 \u043c\u0430\u0440\u0442 (\u0447\u0442)
+12:30 \u0421\u043e\u0444\u0438\u044f (SOF)
+
+8 \u0430\u043f\u0440 (\u0447\u0442)
+22:25 \u0422\u043e\u043a\u0438\u043e (NRT)
+`;
+const bulgarianDateCandidates = extractGlobalFlightDateTimeCandidates(bulgarianMonthDateOcr);
+assert.deepEqual(
+  bulgarianDateCandidates,
+  ["Mar 25 12:30", "Apr 8 22:25"],
+  "Bulgarian full and abbreviated month formats should produce global date candidates"
+);
+const bulgarianDateEnriched = enrichFlightOfferLevelDateTimes(
+  bulgarianMonthDateOcr,
+  { airline: "Airline", route: "SOF -> NRT", departure: "", arrival: "", price: 100 },
+  { missingFields: ["flight.times"] }
+);
+assert.match(bulgarianDateEnriched.flight.departure, /Mar 25 12:30/);
+assert.match(bulgarianDateEnriched.flight.arrival, /Apr 8 22:25/);
+assert.ok(!bulgarianDateEnriched.metadata.missingFields.includes("flight.times"));
+assert.ok(
+  buildFlightOcrConfidence(
+    bulgarianMonthDateOcr,
+    bulgarianDateEnriched.flight,
+    bulgarianDateEnriched.metadata
+  ).outboundDate.confidence >= 0.8,
+  "day + localized month + time must pass date confidence without a year"
 );
 
 console.log("V10 FLIGHT OCR REGRESSION PASS");

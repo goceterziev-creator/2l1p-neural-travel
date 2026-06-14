@@ -2565,6 +2565,26 @@ function normalizeLocalizedFlightTimelineText(rawText = "") {
     .replace(/(\d)(?=(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept|avg|abr|abg|juli|yuli|juni|yuni|mai)\b)/gi, "$1 ")
     .replace(/\b(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept|avg|abr|abg|juli|yuli|juni|yuni|mai)(?=\d)/gi, "$& ");
   const replacements = [
+    [/\(\s*(?:\u043f\u043d|\u0432\u0442|\u0441\u0440|\u0447\u0442|\u043f\u0442|\u0441\u0431|\u043d\u0434)\.?\s*\)/gi, ""],
+    [/(?:\u043f\u043d|\u043f\u043e\u043d\u0435\u0434\u0435\u043b\u043d\u0438\u043a)\.?(?=\s|,|$)/gi, "Mon"],
+    [/(?:\u0432\u0442|\u0432\u0442\u043e\u0440\u043d\u0438\u043a)\.?(?=\s|,|$)/gi, "Tue"],
+    [/(?:\u0441\u0440|\u0441\u0440\u044f\u0434\u0430)\.?(?=\s|,|$)/gi, "Wed"],
+    [/(?:\u0447\u0442|\u0447\u0435\u0442\u0432\u044a\u0440\u0442\u044a\u043a)\.?(?=\s|,|$)/gi, "Thu"],
+    [/(?:\u043f\u0442|\u043f\u0435\u0442\u044a\u043a)\.?(?=\s|,|$)/gi, "Fri"],
+    [/(?:\u0441\u0431|\u0441\u044a\u0431\u043e\u0442\u0430)\.?(?=\s|,|$)/gi, "Sat"],
+    [/(?:\u043d\u0434|\u043d\u0435\u0434\u0435\u043b\u044f)\.?(?=\s|,|$)/gi, "Sun"],
+    [/(?:\u044f\u043d\u0443\u0430\u0440\u0438|\u044f\u043d)\.?(?=\s|,|$)/gi, "Jan"],
+    [/(?:\u0444\u0435\u0432\u0440\u0443\u0430\u0440\u0438|\u0444\u0435\u0432)\.?(?=\s|,|$)/gi, "Feb"],
+    [/(?:\u043c\u0430\u0440\u0442|\u043c\u0430\u0440)\.?(?=\s|,|$)/gi, "Mar"],
+    [/(?:\u0430\u043f\u0440\u0438\u043b|\u0430\u043f\u0440)\.?(?=\s|,|$)/gi, "Apr"],
+    [/\u043c\u0430\u0439\.?(?=\s|,|$)/gi, "May"],
+    [/\u044e\u043d\u0438\.?(?=\s|,|$)/gi, "Jun"],
+    [/\u044e\u043b\u0438\.?(?=\s|,|$)/gi, "Jul"],
+    [/(?:\u0430\u0432\u0433\u0443\u0441\u0442|\u0430\u0432\u0433)\.?(?=\s|,|$)/gi, "Aug"],
+    [/(?:\u0441\u0435\u043f\u0442\u0435\u043c\u0432\u0440\u0438|\u0441\u0435\u043f)\.?(?=\s|,|$)/gi, "Sep"],
+    [/(?:\u043e\u043a\u0442\u043e\u043c\u0432\u0440\u0438|\u043e\u043a\u0442)\.?(?=\s|,|$)/gi, "Oct"],
+    [/(?:\u043d\u043e\u0435\u043c\u0432\u0440\u0438|\u043d\u043e\u0435)\.?(?=\s|,|$)/gi, "Nov"],
+    [/(?:\u0434\u0435\u043a\u0435\u043c\u0432\u0440\u0438|\u0434\u0435\u043a)\.?(?=\s|,|$)/gi, "Dec"],
     [/(?:пон|понеделник)\.?(?=\s|,|$)/gi, "Mon"],
     [/(?:вт|втор|вторник)\.?(?=\s|,|$)/gi, "Tue"],
     [/(?:ср|сряда)\.?(?=\s|,|$)/gi, "Wed"],
@@ -5933,5 +5953,6 @@ module.exports = {
   extractGlobalFlightDateTimeCandidates,
   extractPreferredRoundTripStopSummary,
   getFlightCoreBlockingReasons,
-  inferConnectingAirline
+  inferConnectingAirline,
+  buildFlightOcrConfidence
 };
