@@ -230,11 +230,11 @@ assert.deepEqual(
 
 const productionFuzzyBulgarianMonthDateOcr = `
 25 map (an)
-12:30 Coduma (SOF)
++ 12:30 Coduma (SOF)
 11:55 Tomo (NRT)
 
 samp (em)
-22:25 Tokuno (NRT)
+» 22:25 Tokuno (NRT)
 23 Codus (SOF)
 `;
 const productionFuzzyDateCandidates = extractGlobalFlightDateTimeCandidates(

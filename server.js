@@ -2632,6 +2632,10 @@ function normalizeLocalizedFlightTimelineText(rawText = "") {
       /\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/gi,
       "$2 $1"
     )
+    .replace(
+      /\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,?\s+20\d{2})?)\s*[+«»=£®¥$]+\s*(\d{1,2}:\d{2})\b/gi,
+      "$1 $2"
+    )
     .replace(/\s*[·•]\s*/g, " · ");
 }
 
