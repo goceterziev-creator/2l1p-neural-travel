@@ -5498,11 +5498,26 @@ if (tokyoFlight) {
     extractLabeledFlightPrice(text || "") ||
     extractFlightPriceFromText(text || "") ||
     Number(tokyoFlight.price || 0);
-  const flight = {
-    ...tokyoFlight,
-    price: flightPrice
-  };
+  const enrichedImport = enrichFlightOfferLevelDateTimes(
+    text,
+    { ...tokyoFlight, price: flightPrice },
+    {}
+  );
+  const flight = validateFlightAgainstDestination(
+    enrichedImport.flight,
+    text,
+    req.body?.destination || ""
+  );
   const flightConfidence = buildFlightOcrConfidence(text, flight);
+  traceFlightOcrDecision(text, flight, flightConfidence, enrichedImport.metadata);
+  console.log("FLIGHT IMPORT RESPONSE:", {
+    flightAirline: flight.airline,
+    flightRoute: flight.route,
+    flightDeparture: flight.departure,
+    flightArrival: flight.arrival,
+    flightPrice,
+    requiresOperatorReview: flightConfidence.risk.requiresOperatorReview
+  });
 
   return res.json({
     success: true,
@@ -5510,12 +5525,12 @@ if (tokyoFlight) {
     flightPrice,
     price: flightPrice,
     extractedPrice: flightPrice,
-    flightAirline: tokyoFlight.airline,
-    flightRoute: tokyoFlight.route,
-    flightDeparture: tokyoFlight.departure,
-    flightArrival: tokyoFlight.arrival,
-    flightBaggage: tokyoFlight.baggage,
-    flightNotes: tokyoFlight.notes,
+    flightAirline: flight.airline,
+    flightRoute: flight.route,
+    flightDeparture: flight.departure,
+    flightArrival: flight.arrival,
+    flightBaggage: flight.baggage,
+    flightNotes: flight.notes,
     flight,
     hotel: {},
     flightConfidence,
@@ -5529,10 +5544,19 @@ const forcedFlight = normalizeFlightFromDestination(req.body?.destination, text)
 if (forcedFlight) {
   const flightPrice = Number(forcedFlight.price || extractFlightPriceFromText(cleanText) || 0);
   forcedFlight.price = flightPrice;
-  const flightConfidence = buildFlightOcrConfidence(text, forcedFlight);
+  const enrichedImport = enrichFlightOfferLevelDateTimes(text, forcedFlight, {});
+  const flight = validateFlightAgainstDestination(
+    enrichedImport.flight,
+    text,
+    req.body?.destination || ""
+  );
+  const flightConfidence = buildFlightOcrConfidence(text, flight);
+  traceFlightOcrDecision(text, flight, flightConfidence, enrichedImport.metadata);
   console.log("FLIGHT IMPORT RESPONSE:", {
-    flightAirline: forcedFlight.airline,
-    flightRoute: forcedFlight.route,
+    flightAirline: flight.airline,
+    flightRoute: flight.route,
+    flightDeparture: flight.departure,
+    flightArrival: flight.arrival,
     flightPrice,
     requiresOperatorReview: flightConfidence.risk.requiresOperatorReview
   });
@@ -5541,13 +5565,13 @@ if (forcedFlight) {
     success: true,
     rawText: text,
     flightPrice,
-    flightAirline: forcedFlight.airline,
-    flightRoute: forcedFlight.route,
-    flightDeparture: forcedFlight.departure,
-    flightArrival: forcedFlight.arrival,
-    flightBaggage: forcedFlight.baggage,
-    flightNotes: forcedFlight.notes,
-    flight: forcedFlight,
+    flightAirline: flight.airline,
+    flightRoute: flight.route,
+    flightDeparture: flight.departure,
+    flightArrival: flight.arrival,
+    flightBaggage: flight.baggage,
+    flightNotes: flight.notes,
+    flight,
     hotel: {},
     flightConfidence,
     risk: flightConfidence.risk,
