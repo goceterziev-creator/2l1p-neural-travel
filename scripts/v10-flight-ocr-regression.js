@@ -5,11 +5,14 @@ process.env.DB_FILE = process.env.DB_FILE || "storage/generated/V10_FLIGHT_OCR_T
 const {
   buildBookingAndroidFlightProfileTrace,
   cleanupFlightDateTimeDisplay,
+  detectGenericConnectingFlight,
   enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
+  extractFlightPriceFromText,
   extractGlobalFlightDateTimeCandidates,
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
+  parseConnectingFlightCheckout,
   buildFlightOcrConfidence
 } = require("../server");
 
@@ -257,5 +260,39 @@ assert.deepEqual(
   [],
   "production fuzzy date variants must not hard-stop an otherwise complete flight"
 );
+
+const globalConnectingFlightOcr = `
+X Flight details
+1 Jul Sofia > New York
+11:05 Sofia Airport (SOF)
+13:15 Zurich Airport (ZRH)
+Flight duration: 2h 20min Flight number: LX 1391
+Class: Economy Airline: SWISS
+1 Jul
+12:25 Zurich Airport (ZRH)
+16:35 John F. Kennedy (JFK)
+Flight duration: 9h 20min Flight number: LX 14
+Class: Economy Airline: SWISS
+New York > Sofia
+8 Jul
+16:15 John F. Kennedy (JFK)
+06:10 Zurich Airport (ZRH)
+8 Jul
+07:05 Zurich Airport (ZRH)
+10:20 Sofia Airport (SOF)
+Passengers €286.71
+Taxes and fees €502.12
+Total: €788.83
+`;
+const globalConnectingFlight = detectGenericConnectingFlight(globalConnectingFlightOcr);
+assert.equal(globalConnectingFlight.airline, "SWISS");
+assert.equal(globalConnectingFlight.route, "SOF -> JFK / JFK -> SOF");
+assert.match(globalConnectingFlight.departure, /via ZRH/i);
+assert.match(globalConnectingFlight.arrival, /via ZRH/i);
+assert.equal(extractFlightPriceFromText(globalConnectingFlightOcr), 788.83);
+const globalConnectingParsed = parseConnectingFlightCheckout(globalConnectingFlightOcr);
+assert.equal(globalConnectingParsed.flight.price, 788.83);
+assert.equal(globalConnectingParsed.flight.route, "SOF -> JFK / JFK -> SOF");
+assert.equal(globalConnectingParsed.metadata.missingFields.length, 0);
 
 console.log("V10 FLIGHT OCR REGRESSION PASS");

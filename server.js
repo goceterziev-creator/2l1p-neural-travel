@@ -2559,6 +2559,38 @@ function extractConnectingFlightTimeline(rawText = "") {
   return timeline;
 }
 
+function extractVisibleAirportRowTimeline(rawText = "") {
+  const normalized = normalizeLocalizedFlightTimelineText(String(rawText || ""))
+    .replace(/\r/g, "");
+  const timeline = [];
+  let currentDate = "";
+
+  normalized.split(/\n+/).forEach((rawLine) => {
+    const line = String(rawLine || "").replace(/\s+/g, " ").trim();
+    if (!line) return;
+
+    const dateMatch = line.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i) ||
+      line.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+    if (dateMatch) {
+      currentDate = /^[A-Za-z]/.test(dateMatch[1])
+        ? `${dateMatch[1]} ${dateMatch[2]}`
+        : `${dateMatch[2]} ${dateMatch[1]}`;
+    }
+
+    const eventMatch = line.match(/\b(\d{1,2}:\d{2})\b.{0,100}\(([A-Z0-9]{3})\)/i);
+    if (!eventMatch || !currentDate) return;
+    const code = String(eventMatch[2] || "").toUpperCase().replace("0", "O");
+    if (!isPlausibleIataCode(code)) return;
+    const event = { when: `${currentDate} ${eventMatch[1]}`, code };
+    const previous = timeline[timeline.length - 1];
+    if (!previous || previous.when !== event.when || previous.code !== event.code) {
+      timeline.push(event);
+    }
+  });
+
+  return timeline;
+}
+
 function normalizeLocalizedFlightTimelineText(rawText = "") {
   const separated = String(rawText || "")
     .replace(/(\d)(?=(?:cent|cemt|cenn|ceht|cenr|cem|cen|sept|avg|abr|abg|juli|yuli|juni|yuni|mai|mart|mar|mapr|mapt|map|april|apr|anp|anpr|amp)\b)/gi, "$1 ")
@@ -2812,6 +2844,68 @@ function preferredConnectingTimeline(rawText = "") {
     : sortConnectingTimelineChronologically(extractConnectingFlightTimeline(rawText));
 }
 
+function inferRoundTripTimelineEndpoints(timeline = []) {
+  const events = safeArray(timeline).filter((event) => event?.code && event?.when);
+  const codes = events.map((event) => String(event.code || "").toUpperCase());
+  if (codes.length < 4) return null;
+
+  const origin = codes[0];
+  const inboundEndIndex = codes.lastIndexOf(origin);
+  if (!origin || inboundEndIndex < 3) return null;
+
+  const destinationCandidates = uniqueAirportCodes(codes.slice(1, inboundEndIndex))
+    .map((code) => {
+      const firstIndex = codes.indexOf(code, 1);
+      const lastIndex = codes.lastIndexOf(code, inboundEndIndex - 1);
+      if (firstIndex < 1 || lastIndex <= firstIndex) return null;
+      return {
+        code,
+        firstIndex,
+        lastIndex,
+        score: firstIndex + (inboundEndIndex - lastIndex)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || a.firstIndex - b.firstIndex);
+
+  const destination = destinationCandidates[0];
+  if (!destination) return null;
+
+  return {
+    origin,
+    destination: destination.code,
+    outboundStartIndex: 0,
+    outboundEndIndex: destination.firstIndex,
+    inboundStartIndex: destination.lastIndex,
+    inboundEndIndex
+  };
+}
+
+function preferredGlobalConnectingTimeline(rawText = "") {
+  const parts = String(rawText || "").split(/--- ENHANCED OCR ---/i);
+  const candidates = parts
+    .flatMap((text, index) => [
+      {
+        index: index * 2,
+        timeline: sortConnectingTimelineChronologically(extractConnectingFlightTimeline(text))
+      },
+      {
+        index: index * 2 + 1,
+        // Visible itinerary rows already follow travel order. Sorting them by
+        // incomplete dates can move overnight connection rows before departure.
+        timeline: extractVisibleAirportRowTimeline(text)
+      }
+    ])
+    .map((candidate) => ({
+      ...candidate,
+      endpoints: inferRoundTripTimelineEndpoints(candidate.timeline)
+    }))
+    .filter((candidate) => candidate.endpoints)
+    .sort((a, b) => b.timeline.length - a.timeline.length || b.index - a.index);
+
+  return candidates[0] || null;
+}
+
 function cleanFlightAirlineLabel(value = "") {
   const seen = new Set();
   return String(value || "")
@@ -2831,10 +2925,12 @@ function cleanFlightAirlineLabel(value = "") {
 }
 
 function extractVisibleAirlineLabels(rawText = "") {
-  const candidates = String(rawText || "").match(
+  const visibleLabels = String(rawText || "").match(
     /\b(?:[\p{L}][\p{L}&.'-]*\s+){0,3}(?:Airlines|Airways|Air)\b/giu
   ) || [];
-  return candidates
+  const labeledValues = [...String(rawText || "").matchAll(/\bAirline\s*:\s*([^\r\n|]{2,60})/giu)]
+    .map((match) => String(match[1] || "").replace(/\b(?:Class|Flight|Duration|Number)\s*:.*$/i, "").trim());
+  return [...visibleLabels, ...labeledValues]
     .map(cleanFlightAirlineLabel)
     .filter((label) =>
       label &&
@@ -2885,16 +2981,19 @@ function extractFlightBaggageSummary(rawText = "") {
 }
 
 function detectGenericConnectingFlight(rawText = "", destination = "") {
-  const destinationAirport = resolveDestinationAirport(rawText, destination);
-  if (!destinationAirport?.code || destinationAirport.code === "SOF") return null;
+  const preferred = preferredGlobalConnectingTimeline(rawText);
+  const timeline = preferred?.timeline || [];
+  const inferred = preferred?.endpoints;
+  if (!inferred) return null;
 
-  const timeline = sortConnectingTimelineChronologically(extractConnectingFlightTimeline(rawText));
-  const destinationCode = destinationAirport.code;
-  const outboundStartIndex = timeline.findIndex((item) => item.code === "SOF");
-  const outboundEndIndex = timeline.findIndex((item, index) => index > outboundStartIndex && item.code === destinationCode);
-  const inboundStartIndex = timeline.findIndex((item, index) => index > outboundEndIndex && item.code === destinationCode);
-  const inboundEndIndex = timeline.map((item) => item.code).lastIndexOf("SOF");
-  if (outboundStartIndex < 0 || outboundEndIndex < 0 || inboundStartIndex < 0 || inboundEndIndex <= inboundStartIndex) return null;
+  const {
+    origin,
+    destination: destinationCode,
+    outboundStartIndex,
+    outboundEndIndex,
+    inboundStartIndex,
+    inboundEndIndex
+  } = inferred;
 
   const outboundStart = timeline[outboundStartIndex];
   const outboundEnd = timeline[outboundEndIndex];
@@ -2903,12 +3002,12 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
   const outboundStops = uniqueAirportCodes(
     timeline.slice(outboundStartIndex + 1, outboundEndIndex)
       .map((item) => item.code)
-      .filter((code) => !["SOF", destinationCode].includes(code))
+      .filter((code) => ![origin, destinationCode].includes(code))
   );
   const inboundStops = uniqueAirportCodes(
     timeline.slice(inboundStartIndex + 1, inboundEndIndex)
       .map((item) => item.code)
-      .filter((code) => !["SOF", destinationCode].includes(code))
+      .filter((code) => ![origin, destinationCode].includes(code))
   );
   const outboundVia = outboundStops.length ? `, via ${outboundStops.join(" + ")}` : "";
   const inboundVia = inboundStops.length ? `, via ${inboundStops.join(" + ")}` : "";
@@ -2921,9 +3020,9 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
 
   return {
     airline: inferConnectingAirline(rawText),
-    route: `SOF -> ${destinationCode} / ${destinationCode} -> SOF`,
-    departure: `SOF -> ${destinationCode}, ${outboundStart.when} - ${outboundEnd.when}${outboundVia}`,
-    arrival: `${destinationCode} -> SOF, ${inboundStart.when} - ${inboundEnd.when}${inboundVia}`,
+    route: `${origin} -> ${destinationCode} / ${destinationCode} -> ${origin}`,
+    departure: `${origin} -> ${destinationCode}, ${outboundStart.when} - ${outboundEnd.when}${outboundVia}`,
+    arrival: `${destinationCode} -> ${origin}, ${inboundStart.when} - ${inboundEnd.when}${inboundVia}`,
     baggage: extractFlightBaggageSummary(rawText),
     notes: [
       extractPassengerSummary(rawText),
@@ -2989,7 +3088,7 @@ function detectTokyoConnectingFlight(rawText = "") {
 function parseConnectingFlightCheckout(rawText = "", { destination = "" } = {}) {
   const compact = ocrCompactText(rawText);
   const tokyoFlight = detectTokyoConnectingFlight(rawText);
-  const connectingFlight = tokyoFlight || detectGenericConnectingFlight(rawText, destination);
+  const connectingFlight = detectGenericConnectingFlight(rawText, destination) || tokyoFlight;
   if (connectingFlight) {
     const price =
       extractBookingFlightTotalPrice(rawText) ||
@@ -5984,11 +6083,14 @@ if (require.main === module) app.listen(PORT, () => {
 module.exports = {
   buildBookingAndroidFlightProfileTrace,
   cleanupFlightDateTimeDisplay,
+  detectGenericConnectingFlight,
   enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
+  extractFlightPriceFromText,
   extractGlobalFlightDateTimeCandidates,
   extractPreferredRoundTripStopSummary,
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
+  parseConnectingFlightCheckout,
   buildFlightOcrConfidence
 };
