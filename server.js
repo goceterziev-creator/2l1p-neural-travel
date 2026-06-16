@@ -65,35 +65,98 @@ function readDb() {
 
   try {
     const raw = fs.readFileSync(DB_FILE, "utf8");
-    const db = JSON.parse(raw || "{}");
-
-    if (!Array.isArray(db.users)) db.users = [];
-
-    if (!Array.isArray(db.offers)) {
-      db.offers = [];
-    }
-
-    return db;
+    return normalizeDbSnapshot(JSON.parse(raw || "{}"));
   } catch (err) {
     console.error("DB READ ERROR:", err);
-    return { users: [], offers: [] };
+    const recovered = recoverDbSnapshot();
+    if (recovered) return recovered;
+    throw err;
   }
 }
+
+function normalizeDbSnapshot(db) {
+  if (!db || typeof db !== "object" || Array.isArray(db)) {
+    throw new Error("Invalid database snapshot");
+  }
+  if (!Array.isArray(db.users)) db.users = [];
+  if (!Array.isArray(db.offers)) db.offers = [];
+  return db;
+}
+
+function readDbSnapshotFile(file) {
+  const raw = fs.readFileSync(file, "utf8");
+  return normalizeDbSnapshot(JSON.parse(raw || "{}"));
+}
+
+function recoverDbSnapshot() {
+  const candidates = [`${DB_FILE}.bak`, `${DB_FILE}.backup`];
+  const backupDir = path.join(path.dirname(DB_DIR), "BACKUPS");
+
+  try {
+    if (fs.existsSync(backupDir)) {
+      const backups = fs.readdirSync(backupDir)
+        .filter((name) => name.toLowerCase().endsWith(".json"))
+        .map((name) => path.join(backupDir, name))
+        .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+      candidates.push(...backups);
+    }
+  } catch (err) {
+    console.warn("DB backup scan skipped:", err.message);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      const recovered = readDbSnapshotFile(candidate);
+      console.warn(`DB recovery using backup: ${candidate}`);
+      return recovered;
+    } catch (err) {
+      console.warn(`DB recovery candidate failed: ${candidate}`, err.message);
+    }
+  }
+
+  return null;
+}
+
 function writeDb(db) {
   ensureDb();
   const payload = JSON.stringify(db, null, 2);
   const tmp = `${DB_FILE}.${process.pid}.tmp`;
 
   try {
+    JSON.parse(payload);
     if (fs.existsSync(DB_FILE)) fs.copyFileSync(DB_FILE, `${DB_FILE}.bak`);
     fs.writeFileSync(tmp, payload, "utf8");
+    readDbSnapshotFile(tmp);
     fs.renameSync(tmp, DB_FILE);
   } catch (err) {
     try {
       if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
     } catch {}
-    fs.writeFileSync(DB_FILE, payload, "utf8");
+    console.error("DB WRITE ERROR:", err);
+    throw err;
   }
+}
+
+let mutationQueue = Promise.resolve();
+
+function mutateDb(mutationFn) {
+  const job = mutationQueue.then(() => {
+    const db = readDb();
+    const nextDb = mutationFn(db) || db;
+    writeDb(nextDb);
+    return nextDb;
+  });
+
+  mutationQueue = job.catch(() => {});
+  return job;
+}
+
+function routeError(message, status = 500, details = null) {
+  const err = new Error(message);
+  err.status = status;
+  err.details = details;
+  return err;
 }
 
 function getUserId(req) {
@@ -4901,8 +4964,7 @@ app.use("/api", (req, res, next) => {
   return requireAuthApi(req, res, next);
 });
 
-app.post("/api/admin/reset-password", requireCapability("users.manage"), (req, res) => {
-  const db = readDb();
+app.post("/api/admin/reset-password", requireCapability("users.manage"), async (req, res) => {
   const email = String(req.body?.email || "").trim().toLowerCase();
   const userId = String(req.body?.userId || "").trim();
   const temporaryPassword = String(req.body?.temporaryPassword || req.body?.password || "");
@@ -4911,34 +4973,41 @@ app.post("/api/admin/reset-password", requireCapability("users.manage"), (req, r
     return res.status(400).json({ error: "Temporary password must be at least 8 characters" });
   }
 
-  const target = scopeUsers(db, req).find((user) =>
-    (userId && user.id === userId) ||
-    (email && String(user.email || "").toLowerCase() === email)
-  );
-  if (!target) return res.status(404).json({ error: "User not found in current agency scope" });
+  try {
+    let response;
+    await mutateDb((db) => {
+      const target = scopeUsers(db, req).find((user) =>
+        (userId && user.id === userId) ||
+        (email && String(user.email || "").toLowerCase() === email)
+      );
+      if (!target) throw routeError("User not found in current agency scope", 404);
 
-  target.passwordHash = hashPassword(temporaryPassword);
-  target.passwordResetRequired = true;
-  target.sessionVersion = getUserSessionVersion(target) + 1;
-  target.updatedAt = new Date().toISOString();
-  appendAuditEvent(db, req, {
-    type: "admin_password_reset",
-    category: "auth",
-    entityType: "user",
-    entityId: target.id,
-    metadata: {
-      email: target.email || "",
-      resetBy: req.user.id,
-      sessionVersion: target.sessionVersion
-    }
-  });
-  writeDb(db);
-
-  res.json({
-    success: true,
-    user: publicUser(target),
-    passwordResetRequired: true
-  });
+      target.passwordHash = hashPassword(temporaryPassword);
+      target.passwordResetRequired = true;
+      target.sessionVersion = getUserSessionVersion(target) + 1;
+      target.updatedAt = new Date().toISOString();
+      appendAuditEvent(db, req, {
+        type: "admin_password_reset",
+        category: "auth",
+        entityType: "user",
+        entityId: target.id,
+        metadata: {
+          email: target.email || "",
+          resetBy: req.user.id,
+          sessionVersion: target.sessionVersion
+        }
+      });
+      response = {
+        success: true,
+        user: publicUser(target),
+        passwordResetRequired: true
+      };
+      return db;
+    });
+    res.json(response);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || "Password reset failed", details: err.details || null });
+  }
 });
 
 app.get("/api/health", (req, res) => {
@@ -5006,34 +5075,37 @@ app.get("/api/agency/invites", requireCapability("users.manage"), (req, res) => 
   res.json({ invites: scopeInvites(db, req).map(publicInvite) });
 });
 
-app.post("/api/agency/invites", requireCapability("users.manage"), requireSubscriptionFeature("invites"), (req, res) => {
+app.post("/api/agency/invites", requireCapability("users.manage"), requireSubscriptionFeature("invites"), async (req, res) => {
   try {
-    const db = readDb();
-    if (!Array.isArray(db.invites)) db.invites = [];
-    assertSeatAvailable(db, req);
-    const existingUser = safeArray(db.users).find((user) =>
-      entityAgencyId(user) === getCurrentAgencyId(req) &&
-      String(user.email || "").toLowerCase() === String(req.body?.email || "").trim().toLowerCase()
-    );
-    if (existingUser) return res.status(409).json({ error: "User already exists in this agency" });
+    let response;
+    await mutateDb((db) => {
+      if (!Array.isArray(db.invites)) db.invites = [];
+      assertSeatAvailable(db, req);
+      const existingUser = safeArray(db.users).find((user) =>
+        entityAgencyId(user) === getCurrentAgencyId(req) &&
+        String(user.email || "").toLowerCase() === String(req.body?.email || "").trim().toLowerCase()
+      );
+      if (existingUser) throw routeError("User already exists in this agency", 409);
 
-    const { invite, token } = createAgencyInvite(req, {
-      email: req.body?.email,
-      role: req.body?.role
+      const { invite, token } = createAgencyInvite(req, {
+        email: req.body?.email,
+        role: req.body?.role
+      });
+      db.invites.unshift(invite);
+      appendAuditEvent(db, req, {
+        type: "agency_invite_created",
+        category: "auth",
+        entityType: "invite",
+        entityId: invite.id,
+        metadata: {
+          email: invite.email,
+          role: invite.role
+        }
+      });
+      response = { success: true, invite: publicInvite(invite), token };
+      return db;
     });
-    db.invites.unshift(invite);
-    appendAuditEvent(db, req, {
-      type: "agency_invite_created",
-      category: "auth",
-      entityType: "invite",
-      entityId: invite.id,
-      metadata: {
-        email: invite.email,
-        role: invite.role
-      }
-    });
-    writeDb(db);
-    res.status(201).json({ success: true, invite: publicInvite(invite), token });
+    res.status(201).json(response);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message || "Invite failed", details: err.details || null });
   }
@@ -5071,159 +5143,196 @@ app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
   res.json({ offer });
 });
 
-app.post("/api/offers", requireCapability("offers.create"), (req, res) => {
-  const db = readDb();
-  const offer = normalizeOffer(req.body);
-  offer.agencyId = getCurrentAgencyId(req);
-  offer.createdBy = req.user.id;
-  offer.ownerName = req.user.name;
-  db.offers.unshift(offer);
-  appendAuditEvent(db, req, {
-    type: "offer_created",
-    category: "offer",
-    entityType: "offer",
-    entityId: offer.id,
-    offerId: offer.id,
-    clientId: offer.clientId || null,
-    metadata: {
-      destination: offer.destination || "",
-      status: offer.status || "draft"
-    }
-  });
-  writeDb(db);
-
-  res.json({
-    success: true,
-    offer,
-    clientLink: `${LIVE_BASE_URL}/api/offers/view/${offer.id}`,
-    publicLink: `${LIVE_BASE_URL}/offer/${offer.id}`,
-    pdfLink: `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`
-  });
+app.post("/api/offers", requireCapability("offers.create"), async (req, res) => {
+  try {
+    let response;
+    await mutateDb((db) => {
+      const offer = normalizeOffer(req.body);
+      offer.agencyId = getCurrentAgencyId(req);
+      offer.createdBy = req.user.id;
+      offer.ownerName = req.user.name;
+      db.offers.unshift(offer);
+      appendAuditEvent(db, req, {
+        type: "offer_created",
+        category: "offer",
+        entityType: "offer",
+        entityId: offer.id,
+        offerId: offer.id,
+        clientId: offer.clientId || null,
+        metadata: {
+          destination: offer.destination || "",
+          status: offer.status || "draft"
+        }
+      });
+      response = {
+        success: true,
+        offer,
+        clientLink: `${LIVE_BASE_URL}/api/offers/view/${offer.id}`,
+        publicLink: `${LIVE_BASE_URL}/offer/${offer.id}`,
+        pdfLink: `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`
+      };
+      return db;
+    });
+    res.json(response);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || "Offer create failed", details: err.details || null });
+  }
 });
 
-app.put("/api/offers/:id", requireCapability("offers.update"), (req, res) => {
-  const db = readDb();
-  const index = db.offers.findIndex((o) => o.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Offer not found" });
-  if (!canAccessOffer(req, db.offers[index])) return res.status(403).json({ error: "Forbidden" });
+app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) => {
+  try {
+    let response;
+    await mutateDb((db) => {
+      const index = db.offers.findIndex((o) => o.id === req.params.id);
+      if (index === -1) throw routeError("Offer not found", 404);
+      if (!canAccessOffer(req, db.offers[index])) throw routeError("Forbidden", 403);
 
-  const previous = db.offers[index];
-  const normalized = normalizeOffer(req.body);
-  const previousWarnings = uniqueWarnings(previous.validationWarnings).join("\n");
-  const nextWarnings = uniqueWarnings(normalized.validationWarnings).join("\n");
-  const updated = {
-    ...normalized,
-    id: previous.id,
-    agencyId: entityAgencyId(previous),
-    createdAt: previous.createdAt,
-    createdBy: previous.createdBy || req.user.id,
-    ownerName: previous.ownerName || req.user.name,
-    clientViews: previous.clientViews || 0,
-    clicks: previous.clicks || 0,
-    pdfDownloads: previous.pdfDownloads || 0,
-    bookedAt: previous.bookedAt,
-    warningsDismissed: previousWarnings && previousWarnings === nextWarnings ? previous.warningsDismissed || false : false,
-    updatedAt: new Date().toISOString()
-  };
+      const previous = db.offers[index];
+      const normalized = normalizeOffer(req.body);
+      const previousWarnings = uniqueWarnings(previous.validationWarnings).join("\n");
+      const nextWarnings = uniqueWarnings(normalized.validationWarnings).join("\n");
+      const updated = {
+        ...normalized,
+        id: previous.id,
+        agencyId: entityAgencyId(previous),
+        createdAt: previous.createdAt,
+        createdBy: previous.createdBy || req.user.id,
+        ownerName: previous.ownerName || req.user.name,
+        clientViews: previous.clientViews || 0,
+        clicks: previous.clicks || 0,
+        pdfDownloads: previous.pdfDownloads || 0,
+        bookedAt: previous.bookedAt,
+        warningsDismissed: previousWarnings && previousWarnings === nextWarnings ? previous.warningsDismissed || false : false,
+        updatedAt: new Date().toISOString()
+      };
 
-  db.offers[index] = updated;
-  appendAuditEvent(db, req, {
-    type: "offer_updated",
-    category: "offer",
-    entityType: "offer",
-    entityId: updated.id,
-    offerId: updated.id,
-    clientId: updated.clientId || null,
-    metadata: {
-      destination: updated.destination || "",
-      status: updated.status || "draft",
-      warningsChanged: previousWarnings !== nextWarnings
-    }
-  });
-  writeDb(db);
-
-  res.json({
-    success: true,
-    offer: updated,
-    clientLink: `${LIVE_BASE_URL}/api/offers/view/${updated.id}`,
-    publicLink: `${LIVE_BASE_URL}/offer/${updated.id}`,
-    pdfLink: `${LIVE_BASE_URL}/api/offers/${updated.id}/pdf`
-  });
+      db.offers[index] = updated;
+      appendAuditEvent(db, req, {
+        type: "offer_updated",
+        category: "offer",
+        entityType: "offer",
+        entityId: updated.id,
+        offerId: updated.id,
+        clientId: updated.clientId || null,
+        metadata: {
+          destination: updated.destination || "",
+          status: updated.status || "draft",
+          warningsChanged: previousWarnings !== nextWarnings
+        }
+      });
+      response = {
+        success: true,
+        offer: updated,
+        clientLink: `${LIVE_BASE_URL}/api/offers/view/${updated.id}`,
+        publicLink: `${LIVE_BASE_URL}/offer/${updated.id}`,
+        pdfLink: `${LIVE_BASE_URL}/api/offers/${updated.id}/pdf`
+      };
+      return db;
+    });
+    res.json(response);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || "Offer update failed", details: err.details || null });
+  }
 });
 
-app.patch("/api/offers/:id/status", requireCapability("offers.update"), (req, res) => {
-  const db = readDb();
-  const index = db.offers.findIndex((o) => o.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: "Offer not found" });
-  if (!canAccessOffer(req, db.offers[index])) return res.status(403).json({ error: "Forbidden" });
+app.patch("/api/offers/:id/status", requireCapability("offers.update"), async (req, res) => {
+  try {
+    let response;
+    await mutateDb((db) => {
+      const index = db.offers.findIndex((o) => o.id === req.params.id);
+      if (index === -1) throw routeError("Offer not found", 404);
+      if (!canAccessOffer(req, db.offers[index])) throw routeError("Forbidden", 403);
 
-  db.offers[index].status = String(req.body.status || "draft").toLowerCase();
-  db.offers[index].updatedAt = new Date().toISOString();
+      db.offers[index].status = String(req.body.status || "draft").toLowerCase();
+      db.offers[index].updatedAt = new Date().toISOString();
 
-  if (db.offers[index].status === "booked") db.offers[index].bookedAt = new Date().toISOString();
+      if (db.offers[index].status === "booked") db.offers[index].bookedAt = new Date().toISOString();
 
-  appendAuditEvent(db, req, {
-    type: "status_changed",
-    category: "workflow",
-    entityType: "offer",
-    entityId: db.offers[index].id,
-    offerId: db.offers[index].id,
-    clientId: db.offers[index].clientId || null,
-    metadata: {
-      status: db.offers[index].status
-    }
-  });
-  writeDb(db);
-  res.json({ success: true, offer: db.offers[index] });
+      appendAuditEvent(db, req, {
+        type: "status_changed",
+        category: "workflow",
+        entityType: "offer",
+        entityId: db.offers[index].id,
+        offerId: db.offers[index].id,
+        clientId: db.offers[index].clientId || null,
+        metadata: {
+          status: db.offers[index].status
+        }
+      });
+      response = { success: true, offer: db.offers[index] };
+      return db;
+    });
+    res.json(response);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || "Offer status update failed", details: err.details || null });
+  }
 });
 
-app.patch("/api/offers/:id/warnings", requireCapability("offers.update"), (req, res) => {
-  const db = readDb();
-  const offer = db.offers.find((o) => o.id === req.params.id);
-  if (!offer) return res.status(404).json({ error: "Offer not found" });
+app.patch("/api/offers/:id/warnings", requireCapability("offers.update"), async (req, res) => {
+  try {
+    let response;
+    await mutateDb((db) => {
+      const offer = db.offers.find((o) => o.id === req.params.id);
+      if (!offer) throw routeError("Offer not found", 404);
 
-  offer.warningsDismissed = req.body?.dismissed !== false;
-  offer.updatedAt = new Date().toISOString();
-  appendAuditEvent(db, req, {
-    type: "warnings_dismissed",
-    category: "workflow",
-    entityType: "offer",
-    entityId: offer.id,
-    offerId: offer.id,
-    clientId: offer.clientId || null,
-    metadata: {
-      dismissed: offer.warningsDismissed,
-      warningCount: safeArray(offer.validationWarnings).length
-    }
-  });
-  writeDb(db);
-
-  res.json({ success: true, warningsDismissed: offer.warningsDismissed });
+      offer.warningsDismissed = req.body?.dismissed !== false;
+      offer.updatedAt = new Date().toISOString();
+      appendAuditEvent(db, req, {
+        type: "warnings_dismissed",
+        category: "workflow",
+        entityType: "offer",
+        entityId: offer.id,
+        offerId: offer.id,
+        clientId: offer.clientId || null,
+        metadata: {
+          dismissed: offer.warningsDismissed,
+          warningCount: safeArray(offer.validationWarnings).length
+        }
+      });
+      response = { success: true, warningsDismissed: offer.warningsDismissed };
+      return db;
+    });
+    res.json(response);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || "Offer warnings update failed", details: err.details || null });
+  }
 });
 
-app.post("/api/offers/:id/click", (req, res) => {
-  const db = readDb();
-  const offer = db.offers.find((o) => o.id === req.params.id);
-  if (!offer) return res.status(404).json({ error: "Offer not found" });
+app.post("/api/offers/:id/click", async (req, res) => {
+  try {
+    let response;
+    await mutateDb((db) => {
+      const offer = db.offers.find((o) => o.id === req.params.id);
+      if (!offer) throw routeError("Offer not found", 404);
 
-  offer.clicks = toNumber(offer.clicks, 0) + 1;
-  offer.updatedAt = new Date().toISOString();
-  writeDb(db);
-
-  res.json({ success: true, clicks: offer.clicks });
+      offer.clicks = toNumber(offer.clicks, 0) + 1;
+      offer.updatedAt = new Date().toISOString();
+      response = { success: true, clicks: offer.clicks };
+      return db;
+    });
+    res.json(response);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || "Offer click update failed", details: err.details || null });
+  }
 });
 
-app.post("/api/offers/:id/book", (req, res) => {
-  const db = readDb();
-  const offer = db.offers.find((o) => o.id === req.params.id);
-  if (!offer) return res.status(404).json({ error: "Offer not found" });
+app.post("/api/offers/:id/book", async (req, res) => {
+  try {
+    let response;
+    await mutateDb((db) => {
+      const offer = db.offers.find((o) => o.id === req.params.id);
+      if (!offer) throw routeError("Offer not found", 404);
 
-  offer.status = "booked";
-  offer.bookedAt = new Date().toISOString();
-  offer.updatedAt = new Date().toISOString();
-  writeDb(db);
-
-  res.json({ success: true, offer });
+      offer.status = "booked";
+      offer.bookedAt = new Date().toISOString();
+      offer.updatedAt = new Date().toISOString();
+      response = { success: true, offer };
+      return db;
+    });
+    res.json(response);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || "Offer booking failed", details: err.details || null });
+  }
 });
 
 app.post("/api/import", requireCapability("imports.run"), (req, res) => {
@@ -5253,20 +5362,28 @@ app.post("/api/import", requireCapability("imports.run"), (req, res) => {
 });
 
 app.get("/api/offers/view/:id", async (req, res) => {
-  const db = readDb();
-  const offer = db.offers.find((o) => o.id === req.params.id);
-  if (!offer) return res.status(404).send("Offer not found");
+  let offerForRender;
+  try {
+    await mutateDb((db) => {
+      const offer = db.offers.find((o) => o.id === req.params.id);
+      if (!offer) throw routeError("Offer not found", 404);
 
-  offer.clientViews = (offer.clientViews || 0) + 1;
+      offer.clientViews = (offer.clientViews || 0) + 1;
 
 offer.clientViewed = true; // оставяме го за compatibility
 offer.updatedAt = new Date().toISOString();
 
 if (offer.status === "sent") offer.status = "viewed";
-  writeDb(db);
+      offerForRender = offer;
+      return db;
+    });
+  } catch (err) {
+    if (err.status === 404) return res.status(404).send("Offer not found");
+    return res.status(err.status || 500).send(err.message || "Offer view failed");
+  }
 
   res.setHeader("Content-Type", "text/html; charset=UTF-8");
-  res.send(await renderOfferHtml(offer));
+  res.send(await renderOfferHtml(offerForRender));
 });
 
 app.get("/api/offers/:id/pdf", async (req, res) => {

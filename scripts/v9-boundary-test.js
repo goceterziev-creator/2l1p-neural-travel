@@ -241,6 +241,7 @@ async function main() {
           healthy = true;
           break;
         }
+        await new Promise((resolve) => setTimeout(resolve, 500));
       } catch {
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
