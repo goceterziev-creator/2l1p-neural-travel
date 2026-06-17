@@ -6201,6 +6201,7 @@ app.post("/api/import-hotel-image", requireCapability("imports.run"), upload.arr
     if (!imageFiles.length) return res.status(400).json({ error: "No image uploaded" });
 
     const parsedHotels = [];
+    const rawParsedHotels = [];
     for (const file of imageFiles) {
       const parsed = await callVisionJson({
         imageBuffer: file.buffer,
@@ -6235,6 +6236,7 @@ Rules:
 - if not visible, use empty string or 0
 `
       });
+      rawParsedHotels.push(parsed);
       parsedHotels.push(enrichHotelImportFallbacks(
         normalizeHotelTextToBulgarian(parsed),
         parsed,
@@ -6255,7 +6257,7 @@ Rules:
     if (imageUrls.length) {
       hotel.images = imageUrls;
     }
-    const metadata = normalizeHotelProfileMetadata(hotel, parsed);
+    const metadata = normalizeHotelProfileMetadata(hotel, rawParsedHotels[0] || {});
 
     res.json({
       success: true,

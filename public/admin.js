@@ -3228,22 +3228,22 @@ async function autoBuildOffer() {
   }
 
   try {
-    const flightFile = $("flightImage")?.files?.[0];
-    const hotelFile = $("hotelImage")?.files?.[0];
+    const flightFiles = Array.from($("flightImage")?.files || []);
+    const hotelFiles = Array.from($("hotelImage")?.files || []);
 
-    if (!flightFile) {
-      alert("Select flight screenshot first.");
+    if (!flightFiles.length) {
+      alert("Select at least one flight screenshot first.");
       return;
     }
 
-    if (!hotelFile) {
-      alert("Select hotel screenshot first.");
+    if (!hotelFiles.length) {
+      alert("Select at least one hotel screenshot first.");
       return;
     }
 
     // 1) Import flight screenshot
     const flightForm = new FormData();
-    flightForm.append("image", flightFile);
+    flightFiles.slice(0, 4).forEach((file) => flightForm.append("image", file));
     flightForm.append("destination", $("destination")?.value || "");
 
     const flightData = await fetchJson("/api/import-image", {
@@ -3268,7 +3268,7 @@ async function autoBuildOffer() {
     // 2) Import hotel screenshot
   const hotelForm = new FormData();
 
-hotelForm.append("image", hotelFile);
+hotelFiles.slice(0, 4).forEach((file) => hotelForm.append("image", file));
 hotelForm.append("destination", $("destination")?.value || "");
 
 const hotelData = await fetchJson("/api/import-hotel-image", {
