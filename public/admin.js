@@ -3213,6 +3213,29 @@ function confirmMismatchWarnings(destination, flight, hotel) {
   );
 }
 
+function getAutoBuildBlockingMismatchWarnings(destination, flight = {}, hotel = {}) {
+  const value = String(destination || "").trim();
+  if (!value) return [];
+
+  const flightMatches = destinationMatchesFlight(value, flight);
+  const hotelMatches = destinationMatchesHotel(value, hotel);
+  const warnings = [];
+
+  if (flightMatches && !hotelMatches) {
+    warnings.push(
+      `[CRITICAL] Полетът съвпада с "${value}", но хотелът изглежда за друга дестинация. Изберете правилния хотелски screenshot.`
+    );
+  }
+
+  if (!flightMatches && hotelMatches) {
+    warnings.push(
+      `[CRITICAL] Хотелът съвпада с "${value}", но полетът изглежда за друга дестинация. Изберете правилния flight screenshot.`
+    );
+  }
+
+  return warnings;
+}
+
 function getDestinationValue() {
   return (
     $("destination")?.value ||
@@ -3307,6 +3330,19 @@ validationWarnings.push(
     f
   )
 );
+
+const blockingMismatchWarnings = getAutoBuildBlockingMismatchWarnings(selectedDestination, f, h);
+if (blockingMismatchWarnings.length) {
+  window.currentValidationWarnings = [...validationWarnings, ...blockingMismatchWarnings];
+  alert(
+    `AUTO BUILD stopped. Провери screenshot-ите преди продължаване.\n\n` +
+    blockingMismatchWarnings.map(displayWarning).join("\n") +
+    `\n\nDestination: ${selectedDestination || "-"}\n` +
+    `Flight: ${f?.route || "-"}\n` +
+    `Hotel: ${h?.name || "-"}`
+  );
+  return;
+}
 
 window.currentValidationWarnings = validationWarnings;
 
