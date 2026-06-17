@@ -1653,11 +1653,16 @@ function parseOcrMoneyValue(value = "") {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function isPlausibleFlightMoneyValue(value = 0) {
+  const price = Number(value || 0);
+  return Number.isFinite(price) && price >= 10 && price <= 50000;
+}
+
 function extractOcrMoneyValues(rawText = "") {
   const matches = ocrCompactText(rawText).match(/(?:EUR|EURO|\u20ac)(?:\s*euros?)?\s*\d[\d\s,.]*|\d[\d\s,.]*\s*(?:EUR|EURO|\u20ac)/gi) || [];
   return matches
     .map((value) => parseCollapsedFlightMoneyValue(value))
-    .filter((value) => Number.isFinite(value) && value > 0);
+    .filter(isPlausibleFlightMoneyValue);
 }
 
 function extractLabeledFlightPrice(rawText = "") {
@@ -1668,11 +1673,12 @@ function extractLabeledFlightPrice(rawText = "") {
     text.match(/(?:\u20ac|EUR|EURO)(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b(?=.{0,120}\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\b)/i) ||
     text.match(/([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)(?=.{0,120}\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\b)/i) ||
     text.match(/\bFLIGHTS?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)/i) ||
-    text.match(/\bTOTAL(?:\s+price)?(?:\s+for\s+\d+\s+\w+)?\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i);
+    text.match(/\bTOTAL(?:\s+price)?(?:\s+for\s+\d+\s+\w+)?\s*[:\-]?\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i) ||
+    text.match(/(?:\u043e\u0431\u0449\u043e|total)\s*[:\-]?\s*(?:\u20ac|EUR|EURO)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i);
 
   if (!match) return 0;
   const value = parseOcrMoneyValue(match[1] || "");
-  return Number.isFinite(value) && value > 0 ? value : 0;
+  return isPlausibleFlightMoneyValue(value) ? value : 0;
 }
 
 function extractFlightPriceFromText(rawText = "") {
@@ -1689,7 +1695,7 @@ function extractFlightPriceFromText(rawText = "") {
         !/(flexible ticket|travel protection|change fee|cancellation fee|extras you might like|\u0433\u044a\u0432\u043a\u0430\u0432 \u0431\u0438\u043b\u0435\u0442|\u0437\u0430\u0449\u0438\u0442\u0430 \u043f\u0440\u0438 \u043f\u044a\u0442\u0443\u0432\u0430\u043d\u0435|\u0447\u0435\u043a\u0438\u0440\u0430\u043d \u0431\u0430\u0433\u0430\u0436|\u0435\u043a\u0441\u0442\u0440\u0438)/i.test(context);
     })
     .map((match) => parseCollapsedFlightMoneyValue(match[0]))
-    .filter((value) => Number.isFinite(value) && value > 0);
+    .filter(isPlausibleFlightMoneyValue);
 
   const collapsedTotal = extractBottomCollapsedFlightTotal(rawText);
   return Math.max(0, ...prices, collapsedTotal);
@@ -1949,7 +1955,27 @@ const GLOBAL_AIRPORT_ALIAS_EXTENSIONS = [
   { code: "TIA", city: "Tirana", aliases: ["tia", "tirana", "tirana international", "\u0442\u0438\u0440\u0430\u043d\u0430"] },
   { code: "HRG", city: "Hurghada", aliases: ["hrg", "hurghada", "\u0445\u0443\u0440\u0433\u0430\u0434\u0430"] },
   { code: "TLV", city: "Tel Aviv", aliases: ["tlv", "tel aviv", "ben gurion", "\u0442\u0435\u043b \u0430\u0432\u0438\u0432"] },
-  { code: "AUH", city: "Abu Dhabi", aliases: ["auh", "abu dhabi", "zayed international", "\u0430\u0431\u0443 \u0434\u0430\u0431\u0438"] }
+  { code: "AUH", city: "Abu Dhabi", aliases: ["auh", "abu dhabi", "zayed international", "\u0430\u0431\u0443 \u0434\u0430\u0431\u0438"] },
+  {
+    code: "ZRH",
+    city: "Zurich",
+    aliases: ["zrh", "zurich", "z\u00fcrich", "zurich airport", "z\u00fcrich airport", "\u0446\u044e\u0440\u0438\u0445"]
+  },
+  {
+    code: "JFK",
+    city: "New York",
+    aliases: [
+      "jfk",
+      "john f kennedy",
+      "john f. kennedy",
+      "kennedy",
+      "new york",
+      "newyork",
+      "\u043d\u044e \u0439\u043e\u0440\u043a",
+      "\u0434\u0436. \u0444. \u043a\u0435\u043d\u0435\u0434\u0438",
+      "\u0434\u0436 \u0444 \u043a\u0435\u043d\u0435\u0434\u0438"
+    ]
+  }
 ];
 
 GLOBAL_AIRPORT_ALIAS_EXTENSIONS.forEach((extension) => {
@@ -3010,7 +3036,9 @@ function inferConnectingAirlines(rawText = "") {
     [/emirates|\bEK\s?\d{2,4}\b/i, "Emirates"],
     [/etihad airways|\bEY\s?\d{2,4}\b/i, "Etihad Airways"],
     [/air france|\bAF\s?\d{2,4}\b/i, "Air France"],
-    [/\bKLM\b|\bKL\s?\d{2,4}\b/i, "KLM"]
+    [/\bKLM\b|\bKL\s?\d{2,4}\b/i, "KLM"],
+    [/\bswiss\b|\bLX\s?\d{2,4}\b/i, "SWISS"],
+    [/austrian airlines|\bOS\s?\d{2,4}\b/i, "Austrian Airlines"]
   ]
     .filter(([pattern]) => pattern.test(text))
     .map(([, airline]) => airline);
@@ -3078,7 +3106,7 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
     outboundStops.length ? `Отиване: ${outboundStops.length} ${outboundStops.length === 1 ? "прекачване" : "прекачвания"} през ${outboundStops.join(" + ")}.` : "",
     inboundStops.length ? `Връщане: ${inboundStops.length} ${inboundStops.length === 1 ? "прекачване" : "прекачвания"} през ${inboundStops.join(" + ")}.` : ""
   ].filter(Boolean).join(" ");
-  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL)\s?\d{2,4}\b/gi) || [])]
+  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL|LX|OS)\s?\d{2,4}\b/gi) || [])]
     .map((number) => number.replace(/\s+/g, " "));
 
   return {
