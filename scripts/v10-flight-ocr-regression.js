@@ -345,4 +345,24 @@ assert.match(multiScreenshotParsed.flight.arrival, /JFK -> SOF, Jul 8 16:15 - Ju
 assert.equal(multiScreenshotParsed.flight.price, 762.61);
 assert.equal(multiScreenshotParsed.metadata.missingFields.length, 0);
 
+const summaryOnlyOvernight = enrichFlightStopSummary(`
+Flight information
+Jul 1 (Wed)
+11:05 Sofia (SOF)
+16:35 New York (JFK)
+1 stop
+Jul 8 (Wed)
+16:15 New York (JFK)
+10:20 Sofia (SOF)
+1 stop
+Total: €762.61
+`, {
+  airline: "SWISS",
+  route: "SOF -> JFK / JFK -> SOF",
+  departure: "SOF -> JFK, Jul 1 11:05 - Jul 1 16:35",
+  arrival: "JFK -> SOF, Jul 8 16:15 - Jul 8 10:20",
+  notes: ""
+});
+assert.match(summaryOnlyOvernight.arrival, /JFK -> SOF, Jul 8 16:15 - Jul 9 10:20/i);
+
 console.log("V10 FLIGHT OCR REGRESSION PASS");

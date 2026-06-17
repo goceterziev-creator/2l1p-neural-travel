@@ -2171,8 +2171,8 @@ function enrichRoundTripEndpointTimes(rawText = "", flight = {}) {
 
   return {
     ...flight,
-    departure: `${origin} -> ${destination}, ${outboundStart.when} - ${outboundEnd.when}`,
-    arrival: `${destination} -> ${origin}, ${inboundStart.when} - ${inboundEnd.when}`
+    departure: normalizeOvernightSameDayRange(`${origin} -> ${destination}, ${outboundStart.when} - ${outboundEnd.when}`),
+    arrival: normalizeOvernightSameDayRange(`${destination} -> ${origin}, ${inboundStart.when} - ${inboundEnd.when}`)
   };
 }
 
@@ -2957,6 +2957,35 @@ function cleanupFlightDateTimeDisplay(value = "", fallbackCandidate = "") {
   return [prefix, fallbackCandidate].filter(Boolean).join(", ");
 }
 
+function normalizeOvernightSameDayRange(value = "") {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return text;
+
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const monthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const monthIndex = (month) => monthNames.findIndex((name) => name.toLowerCase() === String(month || "").slice(0, 3).toLowerCase());
+  const nextDay = (month, day) => {
+    const index = monthIndex(month);
+    const numericDay = Number(day);
+    if (index < 0 || !Number.isFinite(numericDay)) return { month, day };
+    if (numericDay < monthDays[index]) return { month: monthNames[index], day: numericDay + 1 };
+    return { month: monthNames[(index + 1) % monthNames.length], day: 1 };
+  };
+
+  return text.replace(
+    /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{1,2}):(\d{2})\s*-\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{1,2}):(\d{2})\b/i,
+    (match, startMonth, startDay, startHour, startMinute, endMonth, endDay, endHour, endMinute) => {
+      const sameDate = monthIndex(startMonth) === monthIndex(endMonth) && Number(startDay) === Number(endDay);
+      const startTotal = Number(startHour) * 60 + Number(startMinute);
+      const endTotal = Number(endHour) * 60 + Number(endMinute);
+      if (!sameDate || !Number.isFinite(startTotal) || !Number.isFinite(endTotal) || endTotal >= startTotal) return match;
+
+      const adjusted = nextDay(endMonth, endDay);
+      return `${startMonth} ${Number(startDay)} ${startHour}:${startMinute} - ${adjusted.month} ${adjusted.day} ${endHour}:${endMinute}`;
+    }
+  );
+}
+
 function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {}) {
   const candidates = extractGlobalFlightDateTimeCandidates(rawText);
   const routeLegs = [...String(flight?.route || "").matchAll(/\b([A-Z]{3})\s*(?:->|→)\s*([A-Z]{3})\b/g)]
@@ -2992,7 +3021,7 @@ function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
     fallbackStops?.inbound?.join(" + ") ||
     String(connectingFlight?.arrival || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
     "";
-  if (!outboundVia && !inboundVia) return flight;
+  if (!outboundVia && !inboundVia) return timedFlight;
   const appendVia = (value, via) => {
     const text = String(value || "").trim();
     if (!text || !via || /\bvia\b/i.test(text)) return text;
