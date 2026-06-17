@@ -5495,16 +5495,63 @@ async function recognizeFlightScreenshot(imageBuffer) {
   }
 }
 
-app.post("/api/import-image", requireCapability("imports.run"), upload.single("image"), async (req, res) => {
+function getUploadedImageFiles(req) {
+  const files = Array.isArray(req.files) ? req.files : [];
+  if (files.length) return files;
+  return req.file ? [req.file] : [];
+}
+
+function mergeImportedHotelRecords(records = []) {
+  const validRecords = records.filter(Boolean);
+  const firstValue = (field) => {
+    const found = validRecords.find((hotel) => String(hotel?.[field] || "").trim());
+    return found ? found[field] : "";
+  };
+  const bestPrice = validRecords
+    .map((hotel) => Number(hotel?.price || 0))
+    .filter((price) => Number.isFinite(price) && price > 0)
+    .sort((a, b) => b - a)[0] || 0;
+  const amenities = [...new Set(validRecords.flatMap((hotel) => (
+    Array.isArray(hotel?.amenities) ? hotel.amenities : []
+  )).map((item) => String(item || "").trim()).filter(Boolean))];
+  const images = [...new Set(validRecords.flatMap((hotel) => (
+    Array.isArray(hotel?.images) ? hotel.images : []
+  )).map((item) => String(item || "").trim()).filter(Boolean))];
+
+  return {
+    name: firstValue("name"),
+    stars: firstValue("stars"),
+    area: firstValue("area"),
+    distance: firstValue("distance"),
+    room: firstValue("room"),
+    meal: firstValue("meal"),
+    price: bestPrice,
+    currency: firstValue("currency") || "EUR",
+    roomsLeft: firstValue("roomsLeft"),
+    description: firstValue("description"),
+    address: firstValue("address"),
+    location: firstValue("location"),
+    rating: firstValue("rating"),
+    amenities,
+    images
+  };
+}
+
+app.post("/api/import-image", requireCapability("imports.run"), upload.array("image", 4), async (req, res) => {
   try {
-    if (!req.file) {
+    const imageFiles = getUploadedImageFiles(req);
+    if (!imageFiles.length) {
       return res.status(400).json({ error: "No image uploaded" });
     }
 
-    const imageBuffer = req.file.buffer;
+    const textParts = [];
+    for (let index = 0; index < imageFiles.length; index += 1) {
+      const file = imageFiles[index];
+      const ocrText = await recognizeFlightScreenshot(file.buffer);
+      textParts.push(`--- OCR IMAGE ${index + 1}: ${file.originalname || "flight"} ---\n${ocrText}`);
+    }
 
-    // OCR
-const text = await recognizeFlightScreenshot(imageBuffer);
+const text = textParts.join("\n\n");
 const cleanText = text.replace(/\s+/g, " ").trim();
 
 if (flightOcrTraceEnabled()) {
@@ -6148,14 +6195,17 @@ return res.json({
   }
 });
 
-app.post("/api/import-hotel-image", requireCapability("imports.run"), upload.single("image"), async (req, res) => {
+app.post("/api/import-hotel-image", requireCapability("imports.run"), upload.array("image", 4), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "No image uploaded" });
+    const imageFiles = getUploadedImageFiles(req);
+    if (!imageFiles.length) return res.status(400).json({ error: "No image uploaded" });
 
-    const parsed = await callVisionJson({
-      imageBuffer: req.file.buffer,
-      mimeType: req.file.mimetype || "image/png",
-      prompt: `
+    const parsedHotels = [];
+    for (const file of imageFiles) {
+      const parsed = await callVisionJson({
+        imageBuffer: file.buffer,
+        mimeType: file.mimetype || "image/png",
+        prompt: `
 You are reading a hotel booking screenshot in any language: English, Bulgarian, Italian, Spanish, German, French, or another language.
 Return ONLY strict JSON:
 {
@@ -6184,11 +6234,17 @@ Rules:
 - translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
 - if not visible, use empty string or 0
 `
-    });
+      });
+      parsedHotels.push(enrichHotelImportFallbacks(
+        normalizeHotelTextToBulgarian(parsed),
+        parsed,
+        req.body?.destination || ""
+      ));
+    }
 
     const hotel = enrichHotelImportFallbacks(
-      normalizeHotelTextToBulgarian(parsed),
-      parsed,
+      mergeImportedHotelRecords(parsedHotels),
+      parsedHotels[0] || {},
       req.body?.destination || ""
     );
     const imageUrls = await findHotelImagesWithSerpApi(

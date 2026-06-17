@@ -2222,16 +2222,16 @@ async function uploadFlightImage() {
   }
 
   const input = $("flightImage");
-  const file = input?.files?.[0];
+  const files = Array.from(input?.files || []);
 
-  if (!file) {
-    alert("Select a flight screenshot first.");
+  if (!files.length) {
+    alert("Select at least one flight screenshot first.");
     return;
   }
 
   try {
     const formData = new FormData();
-    formData.append("image", file);
+    files.slice(0, 4).forEach((file) => formData.append("image", file));
     formData.append("destination", $("destination")?.value || "");
 
     const data = await fetchJson("/api/import-image", {
@@ -2358,16 +2358,16 @@ async function uploadHotelImage() {
   }
 
   const input = $("hotelImage");
-  const file = input?.files?.[0];
+  const files = Array.from(input?.files || []);
 
-  if (!file) {
-    alert("Select a hotel screenshot first.");
+  if (!files.length) {
+    alert("Select at least one hotel screenshot first.");
     return;
   }
 
   try {
     const formData = new FormData();
-    formData.append("image", file);
+    files.slice(0, 4).forEach((file) => formData.append("image", file));
     formData.append("destination", $("destination")?.value || "");
 
     const data = await fetchJson("/api/import-hotel-image", {
