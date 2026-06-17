@@ -295,4 +295,54 @@ assert.equal(globalConnectingParsed.flight.price, 788.83);
 assert.equal(globalConnectingParsed.flight.route, "SOF -> JFK / JFK -> SOF");
 assert.equal(globalConnectingParsed.metadata.missingFields.length, 0);
 
+const multiScreenshotSummaryAndDetailsOcr = `
+--- OCR IMAGE 1: desktop-summary.png ---
+Flight information
+View details
+Jul 1 (Wed)
+11:05 Sofia (SOF)
+16:35 New York (JFK)
+1 stop
+Total journey length: 12h 30min
+Jul 8 (Wed)
+16:15 New York (JFK)
+10:20 Sofia (SOF)
+1 stop
+Total journey length: 11h 05min
+Passengers €261.19
+Adult €261.19
+Taxes and fees €501.42
+Airport fees €443.97
+Service fee €57.45
+Total: €762.61
+--- OCR IMAGE 2: desktop-details.png ---
+Flight details
+11:05 1 Jul Sofia Airport (SOF)
+Flight duration: 2 hours 20 minutes Flight number: LX 1391
+Class: Economy Airline: SWISS
+12:25 1 Jul Zurich Airport (ZRH)
+Transfer Time: 50min
+13:15 1 Jul Zurich Airport (ZRH)
+Flight duration: 9h 20min Flight number: LX 14
+Class: Economy Airline: SWISS
+16:35 1 Jul John F. Kennedy (JFK)
+New York > Sofia
+16:15 8 Jul John F. Kennedy (JFK)
+Flight duration: 7h 55min Flight number: LX 17
+Class: Economy Airline: SWISS
+06:10 Jul 9 Zurich Airport (ZRH)
+Transfer Time: 55min
+07:05 Jul 9 Zurich Airport (ZRH)
+Flight duration: 2 hours 15 minutes Flight number: LX 1390
+Class: Economy Airline: SWISS
+10:20 Jul 9 Sofia Airport (SOF)
+`;
+const multiScreenshotParsed = parseConnectingFlightCheckout(multiScreenshotSummaryAndDetailsOcr);
+assert.equal(multiScreenshotParsed.flight.airline, "SWISS");
+assert.equal(multiScreenshotParsed.flight.route, "SOF -> JFK / JFK -> SOF");
+assert.match(multiScreenshotParsed.flight.departure, /SOF -> JFK, Jul 1 11:05 - Jul 1 16:35, via ZRH/i);
+assert.match(multiScreenshotParsed.flight.arrival, /JFK -> SOF, Jul 8 16:15 - Jul 9 10:20, via ZRH/i);
+assert.equal(multiScreenshotParsed.flight.price, 762.61);
+assert.equal(multiScreenshotParsed.metadata.missingFields.length, 0);
+
 console.log("V10 FLIGHT OCR REGRESSION PASS");
