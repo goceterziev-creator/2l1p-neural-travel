@@ -394,6 +394,8 @@ assert.equal(multiScreenshotParsed.flight.airline, "SWISS");
 assert.equal(multiScreenshotParsed.flight.route, "SOF -> JFK / JFK -> SOF");
 assert.match(multiScreenshotParsed.flight.departure, /SOF -> JFK, Jul 1 11:05 - Jul 1 16:35, via ZRH/i);
 assert.match(multiScreenshotParsed.flight.arrival, /JFK -> SOF, Jul 8 16:15 - Jul 9 10:20, via ZRH/i);
+assert.match(multiScreenshotParsed.flight.notes, /ZRH: кацане .*12:25.*излитане .*13:15.*престой 50м/i);
+assert.match(multiScreenshotParsed.flight.notes, /ZRH: кацане .*06:10.*излитане .*07:05.*престой 55м/i);
 assert.equal(multiScreenshotParsed.flight.price, 762.61);
 assert.equal(multiScreenshotParsed.metadata.missingFields.length, 0);
 

@@ -2047,12 +2047,16 @@ function preferredRoundTripTimeline(rawText = "", flight = {}) {
   const candidates = parts
     .flatMap((text, index) => [
       {
-        index: index * 2,
+        index: index * 3,
         timeline: sortConnectingTimelineChronologically(extractConnectingFlightTimeline(text))
       },
       {
-        index: index * 2 + 1,
+        index: index * 3 + 1,
         timeline: extractVisibleAirportRowTimeline(text)
+      },
+      {
+        index: index * 3 + 2,
+        timeline: extractExplicitAirportRowTimeline(text)
       }
     ])
     .filter((candidate) => candidate.timeline.length)
@@ -2061,6 +2065,20 @@ function preferredRoundTripTimeline(rawText = "", flight = {}) {
       score: scoreRoundTripTimeline(candidate.timeline, flight)
     }))
     .sort((a, b) => b.score - a.score || b.index - a.index);
+  const { origin, destination } = extractRoundTripRouteEndpoints(flight);
+  const detailedCandidate = candidates.find((candidate) => {
+    const codes = candidate.timeline.map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+    return origin &&
+      destination &&
+      codes.includes(origin) &&
+      codes.includes(destination) &&
+      codes.some((code) => ![origin, destination].includes(code));
+  });
+  const bestCodes = candidates[0]?.timeline
+    ?.map((event) => String(event?.code || "").toUpperCase())
+    .filter(Boolean) || [];
+  const bestHasDetails = origin && destination && bestCodes.some((code) => ![origin, destination].includes(code));
+  if (detailedCandidate && !bestHasDetails) return detailedCandidate.timeline;
   return candidates[0]?.timeline || [];
 }
 
@@ -2086,6 +2104,40 @@ function extractPreferredRoundTripStopSummary(rawText = "", flight = {}) {
       sequence.slice(inboundStartIndex + 1, inboundEndIndex)
         .filter((code) => ![origin, destination].includes(code))
     )
+  };
+}
+
+function extractPreferredRoundTripStopDetails(rawText = "", flight = {}) {
+  const { origin, destination } = extractRoundTripRouteEndpoints(flight);
+  if (!origin || !destination || origin === destination) return null;
+  const timeline = preferredRoundTripTimeline(rawText, flight);
+  const sequence = timeline
+    .map((event) => String(event?.code || "").toUpperCase())
+    .filter(Boolean);
+  const outboundStartIndex = sequence.indexOf(origin);
+  const outboundEndIndex = sequence.indexOf(destination, outboundStartIndex + 1);
+  const inboundStartIndex = sequence.indexOf(destination, outboundEndIndex + 1);
+  const inboundEndIndex = sequence.lastIndexOf(origin);
+  if (outboundStartIndex < 0 || outboundEndIndex < 0 || inboundStartIndex < 0 || inboundEndIndex <= inboundStartIndex) {
+    return null;
+  }
+
+  const outboundEvents = timeline.slice(outboundStartIndex, outboundEndIndex + 1);
+  const inboundEvents = timeline.slice(inboundStartIndex, inboundEndIndex + 1);
+  const outboundStops = uniqueAirportCodes(
+    sequence.slice(outboundStartIndex + 1, outboundEndIndex)
+      .filter((code) => ![origin, destination].includes(code))
+  );
+  const inboundStops = uniqueAirportCodes(
+    sequence.slice(inboundStartIndex + 1, inboundEndIndex)
+      .filter((code) => ![origin, destination].includes(code))
+  );
+
+  return {
+    outbound: outboundStops,
+    inbound: inboundStops,
+    outboundDetails: buildStopoverDetails(outboundEvents, outboundStops),
+    inboundDetails: buildStopoverDetails(inboundEvents, inboundStops)
   };
 }
 
@@ -2782,6 +2834,23 @@ function extractExplicitAirportRowTimeline(rawText = "") {
     pushEvent({ when: `${month} ${day} ${timeMatch[1]}`, code });
   });
 
+  String(rawText || "").replace(/\r/g, "").split(/\n+/).forEach((rawLine) => {
+    const line = String(rawLine || "").replace(/\s+/g, " ").trim();
+    if (!line) return;
+
+    const codeMatch = line.match(/\(([A-Z0-9]{3})\)/i);
+    const timeMatch = line.match(/\b(\d{1,2}:\d{2})\b/);
+    const monthFirst = line.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i);
+    const dayFirst = line.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+    if (!codeMatch || !timeMatch || (!monthFirst && !dayFirst)) return;
+
+    const code = String(codeMatch[1] || "").toUpperCase().replace("0", "O");
+    if (!isPlausibleIataCode(code)) return;
+    const month = monthFirst ? monthFirst[1] : dayFirst[2];
+    const day = monthFirst ? monthFirst[2] : dayFirst[1];
+    pushEvent({ when: `${month} ${day} ${timeMatch[1]}`, code });
+  });
+
   const months = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec";
   const globalPatterns = [
     new RegExp(`\\b(\\d{1,2}:\\d{2})\\s+(\\d{1,2})\\s+(${months})[^\\n]{0,120}\\(([A-Z0-9]{3})\\)`, "gi"),
@@ -3012,13 +3081,16 @@ function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {
 function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
   const connectingFlight = detectGenericConnectingFlight(rawText, destination);
   const timedFlight = enrichRoundTripEndpointTimes(rawText, flight);
+  const detailedStops = extractPreferredRoundTripStopDetails(rawText, timedFlight);
   const fallbackStops = extractRoundTripStopSummary(rawText, timedFlight);
   const outboundVia =
     String(connectingFlight?.departure || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
+    detailedStops?.outbound?.join(" + ") ||
     fallbackStops?.outbound?.join(" + ") ||
     "";
   const inboundVia =
     String(connectingFlight?.arrival || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
+    detailedStops?.inbound?.join(" + ") ||
     fallbackStops?.inbound?.join(" + ") ||
     "";
   if (!outboundVia && !inboundVia) return timedFlight;
@@ -3029,9 +3101,11 @@ function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
   };
   const notes = String(timedFlight.notes || "").trim();
   const hasDetailedStopNotes = /(?:Отиване|Връщане):\s+\d+\s+прекачван/i.test(notes);
+  const outboundDetails = safeArray(detailedStops?.outboundDetails).filter(Boolean).join("; ");
+  const inboundDetails = safeArray(detailedStops?.inboundDetails).filter(Boolean).join("; ");
   const stopNotes = hasDetailedStopNotes ? "" : [
-    outboundVia ? `Outbound via ${outboundVia}.` : "",
-    inboundVia ? `Return via ${inboundVia}.` : ""
+    outboundDetails ? `Outbound via ${outboundVia} (${outboundDetails}).` : (outboundVia ? `Outbound via ${outboundVia}.` : ""),
+    inboundDetails ? `Return via ${inboundVia} (${inboundDetails}).` : (inboundVia ? `Return via ${inboundVia}.` : "")
   ].filter(Boolean).join(" ");
 
   return {
@@ -3245,6 +3319,11 @@ function preferredGlobalConnectingTimeline(rawText = "") {
         // Visible itinerary rows already follow travel order. Sorting them by
         // incomplete dates can move overnight connection rows before departure.
         timeline: extractVisibleAirportRowTimeline(text)
+      },
+      {
+        index: index * 2 + 2,
+        text,
+        timeline: extractExplicitAirportRowTimeline(text)
       }
     ])
     .map((candidate) => ({
@@ -3261,7 +3340,19 @@ function preferredGlobalConnectingTimeline(rawText = "") {
       codes[0] === codes[3] &&
       codes[1] === codes[2];
   });
-  if (summaryCandidate) return summaryCandidate;
+  if (summaryCandidate) {
+    const summaryDestination = summaryCandidate.endpoints?.destination;
+    const summaryInboundOrigin = summaryCandidate.endpoints?.inboundOrigin || summaryDestination;
+    const richerCandidate = candidates.find((candidate) => {
+      if (candidate === summaryCandidate || candidate.timeline.length <= summaryCandidate.timeline.length) return false;
+      const codes = candidate.timeline.map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+      return candidate.endpoints?.origin === summaryCandidate.endpoints?.origin &&
+        codes.includes(summaryDestination) &&
+        codes.includes(summaryInboundOrigin) &&
+        codes.lastIndexOf(summaryCandidate.endpoints?.origin) > 0;
+    });
+    return richerCandidate || summaryCandidate;
+  }
 
   return candidates[0] || null;
 }

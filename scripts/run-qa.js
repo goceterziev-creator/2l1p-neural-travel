@@ -40,9 +40,9 @@ async function healthCheck() {
 }
 
 async function waitForHealth() {
-  for (let i = 0; i < 30; i += 1) {
+  for (let i = 0; i < 90; i += 1) {
     if (await healthCheck()) return;
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   throw new Error(`Server did not become healthy at ${BASE_URL}/api/health`);
 }
