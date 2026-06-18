@@ -344,6 +344,13 @@
       line-height: 1.45;
     }
 
+    .flight-notes-field,
+    #flightNotes {
+      min-height: 148px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
     input[readonly] {
       opacity: 0.9;
       background: #0b1220;
@@ -2642,7 +2649,7 @@
             </div>
             <div>
               <label>Flight Notes</label>
-              <input id="flightNotes" />
+              <textarea id="flightNotes"></textarea>
             </div>
           </div>
 </div>

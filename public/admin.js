@@ -2622,7 +2622,7 @@ function renderFlightCards() {
       <input placeholder="Arrival" value="${escapeHtml(f.arrival || "")}" onchange="flights[${i}].arrival=this.value;updateAutoPrice();" />
       <input placeholder="Baggage" value="${escapeHtml(f.baggage || "")}" onchange="flights[${i}].baggage=this.value;updateAutoPrice();" />
       <input type="number" step="0.01" placeholder="Price" value="${Number(f.price || 0)}" onchange="flights[${i}].price=Number(this.value||0);updateAutoPrice();" />
-      <textarea placeholder="Flight Notes" onchange="flights[${i}].notes=this.value;updateAutoPrice();">${escapeHtml(f.notes || "")}</textarea>
+      <textarea class="flight-notes-field" rows="6" placeholder="Flight Notes" onchange="flights[${i}].notes=this.value;updateAutoPrice();">${escapeHtml(f.notes || "")}</textarea>
       <button type="button" onclick="removeFlight(${i})">Remove Flight</button>
     </div>
   `).join("");
