@@ -3121,6 +3121,37 @@ function inferRoundTripTimelineEndpoints(timeline = []) {
   const inboundEndIndex = codes.lastIndexOf(origin);
   if (!origin || inboundEndIndex < 3) return null;
 
+  const counts = codes.reduce((acc, code) => {
+    acc[code] = (acc[code] || 0) + 1;
+    return acc;
+  }, {});
+  const hasRepeatedIntermediate = codes
+    .slice(1, inboundEndIndex)
+    .some((code) => code !== origin && counts[code] > 1);
+  if (hasRepeatedIntermediate) {
+    for (let index = 1; index < inboundEndIndex - 1; index += 1) {
+      const outboundDestination = codes[index];
+      const inboundOrigin = codes[index + 1];
+      if (
+        outboundDestination !== origin &&
+        inboundOrigin !== origin &&
+        outboundDestination !== inboundOrigin &&
+        counts[outboundDestination] === 1 &&
+        counts[inboundOrigin] === 1
+      ) {
+        return {
+          origin,
+          destination: outboundDestination,
+          inboundOrigin,
+          outboundStartIndex: 0,
+          outboundEndIndex: index,
+          inboundStartIndex: index + 1,
+          inboundEndIndex
+        };
+      }
+    }
+  }
+
   const destinationCandidates = uniqueAirportCodes(codes.slice(1, inboundEndIndex))
     .map((code) => {
       const firstIndex = codes.indexOf(code, 1);
@@ -3186,6 +3217,23 @@ function preferredGlobalConnectingTimeline(rawText = "") {
 }
 
 function cleanFlightAirlineLabel(value = "") {
+  const canonicalize = (label = "") => {
+    const text = String(label || "").trim();
+    const known = [
+      [/turkish airlines/i, "Turkish Airlines"],
+      [/etihad airways/i, "Etihad Airways"],
+      [/qatar airways/i, "Qatar Airways"],
+      [/austrian airlines/i, "Austrian Airlines"],
+      [/air france/i, "Air France"],
+      [/emirates/i, "Emirates"],
+      [/\blufthansa\b/i, "Lufthansa"],
+      [/\bryanair\b/i, "Ryanair"],
+      [/\bwizz(?:\s+air)?\b/i, "Wizz Air"],
+      [/\bswiss\b/i, "SWISS"],
+      [/\bklm\b/i, "KLM"]
+    ];
+    return known.find(([pattern]) => pattern.test(text))?.[1] || text;
+  };
   const seen = new Set();
   return String(value || "")
     .split(/\s*\+\s*/)
@@ -3194,6 +3242,7 @@ function cleanFlightAirlineLabel(value = "") {
       .replace(/^(?:travel operated by|operated by|flight|carrier|airline|by)\s+/i, "")
       .replace(/\s+/g, " ")
       .trim())
+    .map(canonicalize)
     .filter((label) => {
       const key = label.toLowerCase();
       if (!label || seen.has(key)) return false;
@@ -3270,11 +3319,13 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
   const {
     origin,
     destination: destinationCode,
+    inboundOrigin: inferredInboundOrigin,
     outboundStartIndex,
     outboundEndIndex,
     inboundStartIndex,
     inboundEndIndex
   } = inferred;
+  const inboundOrigin = inferredInboundOrigin || destinationCode;
 
   const outboundStart = timeline[outboundStartIndex];
   const outboundEnd = timeline[outboundEndIndex];
@@ -3288,7 +3339,7 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
   const inboundStops = uniqueAirportCodes(
     timeline.slice(inboundStartIndex + 1, inboundEndIndex)
       .map((item) => item.code)
-      .filter((code) => ![origin, destinationCode].includes(code))
+      .filter((code) => ![origin, inboundOrigin].includes(code))
   );
   const outboundVia = outboundStops.length ? `, via ${outboundStops.join(" + ")}` : "";
   const inboundVia = inboundStops.length ? `, via ${inboundStops.join(" + ")}` : "";
@@ -3301,9 +3352,9 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
 
   return {
     airline: inferConnectingAirline(rawText),
-    route: `${origin} -> ${destinationCode} / ${destinationCode} -> ${origin}`,
+    route: `${origin} -> ${destinationCode} / ${inboundOrigin} -> ${origin}`,
     departure: `${origin} -> ${destinationCode}, ${outboundStart.when} - ${outboundEnd.when}${outboundVia}`,
-    arrival: `${destinationCode} -> ${origin}, ${inboundStart.when} - ${inboundEnd.when}${inboundVia}`,
+    arrival: `${inboundOrigin} -> ${origin}, ${inboundStart.when} - ${inboundEnd.when}${inboundVia}`,
     baggage: extractFlightBaggageSummary(rawText),
     notes: [
       extractPassengerSummary(rawText),

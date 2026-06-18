@@ -290,6 +290,49 @@ assert.equal(globalConnectingFlight.route, "SOF -> JFK / JFK -> SOF");
 assert.match(globalConnectingFlight.departure, /via ZRH/i);
 assert.match(globalConnectingFlight.arrival, /via ZRH/i);
 assert.equal(extractFlightPriceFromText(globalConnectingFlightOcr), 788.83);
+
+const turkishOpenJawConnectingOcr = `
+Flight to Tokyo
+1 stop - 16h 10m
+Tue, Sep 1 - 9:10 PM
+SOF - Sofia Airport
+Tue, Sep 1 - 10:40 PM
+IST - Istanbul Airport
+Layover 3h 25m
+Wed, Sep 2 - 2:05 AM
+IST - Istanbul Airport
+Wed, Sep 2 - 7:20 PM
+HND - Tokyo Haneda Airport
+Flight to Sofia
+1 stop - 17h 30m
+Tue, Sep 15 - 9:15 PM
+NRT - Narita International Airport
+Wed, Sep 16 - 4:40 AM
+IST - Istanbul Airport
+Layover 2h 50m
+Wed, Sep 16 - 7:30 AM
+IST - Istanbul Airport
+Wed, Sep 16 - 8:45 AM
+SOF - Sofia Airport
+Turkish Airlines
+TK1030 - Economy
+Turkish Airlines
+TK198 - Economy
+Turkish Airlines
+TK301 - Economy
+Turkish Airlines
+TK1027 - Economy
+Total price for all travelers
+€2,697.58
+`;
+const turkishOpenJawFlight = detectGenericConnectingFlight(turkishOpenJawConnectingOcr);
+assert.equal(turkishOpenJawFlight.airline, "Turkish Airlines");
+assert.equal(turkishOpenJawFlight.route, "SOF -> HND / NRT -> SOF");
+assert.match(turkishOpenJawFlight.departure, /SOF -> HND, .*via IST/i);
+assert.match(turkishOpenJawFlight.arrival, /NRT -> SOF, .*via IST/i);
+assert.doesNotMatch(turkishOpenJawFlight.route, /SOF -> IST \/ IST -> SOF/i);
+assert.doesNotMatch(turkishOpenJawFlight.departure, /via HND|via NRT/i);
+
 const globalConnectingParsed = parseConnectingFlightCheckout(globalConnectingFlightOcr);
 assert.equal(globalConnectingParsed.flight.price, 788.83);
 assert.equal(globalConnectingParsed.flight.route, "SOF -> JFK / JFK -> SOF");
