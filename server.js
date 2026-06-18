@@ -2092,10 +2092,54 @@ function preferredRoundTripTimeline(rawText = "", flight = {}) {
   return candidates[0]?.timeline || [];
 }
 
+function preferredRoundTripStopTimeline(rawText = "", flight = {}) {
+  const { origin, destination } = extractRoundTripRouteEndpoints(flight);
+  if (!origin || !destination || origin === destination) return [];
+  const parts = splitOcrTimelineSections(rawText);
+  const candidates = parts
+    .flatMap((text, index) => [
+      {
+        index: index * 3,
+        timeline: sortConnectingTimelineChronologically(extractConnectingFlightTimeline(text))
+      },
+      {
+        index: index * 3 + 1,
+        timeline: extractVisibleAirportRowTimeline(text)
+      },
+      {
+        index: index * 3 + 2,
+        timeline: extractExplicitAirportRowTimeline(text)
+      }
+    ])
+    .concat([
+      {
+        index: parts.length * 3 + 1,
+        timeline: extractExplicitAirportRowTimeline(rawText)
+      },
+      {
+        index: parts.length * 3 + 2,
+        timeline: extractVisibleAirportRowTimeline(rawText)
+      }
+    ])
+    .filter((candidate) => candidate.timeline.length)
+    .map((candidate) => ({
+      ...candidate,
+      score: scoreRoundTripTimeline(candidate.timeline, flight)
+    }))
+    .filter((candidate) => {
+      const codes = candidate.timeline.map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+      return codes.includes(origin) &&
+        codes.includes(destination) &&
+        codes.some((code) => ![origin, destination].includes(code));
+    })
+    .sort((a, b) => b.score - a.score || b.timeline.length - a.timeline.length || b.index - a.index);
+  return candidates[0]?.timeline || preferredRoundTripTimeline(rawText, flight);
+}
+
 function extractPreferredRoundTripStopSummary(rawText = "", flight = {}) {
   const { origin, destination } = extractRoundTripRouteEndpoints(flight);
   if (!origin || !destination || origin === destination) return null;
-  const sequence = preferredRoundTripTimeline(rawText, flight)
+  const sequence = preferredRoundTripStopTimeline(rawText, flight)
     .map((event) => String(event?.code || "").toUpperCase())
     .filter(Boolean);
   const outboundStartIndex = sequence.indexOf(origin);
@@ -2117,10 +2161,36 @@ function extractPreferredRoundTripStopSummary(rawText = "", flight = {}) {
   };
 }
 
+function extractRouteEndpointStopCodes(rawText = "", flight = {}) {
+  const { origin, destination } = extractRoundTripRouteEndpoints(flight);
+  if (!origin || !destination || origin === destination) return { outbound: [], inbound: [] };
+  const codes = detectAirportCodes(rawText)
+    .map((code) => String(code || "").toUpperCase())
+    .filter(isPlausibleIataCode);
+  const findBestStops = (start, end) => {
+    let best = [];
+    for (let index = 0; index < codes.length; index += 1) {
+      if (codes[index] !== start) continue;
+      for (let cursor = index + 1; cursor < codes.length; cursor += 1) {
+        if (codes[cursor] !== end) continue;
+        const stops = uniqueAirportCodes(
+          codes.slice(index + 1, cursor).filter((code) => ![start, end].includes(code))
+        );
+        if (stops.length > best.length) best = stops;
+      }
+    }
+    return best;
+  };
+  return {
+    outbound: findBestStops(origin, destination),
+    inbound: findBestStops(destination, origin)
+  };
+}
+
 function extractPreferredRoundTripStopDetails(rawText = "", flight = {}) {
   const { origin, destination } = extractRoundTripRouteEndpoints(flight);
   if (!origin || !destination || origin === destination) return null;
-  const timeline = preferredRoundTripTimeline(rawText, flight);
+  const timeline = preferredRoundTripStopTimeline(rawText, flight);
   const sequence = timeline
     .map((event) => String(event?.code || "").toUpperCase())
     .filter(Boolean);
@@ -3126,15 +3196,18 @@ function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
   const connectingFlight = detectGenericConnectingFlight(rawText, destination);
   const timedFlight = enrichRoundTripEndpointTimes(rawText, flight);
   const detailedStops = extractPreferredRoundTripStopDetails(rawText, timedFlight);
+  const endpointStops = extractRouteEndpointStopCodes(rawText, timedFlight);
   const fallbackStops = extractRoundTripStopSummary(rawText, timedFlight);
   const outboundVia =
     String(connectingFlight?.departure || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
     detailedStops?.outbound?.join(" + ") ||
+    endpointStops.outbound.join(" + ") ||
     fallbackStops?.outbound?.join(" + ") ||
     "";
   const inboundVia =
     String(connectingFlight?.arrival || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
     detailedStops?.inbound?.join(" + ") ||
+    endpointStops.inbound.join(" + ") ||
     fallbackStops?.inbound?.join(" + ") ||
     "";
   if (!outboundVia && !inboundVia) return timedFlight;
@@ -3476,17 +3549,7 @@ function preferredGlobalConnectingTimeline(rawText = "") {
       codes[1] === codes[2];
   });
   if (summaryCandidate) {
-    const summaryDestination = summaryCandidate.endpoints?.destination;
-    const summaryInboundOrigin = summaryCandidate.endpoints?.inboundOrigin || summaryDestination;
-    const richerCandidate = candidates.find((candidate) => {
-      if (candidate === summaryCandidate || candidate.timeline.length <= summaryCandidate.timeline.length) return false;
-      const codes = candidate.timeline.map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
-      return candidate.endpoints?.origin === summaryCandidate.endpoints?.origin &&
-        codes.includes(summaryDestination) &&
-        codes.includes(summaryInboundOrigin) &&
-        codes.lastIndexOf(summaryCandidate.endpoints?.origin) > 0;
-    });
-    return richerCandidate || summaryCandidate;
+    return summaryCandidate;
   }
 
   return candidates[0] || null;

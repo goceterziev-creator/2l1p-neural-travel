@@ -415,6 +415,41 @@ assert.match(multiScreenshotParsed.flight.notes, /ZRH: кацане .*06:10.*и�
 assert.equal(multiScreenshotParsed.flight.price, 762.61);
 assert.equal(multiScreenshotParsed.metadata.missingFields.length, 0);
 
+const multiScreenshotPartialDetailsOcr = `
+--- OCR IMAGE 1: desktop-summary.png ---
+Flight information
+View details
+Jul 1 (Wed)
+11:05 Sofia (SOF)
+16:35 New York (JFK)
+1 stop
+Total journey length: 12h 30min
+Jul 8 (Wed)
+16:15 New York (JFK)
+10:20 Sofia (SOF)
+1 stop
+Total journey length: 11h 05min
+Total: €762.61
+--- OCR IMAGE 2: partial-details.png ---
+Flight details
+11:05
+1 Jul
+Sofia Airport (SOF)
+12:25
+1 Jul
+Zurich Airport (ZRH)
+Transfer Time: 50min
+13:15
+1 Jul
+Zurich Airport (ZRH)
+10:20
+Jul 9
+Sofia Airport (SOF)
+`;
+const multiScreenshotPartialParsed = parseConnectingFlightCheckout(multiScreenshotPartialDetailsOcr);
+assert.equal(multiScreenshotPartialParsed.flight.route, "SOF -> JFK / JFK -> SOF");
+assert.notEqual(multiScreenshotPartialParsed.flight.route, "SOF -> ZRH / ZRH -> SOF");
+
 const summaryOnlyOvernight = enrichFlightStopSummary(`
 Flight information
 Jul 1 (Wed)
