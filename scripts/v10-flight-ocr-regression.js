@@ -369,25 +369,41 @@ Service fee €57.45
 Total: €762.61
 --- OCR IMAGE 2: desktop-details.png ---
 Flight details
-11:05 1 Jul Sofia Airport (SOF)
+11:05
+1 Jul
+Sofia Airport (SOF)
 Flight duration: 2 hours 20 minutes Flight number: LX 1391
 Class: Economy Airline: SWISS
-12:25 1 Jul Zurich Airport (ZRH)
+12:25
+1 Jul
+Zurich Airport (ZRH)
 Transfer Time: 50min
-13:15 1 Jul Zurich Airport (ZRH)
+13:15
+1 Jul
+Zurich Airport (ZRH)
 Flight duration: 9h 20min Flight number: LX 14
 Class: Economy Airline: SWISS
-16:35 1 Jul John F. Kennedy (JFK)
+16:35
+1 Jul
+John F. Kennedy (JFK)
 New York > Sofia
-16:15 8 Jul John F. Kennedy (JFK)
+16:15
+8 Jul
+John F. Kennedy (JFK)
 Flight duration: 7h 55min Flight number: LX 17
 Class: Economy Airline: SWISS
-06:10 Jul 9 Zurich Airport (ZRH)
+06:10
+Jul 9
+Zurich Airport (ZRH)
 Transfer Time: 55min
-07:05 Jul 9 Zurich Airport (ZRH)
+07:05
+Jul 9
+Zurich Airport (ZRH)
 Flight duration: 2 hours 15 minutes Flight number: LX 1390
 Class: Economy Airline: SWISS
-10:20 Jul 9 Sofia Airport (SOF)
+10:20
+Jul 9
+Sofia Airport (SOF)
 `;
 const multiScreenshotParsed = parseConnectingFlightCheckout(multiScreenshotSummaryAndDetailsOcr);
 assert.equal(multiScreenshotParsed.flight.airline, "SWISS");

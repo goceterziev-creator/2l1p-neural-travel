@@ -2059,6 +2059,16 @@ function preferredRoundTripTimeline(rawText = "", flight = {}) {
         timeline: extractExplicitAirportRowTimeline(text)
       }
     ])
+    .concat([
+      {
+        index: parts.length * 3 + 1,
+        timeline: extractExplicitAirportRowTimeline(rawText)
+      },
+      {
+        index: parts.length * 3 + 2,
+        timeline: extractVisibleAirportRowTimeline(rawText)
+      }
+    ])
     .filter((candidate) => candidate.timeline.length)
     .map((candidate) => ({
       ...candidate,
@@ -2809,7 +2819,9 @@ function extractExplicitAirportRowTimeline(rawText = "") {
   const normalized = normalizeLocalizedFlightTimelineText(String(rawText || ""))
     .replace(/\r/g, "");
   const timeline = [];
+  const ignoredCodes = new Set(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]);
   const pushEvent = (event) => {
+    if (ignoredCodes.has(String(event?.code || "").toUpperCase())) return;
     const previous = timeline[timeline.length - 1];
     const exists = timeline.some((item) => item.when === event.when && item.code === event.code);
     if (!exists && (!previous || previous.when !== event.when || previous.code !== event.code)) {
@@ -2865,6 +2877,38 @@ function extractExplicitAirportRowTimeline(rawText = "") {
       if (!isPlausibleIataCode(code)) return;
       pushEvent({ when: `${month} ${day} ${time}`, code });
     });
+  });
+
+  const extractMonthDay = (line = "") => {
+    const monthFirst = String(line || "").match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i);
+    if (monthFirst) return { month: monthFirst[1], day: monthFirst[2] };
+    const dayFirst = String(line || "").match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+    if (dayFirst) return { month: dayFirst[2], day: dayFirst[1] };
+    return null;
+  };
+
+  const nearbyLines = `${normalized}\n${String(rawText || "").replace(/\r/g, "\n")}`
+    .split(/\n+/)
+    .map((rawLine) => String(rawLine || "").replace(/\s+/g, " ").trim());
+  nearbyLines.forEach((line, index) => {
+    const codeMatch = line.match(/\(([A-Z0-9]{3})\)/i);
+    if (!codeMatch) return;
+    const code = String(codeMatch[1] || "").toUpperCase().replace("0", "O");
+    if (!isPlausibleIataCode(code)) return;
+
+    let time = (line.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
+    let date = extractMonthDay(line);
+    for (let cursor = index - 1; cursor >= Math.max(0, index - 4) && (!time || !date); cursor -= 1) {
+      const candidate = nearbyLines[cursor] || "";
+      if (!time) time = (candidate.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
+      if (!date) date = extractMonthDay(candidate);
+    }
+    for (let cursor = index + 1; cursor <= Math.min(nearbyLines.length - 1, index + 2) && (!time || !date); cursor += 1) {
+      const candidate = nearbyLines[cursor] || "";
+      if (!time) time = (candidate.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
+      if (!date) date = extractMonthDay(candidate);
+    }
+    if (time && date) pushEvent({ when: `${date.month} ${date.day} ${time}`, code });
   });
 
   return timeline;
@@ -3101,8 +3145,17 @@ function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
   };
   const notes = String(timedFlight.notes || "").trim();
   const hasDetailedStopNotes = /(?:Отиване|Връщане):\s+\d+\s+прекачван/i.test(notes);
-  const outboundDetails = safeArray(detailedStops?.outboundDetails).filter(Boolean).join("; ");
-  const inboundDetails = safeArray(detailedStops?.inboundDetails).filter(Boolean).join("; ");
+  const hasReadableStopDetails = (value) =>
+    /(РєР°С†Р°РЅРµ|РёР·Р»РёС‚Р°РЅРµ|РїСЂРµСЃС‚РѕР№|кацане|излитане|престой)/i.test(String(value || ""));
+  const outboundStopCodes = outboundVia ? outboundVia.split(/\s*\+\s*/).filter(Boolean) : [];
+  const inboundStopCodes = inboundVia ? inboundVia.split(/\s*\+\s*/).filter(Boolean) : [];
+  const inboundRawOccurrenceOffset = outboundVia && inboundVia && outboundVia === inboundVia ? 1 : 0;
+  const outboundDetailsText = safeArray(detailedStops?.outboundDetails).filter(Boolean).join("; ");
+  const inboundDetailsText = safeArray(detailedStops?.inboundDetails).filter(Boolean).join("; ");
+  const outboundRawDetails = buildRawStopoverDetails(rawText, outboundStopCodes, 0).join("; ");
+  const inboundRawDetails = buildRawStopoverDetails(rawText, inboundStopCodes, inboundRawOccurrenceOffset).join("; ");
+  const outboundDetails = outboundRawDetails || (hasReadableStopDetails(outboundDetailsText) ? outboundDetailsText : "");
+  const inboundDetails = inboundRawDetails || (hasReadableStopDetails(inboundDetailsText) ? inboundDetailsText : "");
   const stopNotes = hasDetailedStopNotes ? "" : [
     outboundDetails ? `Outbound via ${outboundVia} (${outboundDetails}).` : (outboundVia ? `Outbound via ${outboundVia}.` : ""),
     inboundDetails ? `Return via ${inboundVia} (${inboundDetails}).` : (inboundVia ? `Return via ${inboundVia}.` : "")
@@ -3216,6 +3269,88 @@ function buildStopoverDetails(legEvents = [], stopCodes = []) {
       duration ? `престой ${duration}` : ""
     ].filter(Boolean).join(", ");
   });
+}
+
+function formatStopoverDurationFromTimes(arrival = "", departure = "") {
+  const arrivalMatch = String(arrival || "").match(/^(\d{1,2}):(\d{2})$/);
+  const departureMatch = String(departure || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!arrivalMatch || !departureMatch) return "";
+  const arrivalMinutes = Number(arrivalMatch[1]) * 60 + Number(arrivalMatch[2]);
+  let departureMinutes = Number(departureMatch[1]) * 60 + Number(departureMatch[2]);
+  if (departureMinutes < arrivalMinutes) departureMinutes += 24 * 60;
+  return formatStopoverDuration(departureMinutes - arrivalMinutes);
+}
+
+function buildRawStopoverDetails(rawText = "", stopCodes = [], occurrenceOffset = 0) {
+  const normalized = normalizeLocalizedFlightTimelineText(String(rawText || ""))
+    .replace(/\r/g, "\n");
+  const getMonthDay = (line = "") => {
+    const monthFirst = String(line || "").match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i);
+    if (monthFirst) return { month: monthFirst[1], day: monthFirst[2] };
+    const dayFirst = String(line || "").match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+    if (dayFirst) return { month: dayFirst[2], day: dayFirst[1] };
+    return null;
+  };
+  const nearbyLines = normalized.split(/\n+/).map((rawLine) => String(rawLine || "").replace(/\s+/g, " ").trim());
+  const timeline = mergeTimelineEvents(
+    extractExplicitAirportRowTimeline(rawText),
+    nearbyLines.flatMap((line, index) => {
+      const codeMatch = line.match(/\(([A-Z0-9]{3})\)/i);
+      if (!codeMatch) return [];
+      const code = String(codeMatch[1] || "").toUpperCase().replace("0", "O");
+      if (!isPlausibleIataCode(code)) return [];
+
+      let time = (line.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
+      let date = getMonthDay(line);
+      for (let cursor = index - 1; cursor >= Math.max(0, index - 5) && (!time || !date); cursor -= 1) {
+        const candidate = nearbyLines[cursor] || "";
+        if (!time) time = (candidate.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
+        if (!date) date = getMonthDay(candidate);
+      }
+      for (let cursor = index + 1; cursor <= Math.min(nearbyLines.length - 1, index + 3) && (!time || !date); cursor += 1) {
+        const candidate = nearbyLines[cursor] || "";
+        if (!time) time = (candidate.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
+        if (!date) date = getMonthDay(candidate);
+      }
+      return time && date ? [{ when: `${date.month} ${date.day} ${time}`, code }] : [];
+    })
+  );
+  return safeArray(stopCodes).map((code) => {
+    const stopCode = String(code || "").toUpperCase();
+    if (!isPlausibleIataCode(stopCode)) return "";
+    const codeEvents = safeArray(timeline).filter((event) => event?.code === stopCode && event?.when);
+    const eventArrival = codeEvents[occurrenceOffset * 2];
+    const eventDeparture = codeEvents[(occurrenceOffset * 2) + 1];
+    if (eventArrival && eventDeparture) {
+      const arrivalTime = parseFlightTimelineMoment(eventArrival.when);
+      const departureTime = parseFlightTimelineMoment(eventDeparture.when);
+      const duration = Number.isFinite(arrivalTime) && Number.isFinite(departureTime)
+        ? formatStopoverDuration((departureTime - arrivalTime) / 60000)
+        : "";
+      return [
+        `${stopCode}: кацане ${eventArrival.when}`,
+        `излитане ${eventDeparture.when}`,
+        duration ? `престой ${duration}` : ""
+      ].filter(Boolean).join(", ");
+    }
+
+    const escapedCode = stopCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(
+      `\\b(\\d{1,2}:\\d{2})\\b[\\s\\S]{0,260}\\(${escapedCode}\\)[\\s\\S]{0,260}` +
+        `(?:Transfer\\s*Time|Layover|Изчакване|престой|npekaysane|npevassare)[\\s\\S]{0,260}` +
+        `\\b(\\d{1,2}:\\d{2})\\b[\\s\\S]{0,260}\\(${escapedCode}\\)`,
+      "gi"
+    );
+    const matches = [...normalized.matchAll(pattern)];
+    const match = matches[occurrenceOffset] || matches[0];
+    if (!match) return "";
+    const duration = formatStopoverDurationFromTimes(match[1], match[2]);
+    return [
+      `${stopCode}: кацане ${match[1]}`,
+      `излитане ${match[2]}`,
+      duration ? `престой ${duration}` : ""
+    ].filter(Boolean).join(", ");
+  }).filter(Boolean);
 }
 
 function preferredConnectingTimeline(rawText = "") {
