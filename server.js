@@ -3014,12 +3014,12 @@ function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
   const timedFlight = enrichRoundTripEndpointTimes(rawText, flight);
   const fallbackStops = extractRoundTripStopSummary(rawText, timedFlight);
   const outboundVia =
-    fallbackStops?.outbound?.join(" + ") ||
     String(connectingFlight?.departure || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
+    fallbackStops?.outbound?.join(" + ") ||
     "";
   const inboundVia =
-    fallbackStops?.inbound?.join(" + ") ||
     String(connectingFlight?.arrival || "").match(/,\s*via\s+([^,]+)$/i)?.[1] ||
+    fallbackStops?.inbound?.join(" + ") ||
     "";
   if (!outboundVia && !inboundVia) return timedFlight;
   const appendVia = (value, via) => {
@@ -3027,11 +3027,12 @@ function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
     if (!text || !via || /\bvia\b/i.test(text)) return text;
     return `${text}, via ${via}`;
   };
-  const stopNotes = [
+  const notes = String(timedFlight.notes || "").trim();
+  const hasDetailedStopNotes = /(?:Отиване|Връщане):\s+\d+\s+прекачван/i.test(notes);
+  const stopNotes = hasDetailedStopNotes ? "" : [
     outboundVia ? `Outbound via ${outboundVia}.` : "",
     inboundVia ? `Return via ${inboundVia}.` : ""
   ].filter(Boolean).join(" ");
-  const notes = String(timedFlight.notes || "").trim();
 
   return {
     ...timedFlight,
@@ -3092,6 +3093,55 @@ function sortConnectingTimelineChronologically(timeline = []) {
     })
     .sort((a, b) => a.timestamp - b.timestamp || a.index - b.index)
     .map(({ event }) => event);
+}
+
+function parseFlightTimelineMoment(when = "") {
+  const match = String(when || "").match(
+    /\b(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,.]?\s+)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{1,2})(?:,?\s+(20\d{2}))?\s*(?:[-–—·•|]\s*)?(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i
+  );
+  if (!match) return null;
+  const months = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+  };
+  let hour = Number(match[4]);
+  const meridiem = String(match[6] || "").toUpperCase();
+  if (meridiem === "PM" && hour < 12) hour += 12;
+  if (meridiem === "AM" && hour === 12) hour = 0;
+  return Date.UTC(
+    Number(match[3] || new Date().getFullYear()),
+    months[String(match[1]).toLowerCase()],
+    Number(match[2]),
+    hour,
+    Number(match[5])
+  );
+}
+
+function formatStopoverDuration(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return "";
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return [
+    hours ? `${hours}ч` : "",
+    rest ? `${rest}м` : ""
+  ].filter(Boolean).join(" ");
+}
+
+function buildStopoverDetails(legEvents = [], stopCodes = []) {
+  return safeArray(stopCodes).map((code) => {
+    const events = safeArray(legEvents).filter((event) => event?.code === code && event?.when);
+    if (events.length < 2) return `${code}`;
+    const arrival = events[0];
+    const departure = events[events.length - 1];
+    const arrivalTime = parseFlightTimelineMoment(arrival.when);
+    const departureTime = parseFlightTimelineMoment(departure.when);
+    const duration = formatStopoverDuration((departureTime - arrivalTime) / 60000);
+    return [
+      `${code}: кацане ${arrival.when}`,
+      `излитане ${departure.when}`,
+      duration ? `престой ${duration}` : ""
+    ].filter(Boolean).join(", ");
+  });
 }
 
 function preferredConnectingTimeline(rawText = "") {
@@ -3343,9 +3393,21 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
   );
   const outboundVia = outboundStops.length ? `, via ${outboundStops.join(" + ")}` : "";
   const inboundVia = inboundStops.length ? `, via ${inboundStops.join(" + ")}` : "";
+  const outboundStopDetails = buildStopoverDetails(
+    timeline.slice(outboundStartIndex + 1, outboundEndIndex),
+    outboundStops
+  );
+  const inboundStopDetails = buildStopoverDetails(
+    timeline.slice(inboundStartIndex + 1, inboundEndIndex),
+    inboundStops
+  );
+  const stopLine = (label, stops, details) => {
+    if (!stops.length) return "";
+    return `${label}: ${stops.length} ${stops.length === 1 ? "прекачване" : "прекачвания"} през ${stops.join(" + ")}${details.length ? ` (${details.join("; ")})` : ""}.`;
+  };
   const stopSummary = [
-    outboundStops.length ? `Отиване: ${outboundStops.length} ${outboundStops.length === 1 ? "прекачване" : "прекачвания"} през ${outboundStops.join(" + ")}.` : "",
-    inboundStops.length ? `Връщане: ${inboundStops.length} ${inboundStops.length === 1 ? "прекачване" : "прекачвания"} през ${inboundStops.join(" + ")}.` : ""
+    stopLine("Отиване", outboundStops, outboundStopDetails),
+    stopLine("Връщане", inboundStops, inboundStopDetails)
   ].filter(Boolean).join(" ");
   const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL|LX|OS)\s?\d{2,4}\b/gi) || [])]
     .map((number) => number.replace(/\s+/g, " "));

@@ -332,6 +332,15 @@ assert.match(turkishOpenJawFlight.departure, /SOF -> HND, .*via IST/i);
 assert.match(turkishOpenJawFlight.arrival, /NRT -> SOF, .*via IST/i);
 assert.doesNotMatch(turkishOpenJawFlight.route, /SOF -> IST \/ IST -> SOF/i);
 assert.doesNotMatch(turkishOpenJawFlight.departure, /via HND|via NRT/i);
+assert.match(turkishOpenJawFlight.notes, /IST: кацане Tue, Sep 1 - 10:40 PM, излитане Wed, Sep 2 - 2:05 AM, престой 3ч 25м/i);
+assert.match(turkishOpenJawFlight.notes, /IST: кацане Wed, Sep 16 - 4:40 AM, излитане Wed, Sep 16 - 7:30 AM, престой 2ч 50м/i);
+
+const turkishOpenJawStopSummary = enrichFlightStopSummary(
+  turkishOpenJawConnectingOcr,
+  turkishOpenJawFlight
+);
+assert.doesNotMatch(turkishOpenJawStopSummary.notes, /Return via NRT/i);
+assert.doesNotMatch(turkishOpenJawStopSummary.notes, /Outbound via IST/i);
 
 const globalConnectingParsed = parseConnectingFlightCheckout(globalConnectingFlightOcr);
 assert.equal(globalConnectingParsed.flight.price, 788.83);
