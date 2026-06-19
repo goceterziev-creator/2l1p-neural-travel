@@ -3405,14 +3405,19 @@ function buildRawStopoverDetails(rawText = "", stopCodes = [], occurrenceOffset 
     if (eventArrival && eventDeparture) {
       const arrivalTime = parseFlightTimelineMoment(eventArrival.when);
       const departureTime = parseFlightTimelineMoment(eventDeparture.when);
-      const duration = Number.isFinite(arrivalTime) && Number.isFinite(departureTime)
-        ? formatStopoverDuration((departureTime - arrivalTime) / 60000)
+      const stopMinutes = Number.isFinite(arrivalTime) && Number.isFinite(departureTime)
+        ? (departureTime - arrivalTime) / 60000
+        : NaN;
+      const duration = Number.isFinite(stopMinutes) && stopMinutes >= 0 && stopMinutes <= 36 * 60
+        ? formatStopoverDuration(stopMinutes)
         : "";
-      return [
-        `${stopCode}: кацане ${eventArrival.when}`,
-        `излитане ${eventDeparture.when}`,
-        duration ? `престой ${duration}` : ""
-      ].filter(Boolean).join(", ");
+      if (duration) {
+        return [
+          `${stopCode}: кацане ${eventArrival.when}`,
+          `излитане ${eventDeparture.when}`,
+          `престой ${duration}`
+        ].join(", ");
+      }
     }
 
     const escapedCode = stopCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
