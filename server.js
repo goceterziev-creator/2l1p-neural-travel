@@ -3220,6 +3220,14 @@ function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
   const hasDetailedStopNotes = /(?:Отиване|Връщане):\s+\d+\s+прекачван/i.test(notes);
   const hasReadableStopDetails = (value) =>
     /(РєР°С†Р°РЅРµ|РёР·Р»РёС‚Р°РЅРµ|РїСЂРµСЃС‚РѕР№|кацане|излитане|престой)/i.test(String(value || ""));
+  const hasImplausibleStopDuration = (value) =>
+    [...String(value || "").matchAll(/(\d+)\s*(?:С‡|ч|h)/gi)]
+      .some((match) => Number(match[1]) > 36);
+  const pickStopDetails = (structuredDetails, rawDetails) => {
+    const structuredText = hasReadableStopDetails(structuredDetails) ? structuredDetails : "";
+    if (structuredText && !hasImplausibleStopDuration(structuredText)) return structuredText;
+    return rawDetails || structuredText;
+  };
   const outboundStopCodes = outboundVia ? outboundVia.split(/\s*\+\s*/).filter(Boolean) : [];
   const inboundStopCodes = inboundVia ? inboundVia.split(/\s*\+\s*/).filter(Boolean) : [];
   const inboundRawOccurrenceOffset = outboundVia && inboundVia && outboundVia === inboundVia ? 1 : 0;
@@ -3227,8 +3235,8 @@ function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
   const inboundDetailsText = safeArray(detailedStops?.inboundDetails).filter(Boolean).join("; ");
   const outboundRawDetails = buildRawStopoverDetails(rawText, outboundStopCodes, 0).join("; ");
   const inboundRawDetails = buildRawStopoverDetails(rawText, inboundStopCodes, inboundRawOccurrenceOffset).join("; ");
-  const outboundDetails = outboundRawDetails || (hasReadableStopDetails(outboundDetailsText) ? outboundDetailsText : "");
-  const inboundDetails = inboundRawDetails || (hasReadableStopDetails(inboundDetailsText) ? inboundDetailsText : "");
+  const outboundDetails = pickStopDetails(outboundDetailsText, outboundRawDetails);
+  const inboundDetails = pickStopDetails(inboundDetailsText, inboundRawDetails);
   const stopNotes = hasDetailedStopNotes ? "" : [
     outboundDetails ? `Outbound via ${outboundVia} (${outboundDetails}).` : (outboundVia ? `Outbound via ${outboundVia}.` : ""),
     inboundDetails ? `Return via ${inboundVia} (${inboundDetails}).` : (inboundVia ? `Return via ${inboundVia}.` : "")

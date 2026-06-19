@@ -412,6 +412,7 @@ assert.match(multiScreenshotParsed.flight.departure, /SOF -> JFK, Jul 1 11:05 - 
 assert.match(multiScreenshotParsed.flight.arrival, /JFK -> SOF, Jul 8 16:15 - Jul 9 10:20, via ZRH/i);
 assert.match(multiScreenshotParsed.flight.notes, /ZRH: кацане .*12:25.*излитане .*13:15.*престой 50м/i);
 assert.match(multiScreenshotParsed.flight.notes, /ZRH: кацане .*06:10.*излитане .*07:05.*престой 55м/i);
+assert.ok(!/\.\.\./.test(multiScreenshotParsed.flight.notes));
 assert.equal(multiScreenshotParsed.flight.price, 762.61);
 assert.equal(multiScreenshotParsed.metadata.missingFields.length, 0);
 
@@ -449,6 +450,8 @@ Sofia Airport (SOF)
 const multiScreenshotPartialParsed = parseConnectingFlightCheckout(multiScreenshotPartialDetailsOcr);
 assert.equal(multiScreenshotPartialParsed.flight.route, "SOF -> JFK / JFK -> SOF");
 assert.notEqual(multiScreenshotPartialParsed.flight.route, "SOF -> ZRH / ZRH -> SOF");
+assert.ok(!/Return via ZRH \(ZRH:.*10:20/i.test(multiScreenshotPartialParsed.flight.notes || ""));
+assert.ok(!/\.\.\./.test(multiScreenshotPartialParsed.flight.notes || ""));
 
 const summaryOnlyOvernight = enrichFlightStopSummary(`
 Flight information
