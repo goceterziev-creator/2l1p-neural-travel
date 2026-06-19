@@ -1691,7 +1691,9 @@ function extractFlightPriceFromText(rawText = "") {
   const prices = matches
     .filter((match) => {
       const context = text.slice(Math.max(0, Number(match.index || 0) - 90), Number(match.index || 0) + match[0].length + 40);
+      const immediatePrefix = text.slice(Math.max(0, Number(match.index || 0) - 45), Number(match.index || 0));
       return !/\+\s*$/.test(text.slice(Math.max(0, Number(match.index || 0) - 3), Number(match.index || 0))) &&
+        !/(taxes\s+and\s+fees|airport\s+fees|service\s+fee|\u0434\u0430\u043d\u044a\u0446\u0438\s+\u0438\s+\u0442\u0430\u043a\u0441\u0438|\u043b\u0435\u0442\u0438\u0449\u043d\u0438\s+\u0442\u0430\u043a\u0441\u0438|\u0442\u0430\u043a\u0441\u0430\s+\u0437\u0430\s+\u043e\u0431\u0441\u043b\u0443\u0436\u0432\u0430\u043d\u0435)\s*$/i.test(immediatePrefix) &&
         !/(flexible ticket|travel protection|change fee|cancellation fee|extras you might like|\u0433\u044a\u0432\u043a\u0430\u0432 \u0431\u0438\u043b\u0435\u0442|\u0437\u0430\u0449\u0438\u0442\u0430 \u043f\u0440\u0438 \u043f\u044a\u0442\u0443\u0432\u0430\u043d\u0435|\u0447\u0435\u043a\u0438\u0440\u0430\u043d \u0431\u0430\u0433\u0430\u0436|\u0435\u043a\u0441\u0442\u0440\u0438)/i.test(context);
     })
     .map((match) => parseCollapsedFlightMoneyValue(match[0]))
@@ -4181,6 +4183,17 @@ function parseOcrByProfile(rawText = "", { kind = "flight", destination = "" } =
   if (source === "booking_flight_checkout") return parseBookingFlightCheckout(rawText, { destination });
   if (source === "ryanair_checkout") return parseRyanairCheckout(rawText);
   if (source === "wizz_checkout") return parseWizzCheckout(rawText, { destination });
+  if (kind === "flight") {
+    const generic = parseConnectingFlightCheckout(rawText, { destination });
+    if (generic?.flight && (
+      generic.flight.route ||
+      generic.flight.departure ||
+      generic.flight.arrival ||
+      generic.flight.price
+    )) {
+      return generic;
+    }
+  }
   return null;
 }
 
@@ -6529,67 +6542,6 @@ if (profileImport?.flight) {
   });
 }
 
-const lowerText = text.toLowerCase();
-
-const normalized = lowerText
-  .replace(/bapcenona|barce.?ona|bcn/g, "barcelona")
-  .replace(/coun|copun|cof|софия/g, "sof")
-  .replace(/bon/g, "bcn");
-
-const wizzFlightNumbers = cleanText.match(/\bW6\s?\d{3,5}\b/gi) || [];
-const normalizedFlightNumbers = wizzFlightNumbers.map((number) => number.replace(/\s+/g, ""));
-
-if (
-  normalized.includes("barcelona") ||
-  normalized.includes("bcn")
-) {
-  const timeMatches = text.match(/\d{1,2}:\d{2}/g);
-  const outboundNumber = normalizedFlightNumbers[0] || "";
-  const inboundNumber = normalizedFlightNumbers[1] || "";
-  const outbound = timeMatches?.[0] && timeMatches?.[1]
-    ? `SOF → BCN, 23.06.2026, ${timeMatches[0]} - ${timeMatches[1]}${outboundNumber ? `, ${outboundNumber}` : ""}`
-    : "";
-  const inbound = timeMatches?.[2] && timeMatches?.[3]
-    ? `BCN → SOF, 26.06.2026 → 27.06.2026, ${timeMatches[2]} - ${timeMatches[3]}${inboundNumber ? `, ${inboundNumber}` : ""}`
-    : "";
-
-  const flightPrice = 398;
-  const flight = {
-    airline: "Wizz Air",
-    route: "SOF → BCN / BCN → SOF",
-    departure: outbound,
-    arrival: inbound,
-    baggage: "Малка чанта включена",
-    notes: "Регистриран багаж от €36/крак",
-    price: flightPrice
-  };
-  const flightConfidence = buildFlightOcrConfidence(text, flight);
-
-  console.log("FLIGHT IMPORT RESPONSE:", {
-    flightAirline: flight.airline,
-    flightRoute: flight.route,
-    flightPrice,
-    requiresOperatorReview: flightConfidence.risk.requiresOperatorReview
-  });
-
-  return res.json({
-    success: true,
-    rawText: text,
-    flightPrice,
-    flightAirline: flight.airline,
-    flightRoute: flight.route,
-    flightDeparture: flight.departure,
-    flightArrival: flight.arrival,
-    flightBaggage: flight.baggage,
-    flightNotes: flight.notes,
-    flight,
-    hotel: {},
-    flightConfidence,
-    risk: flightConfidence.risk,
-    operatorWarnings: flightConfidence.risk.warnings
-  });
-}
-
    // ===== SIMPLE PARSER =====
 
 let flight = {};
@@ -6602,56 +6554,21 @@ const lines = text
 
 function normalizeFlightFromDestination(destinationRaw, rawText) {
   const d = String(destinationRaw || "").toLowerCase();
-  const t = String(rawText || "").toLowerCase();
 
-  if (d.includes("бари") || d.includes("bari")) {
-    return {
-      airline: "Wizz Air",
-      route: "SOF → BRI / BRI → SOF",
-      departure: "",
-      arrival: "",
-      baggage: "Малка чанта / багаж според условията на авиокомпанията",
-      notes: "Полетните часове и багажът подлежат на потвърждение преди резервация.",
-      price: 0
-    };
+  if (d.includes("\u0431\u0430\u0440\u0438") || d.includes("bari")) {
+    return { airline: "Wizz Air", route: "SOF -> BRI / BRI -> SOF" };
   }
 
-  if (d.includes("барселона") || d.includes("barcelona")) {
-    const timeMatches = String(rawText || "").match(/\d{1,2}:\d{2}/g) || [];
-    const flightNumbers = String(rawText || "").match(/\bW6\s?\d{3,5}\b/gi) || [];
-    const outboundNumber = flightNumbers[0]?.replace(/\s+/g, "") || "";
-    const inboundNumber = flightNumbers[1]?.replace(/\s+/g, "") || "";
-
-    return {
-      airline: "Wizz Air",
-      route: "SOF → BCN / BCN → SOF",
-      departure: timeMatches[0] && timeMatches[1]
-        ? `SOF → BCN, 23.06.2026, ${timeMatches[0]} - ${timeMatches[1]}${outboundNumber ? `, ${outboundNumber}` : ""}`
-        : `SOF → BCN, 23.06.2026${outboundNumber ? `, ${outboundNumber}` : ""}`,
-      arrival: timeMatches[2] && timeMatches[3]
-        ? `BCN → SOF, 26.06.2026 → 27.06.2026, ${timeMatches[2]} - ${timeMatches[3]}${inboundNumber ? `, ${inboundNumber}` : ""}`
-        : `BCN → SOF, 26.06.2026 → 27.06.2026${inboundNumber ? `, ${inboundNumber}` : ""}`,
-      baggage: "Малка чанта включена",
-      notes: "Регистриран багаж от €36/крак, избор на място и приоритетно качване срещу заплащане",
-      price: 398
-    };
+  if (d.includes("\u0431\u0430\u0440\u0441\u0435\u043b\u043e\u043d\u0430") || d.includes("barcelona")) {
+    return { airline: "Wizz Air", route: "SOF -> BCN / BCN -> SOF" };
   }
 
-  if (d.includes("tokyo") || d.includes("токио")) {
-    return {
-      airline: "Turkish Airlines",
-      route: "SOF → Tokyo / Tokyo → SOF",
-      departure: "",
-      arrival: "",
-      baggage: "Включен багаж според условията на авиокомпанията",
-      notes: "Полет с прекачване. Препоръчваме проверка на багажа и условията преди потвърждение.",
-      price: 0
-    };
+  if (d.includes("tokyo") || d.includes("\u0442\u043e\u043a\u0438\u043e")) {
+    return { airline: "Turkish Airlines", route: "SOF -> Tokyo / Tokyo -> SOF" };
   }
 
   return null;
 }
-
 function extractFlightTimeline(rawText = "") {
   const compact = ocrCompactText(rawText);
   const timeline = [];
@@ -6867,34 +6784,16 @@ function inferFlightFromContext(rawText = "", destination = "") {
   const t = String(rawText || "").toLowerCase();
   const d = String(destination || "").toLowerCase();
 
-  // Barcelona
   if (
     t.includes("bapcenona") ||
     t.includes("barcelona") ||
     t.includes("bcn") ||
-    d.includes("барселона") ||
+    d.includes("\u0431\u0430\u0440\u0441\u0435\u043b\u043e\u043d\u0430") ||
     d.includes("barcelona")
   ) {
-    const timeMatches = String(rawText || "").match(/\d{1,2}:\d{2}/g) || [];
-    const flightNumbers = String(rawText || "").match(/\bW6\s?\d{3,5}\b/gi) || [];
-    const outboundNumber = flightNumbers[0]?.replace(/\s+/g, "") || "";
-    const inboundNumber = flightNumbers[1]?.replace(/\s+/g, "") || "";
-
-    return {
-      airline: "Wizz Air",
-      route: "SOF → BCN / BCN → SOF",
-      departure: timeMatches[0] && timeMatches[1]
-        ? `SOF → BCN, 23.06.2026, ${timeMatches[0]} - ${timeMatches[1]}${outboundNumber ? `, ${outboundNumber}` : ""}`
-        : `SOF → BCN, 23.06.2026${outboundNumber ? `, ${outboundNumber}` : ""}`,
-      arrival: timeMatches[2] && timeMatches[3]
-        ? `BCN → SOF, 26.06.2026 → 27.06.2026, ${timeMatches[2]} - ${timeMatches[3]}${inboundNumber ? `, ${inboundNumber}` : ""}`
-        : `BCN → SOF, 26.06.2026 → 27.06.2026${inboundNumber ? `, ${inboundNumber}` : ""}`,
-      baggage: "Малка чанта включена",
-      notes: "Регистриран багаж от €36/крак, избор на място и приоритетно качване срещу заплащане"
-    };
+    return { airline: "Wizz Air", route: "SOF -> BCN / BCN -> SOF" };
   }
 
-  // Tokyo
   if (
     t.includes("tokyo") ||
     t.includes("tokio") ||
@@ -6903,38 +6802,22 @@ function inferFlightFromContext(rawText = "", destination = "") {
     t.includes("nrt") ||
     t.includes("hnd") ||
     d.includes("tokyo") ||
-    d.includes("токио")
+    d.includes("\u0442\u043e\u043a\u0438\u043e")
   ) {
-    return {
-      airline: "Turkish Airlines",
-      route: "SOF → Tokyo / Tokyo → SOF",
-      departure: "",
-      arrival: "",
-      baggage: "Включен багаж според условията на авиокомпанията",
-      notes: "Полет с прекачване. Препоръчваме проверка на багажа и условията преди потвърждение."
-    };
+    return { airline: "Turkish Airlines", route: "SOF -> Tokyo / Tokyo -> SOF" };
   }
 
-  // Bari
   if (
     t.includes("bari") ||
     t.includes("bri") ||
     d.includes("bari") ||
-    d.includes("бари")
+    d.includes("\u0431\u0430\u0440\u0438")
   ) {
-    return {
-      airline: "Wizz Air",
-      route: "SOF → BRI / BRI → SOF",
-      departure: "",
-      arrival: "",
-      baggage: "Малка чанта включена",
-      notes: "Полетът е внимателно подбран спрямо периода и наличността."
-    };
+    return { airline: "Wizz Air", route: "SOF -> BRI / BRI -> SOF" };
   }
 
   return null;
 }
-
 const destinationHint = req.body?.destination || "";
 const inferredFlight = inferFlightFromContext(text, destinationHint);
 

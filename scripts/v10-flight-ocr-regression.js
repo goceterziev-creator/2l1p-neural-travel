@@ -414,6 +414,7 @@ assert.match(multiScreenshotParsed.flight.notes, /ZRH: кацане .*12:25.*и�
 assert.match(multiScreenshotParsed.flight.notes, /ZRH: кацане .*06:10.*излитане .*07:05.*престой 55м/i);
 assert.ok(!/\.\.\./.test(multiScreenshotParsed.flight.notes));
 assert.equal(multiScreenshotParsed.flight.price, 762.61);
+assert.equal(extractFlightPriceFromText(multiScreenshotSummaryAndDetailsOcr), 762.61);
 assert.equal(multiScreenshotParsed.metadata.missingFields.length, 0);
 assert.deepEqual(
   multiScreenshotParsed.flight.outboundSegments.map((segment) => `${segment.from}->${segment.to}`),
