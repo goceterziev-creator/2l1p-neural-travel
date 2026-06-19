@@ -415,6 +415,21 @@ assert.match(multiScreenshotParsed.flight.notes, /ZRH: кацане .*06:10.*и�
 assert.ok(!/\.\.\./.test(multiScreenshotParsed.flight.notes));
 assert.equal(multiScreenshotParsed.flight.price, 762.61);
 assert.equal(multiScreenshotParsed.metadata.missingFields.length, 0);
+assert.deepEqual(
+  multiScreenshotParsed.flight.outboundSegments.map((segment) => `${segment.from}->${segment.to}`),
+  ["SOF->ZRH", "ZRH->JFK"]
+);
+assert.deepEqual(
+  multiScreenshotParsed.flight.inboundSegments.map((segment) => `${segment.from}->${segment.to}`),
+  ["JFK->ZRH", "ZRH->SOF"]
+);
+assert.deepEqual(multiScreenshotParsed.flight.stopoverAirports, ["ZRH"]);
+assert.ok(multiScreenshotParsed.flight.transferTimes.includes("50min"));
+assert.ok(multiScreenshotParsed.flight.transferTimes.includes("55min"));
+assert.equal(multiScreenshotParsed.flight.outboundSegments[0].flightNumber, "LX 1391");
+assert.equal(multiScreenshotParsed.flight.outboundSegments[1].flightNumber, "LX 14");
+assert.equal(multiScreenshotParsed.flight.inboundSegments[0].flightNumber, "LX 17");
+assert.equal(multiScreenshotParsed.flight.inboundSegments[1].flightNumber, "LX 1390");
 
 const multiScreenshotPartialDetailsOcr = `
 --- OCR IMAGE 1: desktop-summary.png ---

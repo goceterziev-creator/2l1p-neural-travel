@@ -2994,6 +2994,319 @@ function mergeTimelineEvents(...groups) {
   });
 }
 
+function extractGlobalFlightEventContext(rawText = "", event = {}) {
+  const normalized = normalizeLocalizedFlightTimelineText(String(rawText || "")).replace(/\r/g, "\n");
+  const compact = ocrCompactText(normalized);
+  const time = String(event?.when || "").match(/\b(\d{1,2}:\d{2})\b/)?.[1] || "";
+  const code = String(event?.code || "").toUpperCase();
+  if (!time || !code) return "";
+
+  const timePattern = new RegExp(`\\b${time.replace(":", "\\:")}\\b`, "g");
+  const matches = [...compact.matchAll(timePattern)];
+  const match = matches.find((candidate) => {
+    const start = Number(candidate.index || 0);
+    const window = compact.slice(Math.max(0, start - 160), start + 260);
+    return new RegExp(`\\b${code}\\b|\\(${code}\\)`, "i").test(window);
+  }) || matches[0];
+  if (!match) return "";
+  const start = Number(match.index || 0);
+  return compact.slice(Math.max(0, start - 180), start + 320).trim();
+}
+
+function extractGlobalFlightSegmentMetadata(context = "") {
+  const text = ocrCompactText(context);
+  const flightNumber = (text.match(/\b([A-Z0-9]{2,3})\s?(\d{2,5})\b/i) || [])
+    .slice(1, 3)
+    .join(" ")
+    .trim();
+  const airline = (text.match(/\bAirline\s*:\s*([A-Za-z][A-Za-z\s&.'-]{1,45})(?=\s|,|\.|$)/i) || [])[1] ||
+    (text.match(/\bOperated\s+by\s+([A-Za-z][A-Za-z\s&.'-]{1,45})(?=\s|,|\.|$)/i) || [])[1] ||
+    "";
+  const duration = (text.match(/\b(?:Flight\s+duration\s*:\s*)?(\d{1,2}\s*h(?:ours?)?\s*\d{1,2}\s*min(?:utes)?|\d{1,2}\s+hours?\s+\d{1,2}\s+minutes?)\b/i) || [])[1] || "";
+  const flightClass = (text.match(/\bClass\s*:\s*(Economy|Business|First|Premium(?:\s+Economy)?)/i) || [])[1] ||
+    (text.match(/\b(Economy|Business|First|Premium(?:\s+Economy)?)\b/i) || [])[1] ||
+    "";
+  return {
+    flightNumber: flightNumber ? flightNumber.replace(/\s+/g, " ") : "",
+    airline: airline ? cleanFlightAirlineLabel(airline) : "",
+    duration: duration ? duration.replace(/\s+/g, " ") : "",
+    class: flightClass ? flightClass.replace(/\s+/g, " ") : ""
+  };
+}
+
+function extractGlobalTransferTimes(rawText = "") {
+  const compact = ocrCompactText(rawText);
+  return [...compact.matchAll(/\b(?:Transfer\s+Time|Layover|stopover|connection)\s*[:\-]?\s*(\d{1,2}\s*h(?:ours?)?\s*\d{1,2}\s*min(?:utes)?|\d{1,3}\s*min(?:utes)?)/gi)]
+    .map((match) => String(match[1] || "").replace(/\s+/g, "").replace(/minutes?/i, "min"))
+    .filter(Boolean);
+}
+
+function extractGlobalFlightNumbers(rawText = "") {
+  return [...String(rawText || "").matchAll(/\b([A-Z]{1,3}\d?)\s?(\d{2,5})\b/g)]
+    .map((match) => `${match[1]} ${match[2]}`.replace(/\s+/g, " ").trim())
+    .filter((value, index, list) => value && list.indexOf(value) === index);
+}
+
+function scoreGlobalFlightEventTimeline(timeline = []) {
+  const codes = safeArray(timeline).map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+  if (codes.length < 4) return -1;
+  const origin = codes[0];
+  const uniqueCodes = uniqueAirportCodes(codes);
+  const adjacentDuplicateStops = codes.filter((code, index) =>
+    index > 0 && code !== origin && code === codes[index - 1]
+  ).length;
+  const returnsToOrigin = codes[codes.length - 1] === origin ? 6 : 0;
+  return codes.length * 2 + uniqueCodes.length * 4 + adjacentDuplicateStops * 8 + returnsToOrigin;
+}
+
+function preferredGlobalFlightEventTimeline(rawText = "") {
+  const sections = splitOcrTimelineSections(rawText);
+  const candidates = sections.flatMap((section, index) => [
+    { index: index * 3, timeline: extractExplicitAirportRowTimeline(section) },
+    { index: index * 3 + 1, timeline: extractVisibleAirportRowTimeline(section) },
+    { index: index * 3 + 2, timeline: sortConnectingTimelineChronologically(extractConnectingFlightTimeline(section)) }
+  ]).concat([
+    { index: sections.length * 3, timeline: extractExplicitAirportRowTimeline(rawText) },
+    { index: sections.length * 3 + 1, timeline: extractVisibleAirportRowTimeline(rawText) },
+    { index: sections.length * 3 + 2, timeline: sortConnectingTimelineChronologically(extractConnectingFlightTimeline(rawText)) }
+  ]);
+  return candidates
+    .map((candidate) => ({
+      ...candidate,
+      score: scoreGlobalFlightEventTimeline(candidate.timeline)
+    }))
+    .filter((candidate) => candidate.score >= 0)
+    .sort((a, b) => b.score - a.score || b.timeline.length - a.timeline.length || a.index - b.index)[0]?.timeline || [];
+}
+
+function preferredRouteAwareFlightEventTimeline(rawText = "", flight = {}) {
+  const { origin, destination } = extractRoundTripRouteEndpoints(flight);
+  if (!origin || !destination || origin === destination) return [];
+  const sections = splitOcrTimelineSections(rawText);
+  const candidates = sections.flatMap((section, index) => [
+    { index: index * 3, timeline: extractExplicitAirportRowTimeline(section) },
+    { index: index * 3 + 1, timeline: extractVisibleAirportRowTimeline(section) },
+    { index: index * 3 + 2, timeline: sortConnectingTimelineChronologically(extractConnectingFlightTimeline(section)) }
+  ])
+    .filter((candidate) => candidate.timeline.length >= 4)
+    .map((candidate) => {
+      const codes = candidate.timeline.map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+      const intermediateCount = uniqueAirportCodes(codes.filter((code) => ![origin, destination].includes(code))).length;
+      const adjacentDuplicateStops = codes.filter((code, index) =>
+        index > 0 && ![origin, destination].includes(code) && code === codes[index - 1]
+      ).length;
+      const hasRoundTripEndpoints = codes[0] === origin &&
+        codes.includes(destination) &&
+        codes[codes.length - 1] === origin;
+      return {
+        ...candidate,
+        score: scoreRoundTripTimeline(candidate.timeline, flight) +
+          intermediateCount * 12 +
+          adjacentDuplicateStops * 10 +
+          (hasRoundTripEndpoints ? 10 : 0)
+      };
+    })
+    .filter((candidate) => {
+      const codes = candidate.timeline.map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+      return codes.includes(origin) &&
+        codes.includes(destination) &&
+        codes.some((code) => ![origin, destination].includes(code));
+    })
+    .sort((a, b) => b.score - a.score || b.timeline.length - a.timeline.length || b.index - a.index);
+  return candidates[0]?.timeline || [];
+}
+
+function extractGlobalFlightEvents(rawText = "", flight = {}) {
+  const routeAwareTimeline = flight?.route
+    ? (preferredRouteAwareFlightEventTimeline(rawText, flight) || preferredRoundTripStopTimeline(rawText, flight) || preferredRoundTripTimeline(rawText, flight))
+    : [];
+  const timeline = routeAwareTimeline.length >= 4
+    ? routeAwareTimeline
+    : preferredGlobalFlightEventTimeline(rawText);
+  return timeline.map((event) => ({
+    ...event,
+    time: String(event?.when || "").match(/\b(\d{1,2}:\d{2})\b/)?.[1] || "",
+    airportCode: String(event?.code || "").toUpperCase(),
+    context: extractGlobalFlightEventContext(rawText, event)
+  })).filter((event) => event.time && isPlausibleIataCode(event.airportCode));
+}
+
+function splitGlobalRoundTripEvents(events = [], flight = {}) {
+  const list = safeArray(events).filter((event) => isPlausibleIataCode(event?.airportCode));
+  if (list.length < 4) return null;
+  const routeMatches = [...String(flight?.route || "").matchAll(/\b([A-Z]{3})\s*(?:->|\u2192)\s*([A-Z]{3})\b/g)];
+  if (routeMatches.length >= 2) {
+    const origin = routeMatches[0][1].toUpperCase();
+    const destination = routeMatches[0][2].toUpperCase();
+    const inboundOrigin = routeMatches[routeMatches.length - 1][1].toUpperCase();
+    const inboundDestination = routeMatches[routeMatches.length - 1][2].toUpperCase();
+    const routeCandidates = [];
+
+    for (let outboundStartIndex = 0; outboundStartIndex < list.length; outboundStartIndex += 1) {
+      if (list[outboundStartIndex]?.airportCode !== origin) continue;
+      for (let outboundEndIndex = outboundStartIndex + 1; outboundEndIndex < list.length; outboundEndIndex += 1) {
+        if (list[outboundEndIndex]?.airportCode !== destination) continue;
+        for (let inboundStartIndex = outboundEndIndex + 1; inboundStartIndex < list.length; inboundStartIndex += 1) {
+          if (list[inboundStartIndex]?.airportCode !== inboundOrigin) continue;
+          for (let inboundEndIndex = inboundStartIndex + 1; inboundEndIndex < list.length; inboundEndIndex += 1) {
+            if (list[inboundEndIndex]?.airportCode !== inboundDestination) continue;
+
+            let outboundEvents = list.slice(outboundStartIndex, outboundEndIndex + 1);
+            let inboundEvents = list.slice(inboundStartIndex, inboundEndIndex + 1);
+            outboundEvents = outboundEvents.filter((event, offset) =>
+              offset === 0 ||
+              offset === outboundEvents.length - 1 ||
+              ![origin, destination].includes(event.airportCode)
+            );
+            inboundEvents = inboundEvents.filter((event, offset) =>
+              offset === 0 ||
+              offset === inboundEvents.length - 1 ||
+              ![inboundOrigin, inboundDestination].includes(event.airportCode)
+            );
+            if (outboundEvents.length < 2 || inboundEvents.length < 2) continue;
+            const outboundMiddle = outboundEvents.slice(1, -1).map((event) => event.airportCode);
+            const inboundMiddle = inboundEvents.slice(1, -1).map((event) => event.airportCode);
+            if (outboundMiddle.includes(origin) || outboundMiddle.includes(inboundOrigin)) continue;
+            if (inboundMiddle.includes(destination) || inboundMiddle.includes(inboundDestination)) continue;
+
+            const outboundStops = outboundEvents.length - 2;
+            const inboundStops = inboundEvents.length - 2;
+            const score =
+              outboundEvents.length +
+              inboundEvents.length +
+              Math.min(outboundStops, 2) +
+              Math.min(inboundStops, 2) -
+              Math.abs(outboundEvents.length - inboundEvents.length);
+
+            routeCandidates.push({ outboundEvents, inboundEvents, score, outboundStartIndex });
+          }
+        }
+      }
+    }
+
+    if (routeCandidates.length) {
+      const best = routeCandidates.sort((a, b) =>
+        b.score - a.score || b.outboundStartIndex - a.outboundStartIndex
+      )[0];
+      return {
+        outboundEvents: best.outboundEvents,
+        inboundEvents: best.inboundEvents
+      };
+    }
+  }
+
+  const origin = list[0].airportCode;
+  const finalOriginIndex = list.map((event) => event.airportCode).lastIndexOf(origin);
+  if (finalOriginIndex < 2) return null;
+
+  let outboundEndIndex = -1;
+  let inboundStartIndex = -1;
+  const duplicatePairs = [];
+  for (let index = 1; index < finalOriginIndex; index += 1) {
+    if (list[index].airportCode !== origin && list[index].airportCode === list[index + 1]?.airportCode) {
+      duplicatePairs.push(index);
+    }
+  }
+  if (duplicatePairs.length) {
+    const midpoint = finalOriginIndex / 2;
+    outboundEndIndex = duplicatePairs
+      .sort((a, b) => Math.abs(a + 0.5 - midpoint) - Math.abs(b + 0.5 - midpoint))[0];
+    inboundStartIndex = outboundEndIndex + 1;
+  }
+
+  if (outboundEndIndex < 1 || inboundStartIndex < 0) {
+    const middle = Math.floor(finalOriginIndex / 2);
+    outboundEndIndex = middle;
+    inboundStartIndex = middle + 1;
+  }
+
+  if (outboundEndIndex < 1 || inboundStartIndex >= finalOriginIndex) return null;
+  return {
+    outboundEvents: list.slice(0, outboundEndIndex + 1),
+    inboundEvents: list.slice(inboundStartIndex, finalOriginIndex + 1)
+  };
+}
+
+function groupFlightEventsIntoSegments(events = [], flight = {}, rawText = "") {
+  const split = splitGlobalRoundTripEvents(events, flight);
+  if (!split) return null;
+  const transferTimes = extractGlobalTransferTimes(events.map((event) => event.context).join(" "));
+  let transferIndex = 0;
+
+  const buildSegments = (items = []) => safeArray(items).slice(0, -1).map((event, index) => {
+    const next = items[index + 1];
+    const combinedContext = [event.context, next?.context].filter(Boolean).join(" ");
+    const metadata = extractGlobalFlightSegmentMetadata(combinedContext);
+    const transferBefore = index > 0
+      ? transferTimes[transferIndex++] || (() => {
+          const previous = items[index - 1];
+          const arrivalTime = parseFlightTimelineMoment(previous?.when);
+          const departureTime = parseFlightTimelineMoment(event?.when);
+          const minutes = Number.isFinite(arrivalTime) && Number.isFinite(departureTime)
+            ? (departureTime - arrivalTime) / 60000
+            : NaN;
+          return Number.isFinite(minutes) && minutes >= 0 && minutes <= 36 * 60
+            ? `${Math.round(minutes)}min`
+            : "";
+        })()
+      : "";
+    return {
+      from: event.airportCode,
+      to: next.airportCode,
+      departure: event.when,
+      arrival: next.when,
+      duration: metadata.duration,
+      flightNumber: metadata.flightNumber,
+      airline: metadata.airline,
+      class: metadata.class,
+      transferBefore
+    };
+  }).filter((segment) => segment.from && segment.to && segment.from !== segment.to);
+
+  const outboundSegments = buildSegments(split.outboundEvents);
+  const inboundSegments = buildSegments(split.inboundEvents);
+  if (!outboundSegments.length || !inboundSegments.length) return null;
+  const allSegments = [...outboundSegments, ...inboundSegments];
+  const orderedFlightNumbers = extractGlobalFlightNumbers(rawText || events.map((event) => event.context).join(" "));
+  if (orderedFlightNumbers.length >= allSegments.length) {
+    allSegments.forEach((segment, index) => {
+      segment.flightNumber = orderedFlightNumbers[index] || segment.flightNumber;
+    });
+  }
+
+  const endpointCodes = new Set([
+    outboundSegments[0]?.from,
+    outboundSegments[outboundSegments.length - 1]?.to,
+    inboundSegments[0]?.from,
+    inboundSegments[inboundSegments.length - 1]?.to
+  ].filter(Boolean));
+  const stopoverAirports = uniqueAirportCodes(
+    [...outboundSegments, ...inboundSegments]
+      .flatMap((segment) => [segment.from, segment.to])
+      .filter((code) => code && !endpointCodes.has(code))
+  );
+
+  return {
+    outboundSegments,
+    inboundSegments,
+    stopoverAirports,
+    transferTimes: [...outboundSegments, ...inboundSegments].map((segment) => segment.transferBefore).filter(Boolean)
+  };
+}
+
+function parseConnectingFlightSegments(rawText = "", flight = {}) {
+  const events = extractGlobalFlightEvents(rawText, flight);
+  const grouped = groupFlightEventsIntoSegments(events, flight, rawText);
+  if (!grouped) return flight;
+  return {
+    ...flight,
+    outboundSegments: grouped.outboundSegments,
+    inboundSegments: grouped.inboundSegments,
+    stopoverAirports: grouped.stopoverAirports,
+    transferTimes: grouped.transferTimes
+  };
+}
+
 function extractRawExplicitAirportEventsForCode(rawText = "", code = "") {
   const targetCode = String(code || "").toUpperCase();
   if (!isPlausibleIataCode(targetCode)) return [];
@@ -3795,10 +4108,11 @@ function parseConnectingFlightCheckout(rawText = "", { destination = "" } = {}) 
       ...connectingFlight,
       price
     }, destination);
+    const segmentedFlight = parseConnectingFlightSegments(rawText, flight);
     const missingFields = [];
-    if (!flight.departure || !flight.arrival) missingFields.push("flight.times");
-    if (!flight.price) missingFields.push("flight.price");
-    return { flight, hotel: {}, metadata: buildOcrMetadata("connecting_flight_checkout", flight, missingFields) };
+    if (!segmentedFlight.departure || !segmentedFlight.arrival) missingFields.push("flight.times");
+    if (!segmentedFlight.price) missingFields.push("flight.price");
+    return { flight: segmentedFlight, hotel: {}, metadata: buildOcrMetadata("connecting_flight_checkout", segmentedFlight, missingFields) };
   }
 
   const fallback = parseBookingFlightCheckout(rawText, { destination });
@@ -6183,6 +6497,7 @@ if (profileImport?.flight) {
     profileImport.flight,
     req.body?.destination || ""
   );
+  profileImport.flight = parseConnectingFlightSegments(text, profileImport.flight);
   const flightPrice = Number(profileImport.flight.price || 0);
   profileImport.flight.price = flightPrice;
   const flightConfidence = buildFlightOcrConfidence(text, profileImport.flight, profileImport.metadata);
@@ -6895,10 +7210,13 @@ module.exports = {
   enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
   extractFlightPriceFromText,
+  extractGlobalFlightEvents,
   extractGlobalFlightDateTimeCandidates,
   extractPreferredRoundTripStopSummary,
+  groupFlightEventsIntoSegments,
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
+  parseConnectingFlightSegments,
   parseConnectingFlightCheckout,
   buildFlightOcrConfidence
 };
