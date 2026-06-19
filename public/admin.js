@@ -56,7 +56,11 @@ function addFlight(flight = {}) {
     arrival: cleanFlight.arrival || "",
     baggage: cleanFlight.baggage || "",
     notes: cleanFlight.notes || "",
-    price: Number(cleanFlight.price || 0)
+    price: Number(cleanFlight.price || 0),
+    outboundSegments: Array.isArray(cleanFlight.outboundSegments) ? cleanFlight.outboundSegments : [],
+    inboundSegments: Array.isArray(cleanFlight.inboundSegments) ? cleanFlight.inboundSegments : [],
+    stopoverAirports: Array.isArray(cleanFlight.stopoverAirports) ? cleanFlight.stopoverAirports : [],
+    transferTimes: Array.isArray(cleanFlight.transferTimes) ? cleanFlight.transferTimes : []
   };
   const nextRoundTripRoute = roundTripRouteKey(nextFlight);
   const existingIndex = flights.findIndex((item) =>
@@ -2609,6 +2613,66 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
   }
 }
 
+function formatOperatorFlightSegment(segment = {}) {
+  const itinerary = [
+    segment.departure || "?",
+    segment.from || "?",
+    "->",
+    segment.arrival || "?",
+    segment.to || "?"
+  ].join(" ");
+  const metadata = [segment.flightNumber, segment.airline, segment.class, segment.duration]
+    .filter(Boolean)
+    .join(" | ");
+  return { itinerary, metadata };
+}
+
+function renderOperatorFlightSegments(flight = {}) {
+  const renderDirection = (label, segments = []) => {
+    if (!Array.isArray(segments) || !segments.length) return "";
+
+    return `
+      <section class="flight-segment-direction">
+        <strong>${label}</strong>
+        ${segments.map((segment, index) => {
+          const formatted = formatOperatorFlightSegment(segment);
+          const transfer = index > 0 && segment.transferBefore
+            ? `<div class="flight-transfer-badge">Transfer: ${escapeHtml(segment.transferBefore)}</div>`
+            : "";
+          return `
+            ${transfer}
+            <div class="flight-segment-row">
+              <span>${escapeHtml(formatted.itinerary)}</span>
+              ${formatted.metadata ? `<small>${escapeHtml(formatted.metadata)}</small>` : ""}
+            </div>
+          `;
+        }).join("")}
+      </section>
+    `;
+  };
+
+  const outbound = renderDirection("Outbound segments", flight.outboundSegments);
+  const inbound = renderDirection("Inbound segments", flight.inboundSegments);
+  if (!outbound && !inbound) return "";
+
+  const stopovers = Array.isArray(flight.stopoverAirports) && flight.stopoverAirports.length
+    ? `Stopovers: ${flight.stopoverAirports.join(", ")}`
+    : "";
+  const transferTimes = Array.isArray(flight.transferTimes) && flight.transferTimes.length
+    ? `Transfer times: ${flight.transferTimes.join(", ")}`
+    : "";
+  const summary = [stopovers, transferTimes].filter(Boolean).join(" | ");
+
+  return `
+    <div class="flight-segment-review">
+      <div class="flight-segment-review-title">Segment review</div>
+      ${outbound}
+      ${inbound}
+      ${summary ? `<div class="flight-segment-summary">${escapeHtml(summary)}</div>` : ""}
+    </div>
+  `;
+}
+
 function renderFlightCards() {
   const box = document.getElementById("flightCards");
 
@@ -2623,6 +2687,7 @@ function renderFlightCards() {
       <input placeholder="Baggage" value="${escapeHtml(f.baggage || "")}" onchange="flights[${i}].baggage=this.value;updateAutoPrice();" />
       <input type="number" step="0.01" placeholder="Price" value="${Number(f.price || 0)}" onchange="flights[${i}].price=Number(this.value||0);updateAutoPrice();" />
       <textarea class="flight-notes-field" rows="6" placeholder="Flight Notes" onchange="flights[${i}].notes=this.value;updateAutoPrice();">${escapeHtml(f.notes || "")}</textarea>
+      ${renderOperatorFlightSegments(f)}
       <button type="button" onclick="removeFlight(${i})">Remove Flight</button>
     </div>
   `).join("");
