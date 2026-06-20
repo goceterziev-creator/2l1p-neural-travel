@@ -429,9 +429,11 @@ assert.deepEqual(
 assert.deepEqual(multiScreenshotParsed.flight.stopoverAirports, ["ZRH"]);
 assert.ok(multiScreenshotParsed.flight.transferTimes.includes("50min"));
 assert.ok(multiScreenshotParsed.flight.transferTimes.includes("55min"));
-assert.equal(multiScreenshotParsed.flight.outboundSegments[0].flightNumber, "LX 1391");
-assert.equal(multiScreenshotParsed.flight.outboundSegments[1].flightNumber, "LX 14");
-assert.equal(multiScreenshotParsed.flight.inboundSegments[0].flightNumber, "LX 17");
+  assert.equal(multiScreenshotParsed.flight.outboundSegments[0].flightNumber, "LX 1391");
+  assert.equal(multiScreenshotParsed.flight.outboundSegments[1].flightNumber, "LX 14");
+  assert.equal(multiScreenshotParsed.flight.outboundSegments[0].duration, "2 hours 20 minutes");
+  assert.equal(multiScreenshotParsed.flight.outboundSegments[1].duration, "9h 20min");
+  assert.equal(multiScreenshotParsed.flight.inboundSegments[0].flightNumber, "LX 17");
 assert.equal(multiScreenshotParsed.flight.inboundSegments[1].flightNumber, "LX 1390");
 assert.equal(multiScreenshotParsed.flight.inboundSegments[0].duration, "7h 55min");
 assert.equal(multiScreenshotParsed.flight.inboundSegments[1].duration, "2 hours 15 minutes");
@@ -458,17 +460,21 @@ assert.equal(mergedSwissSegments.price, 762.61, "summary-derived price must rema
 const swissDetailWithSparseReturnDates = `
 1 Jul
 11:05 Sofia Airport (SOF)
+Flight duration: 2 hours 20 minutes
 Flight number: LX 1391
 12:25 Zurich Airport (ZRH)
 Transfer Time: 50min
 13:15 Zurich Airport (ZRH)
+Flight duration: 9h 20min
 Flight number: LX 14
 16:35 John F. Kennedy (JFK)
 16:15 John F. Kennedy (JFK)
+Flight duration: 7h 55min
 Flight number: LX 17
 06:10 Zurich Airport (ZRH)
 Transfer Time: 55min
 07:05 Zurich Airport (ZRH)
+Flight duration: 2 hours 15 minutes
 Flight number: LX 1390
 10:20 Sofia Airport (SOF)
 `;

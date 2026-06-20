@@ -3039,19 +3039,26 @@ function extractGlobalFlightSegmentMetadata(context = "") {
 function extractGlobalFlightMetadataByNumber(rawText = "") {
   const text = String(rawText || "");
   const duration = "\\d{1,2}\\s*h(?:ours?)?\\s*\\d{1,2}\\s*min(?:utes)?|\\d{1,2}\\s+hours?\\s+\\d{1,2}\\s+minutes?";
-  const pattern = new RegExp(
-    `Flight\\s+duration\\s*:\\s*(${duration})[\\s\\S]{0,180}?Flight\\s+number\\s*:\\s*([A-Z0-9]{1,3}\\s?\\d{2,5})([\\s\\S]{0,180}?)\\b(?=Flight\\s+duration\\s*:|Flight\\s+number\\s*:|$)`,
-    "gi"
-  );
   const metadata = new Map();
-  for (const match of text.matchAll(pattern)) {
-    const key = String(match[2] || "").replace(/\s+/g, " ").trim().toUpperCase();
+  const numberMatches = [...text.matchAll(/Flight\s+number\s*:\s*([A-Z0-9]{1,3}\s?\d{2,5})/gi)];
+  for (const [index, match] of numberMatches.entries()) {
+    const key = String(match[1] || "").replace(/\s+/g, " ").trim().toUpperCase();
     if (!key || metadata.has(key)) continue;
-    const tail = String(match[3] || "");
+    const previousBoundary = index > 0 ? numberMatches[index - 1].index + numberMatches[index - 1][0].length : 0;
+    const nextBoundary = index + 1 < numberMatches.length ? numberMatches[index + 1].index : text.length;
+    const block = text.slice(previousBoundary, nextBoundary);
+    const numberOffset = Math.max(0, (match.index || 0) - previousBoundary);
+    const nearestDuration = [...block.matchAll(new RegExp(duration, "gi"))]
+      .map((candidate) => ({
+        value: String(candidate[0] || "").replace(/\s+/g, " ").trim(),
+        distance: Math.abs((candidate.index || 0) - numberOffset),
+        isBefore: (candidate.index || 0) <= numberOffset
+      }))
+      .sort((a, b) => a.distance - b.distance || Number(b.isBefore) - Number(a.isBefore))[0];
     metadata.set(key, {
-      duration: String(match[1] || "").replace(/\s+/g, " ").trim(),
-      class: tail.match(/\bClass\s*:\s*(Economy|Business|First|Premium(?:\s+Economy)?)/i)?.[1] || "",
-      airline: tail.match(/\bAirline\s*:\s*([A-Za-z][A-Za-z\s&.'-]{1,45})(?=\s|,|\.|$)/i)?.[1] || ""
+      duration: nearestDuration?.value || "",
+      class: block.match(/\bClass\s*:\s*(Economy|Business|First|Premium(?:\s+Economy)?)/i)?.[1] || "",
+      airline: block.match(/\bAirline\s*:\s*([A-Za-z][A-Za-z\s&.'-]{1,45})(?=\s|,|\.|$)/i)?.[1] || ""
     });
   }
   return metadata;
