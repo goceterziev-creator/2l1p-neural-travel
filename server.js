@@ -3309,6 +3309,70 @@ function parseConnectingFlightSegments(rawText = "", flight = {}) {
   };
 }
 
+function classifyFlightScreenshot(rawText = "") {
+  const text = String(rawText || "");
+  const flightNumberCount = extractGlobalFlightNumbers(text).length;
+  const timeCount = (text.match(/\b\d{1,2}:\d{2}\b/g) || []).length;
+  const airportCount = uniqueAirportCodes(detectAirportCodes(text)).length;
+  const detailSignals = (text.match(/\b(?:flight\s+(?:number|duration)|transfer\s+time|layover|class\s*:|airline\s*:|segment)\b/gi) || []).length;
+
+  if (
+    (flightNumberCount >= 2 && timeCount >= 4 && airportCount >= 3) ||
+    (detailSignals >= 2 && timeCount >= 4 && airportCount >= 3)
+  ) {
+    return "detail";
+  }
+
+  if (/(?:total\s+journey\s+length|passengers?\s*[€$£]|taxes\s+and\s+fees|\btotal\s*:)/i.test(text)) {
+    return "summary";
+  }
+
+  return "unknown";
+}
+
+function mergeMultiImageFlightSegments(imageTexts = [], flight = {}) {
+  const candidates = safeArray(imageTexts)
+    .map((rawText, index) => ({
+      rawText: String(rawText || ""),
+      index,
+      profile: classifyFlightScreenshot(rawText)
+    }))
+    .filter((candidate) => candidate.rawText.trim());
+  if (candidates.length < 2) return flight;
+
+  const detailCandidates = candidates.filter((candidate) => candidate.profile === "detail");
+  const segmentSources = detailCandidates.length ? detailCandidates : candidates;
+  const parsedCandidates = segmentSources
+    .map((candidate) => {
+      const parsed = parseConnectingFlightSegments(candidate.rawText, flight);
+      const outboundCount = safeArray(parsed.outboundSegments).length;
+      const inboundCount = safeArray(parsed.inboundSegments).length;
+      return {
+        ...candidate,
+        parsed,
+        segmentCount: outboundCount + inboundCount,
+        balanced: Math.min(outboundCount, inboundCount)
+      };
+    })
+    .filter((candidate) => candidate.segmentCount >= 2 && candidate.balanced >= 1)
+    .sort((a, b) =>
+      b.segmentCount - a.segmentCount ||
+      b.balanced - a.balanced ||
+      b.index - a.index
+    );
+
+  const best = parsedCandidates[0];
+  if (!best) return flight;
+
+  return {
+    ...flight,
+    outboundSegments: best.parsed.outboundSegments,
+    inboundSegments: best.parsed.inboundSegments,
+    stopoverAirports: best.parsed.stopoverAirports,
+    transferTimes: best.parsed.transferTimes
+  };
+}
+
 function extractRawExplicitAirportEventsForCode(rawText = "", code = "") {
   const targetCode = String(code || "").toUpperCase();
   if (!isPlausibleIataCode(targetCode)) return [];
@@ -6477,9 +6541,11 @@ app.post("/api/import-image", requireCapability("imports.run"), upload.array("im
     }
 
     const textParts = [];
+    const ocrImageTexts = [];
     for (let index = 0; index < imageFiles.length; index += 1) {
       const file = imageFiles[index];
       const ocrText = await recognizeFlightScreenshot(file.buffer);
+      ocrImageTexts.push(ocrText);
       textParts.push(`--- OCR IMAGE ${index + 1}: ${file.originalname || "flight"} ---\n${ocrText}`);
     }
 
@@ -6511,6 +6577,7 @@ if (profileImport?.flight) {
     req.body?.destination || ""
   );
   profileImport.flight = parseConnectingFlightSegments(text, profileImport.flight);
+  profileImport.flight = mergeMultiImageFlightSegments(ocrImageTexts, profileImport.flight);
   const flightPrice = Number(profileImport.flight.price || 0);
   profileImport.flight.price = flightPrice;
   const flightConfidence = buildFlightOcrConfidence(text, profileImport.flight, profileImport.metadata);
@@ -7093,12 +7160,14 @@ module.exports = {
   enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
   extractFlightPriceFromText,
+  classifyFlightScreenshot,
   extractGlobalFlightEvents,
   extractGlobalFlightDateTimeCandidates,
   extractPreferredRoundTripStopSummary,
   groupFlightEventsIntoSegments,
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
+  mergeMultiImageFlightSegments,
   parseConnectingFlightSegments,
   parseConnectingFlightCheckout,
   buildFlightOcrConfidence

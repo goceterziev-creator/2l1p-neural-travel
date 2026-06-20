@@ -4,6 +4,7 @@ process.env.DB_FILE = process.env.DB_FILE || "storage/generated/V10_FLIGHT_OCR_T
 
 const {
   buildBookingAndroidFlightProfileTrace,
+  classifyFlightScreenshot,
   cleanupFlightDateTimeDisplay,
   detectGenericConnectingFlight,
   enrichFlightStopSummary,
@@ -12,6 +13,7 @@ const {
   extractGlobalFlightDateTimeCandidates,
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
+  mergeMultiImageFlightSegments,
   parseConnectingFlightCheckout,
   buildFlightOcrConfidence
 } = require("../server");
@@ -431,6 +433,25 @@ assert.equal(multiScreenshotParsed.flight.outboundSegments[0].flightNumber, "LX 
 assert.equal(multiScreenshotParsed.flight.outboundSegments[1].flightNumber, "LX 14");
 assert.equal(multiScreenshotParsed.flight.inboundSegments[0].flightNumber, "LX 17");
 assert.equal(multiScreenshotParsed.flight.inboundSegments[1].flightNumber, "LX 1390");
+
+const [swissSummaryImage, swissDetailsImage] = multiScreenshotSummaryAndDetailsOcr
+  .split(/--- OCR IMAGE 2: desktop-details\.png ---/i);
+assert.equal(classifyFlightScreenshot(swissSummaryImage), "summary");
+assert.equal(classifyFlightScreenshot(swissDetailsImage), "detail");
+const mergedSwissSegments = mergeMultiImageFlightSegments(
+  [swissSummaryImage, swissDetailsImage],
+  {
+    route: "SOF -> JFK / JFK -> SOF",
+    price: 762.61
+  }
+);
+assert.deepEqual(
+  mergedSwissSegments.inboundSegments.map((segment) => `${segment.from}->${segment.to}`),
+  ["JFK->ZRH", "ZRH->SOF"],
+  "multi-image imports must prefer the detail timeline for inbound segments"
+);
+assert.equal(mergedSwissSegments.inboundSegments[1].flightNumber, "LX 1390");
+assert.equal(mergedSwissSegments.price, 762.61, "summary-derived price must remain unchanged");
 
 const multiScreenshotPartialDetailsOcr = `
 --- OCR IMAGE 1: desktop-summary.png ---
