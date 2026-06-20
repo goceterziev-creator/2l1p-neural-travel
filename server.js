@@ -3376,7 +3376,7 @@ function mergeMultiImageFlightSegments(imageTexts = [], flight = {}) {
       selectedImage: best.index + 1,
       outboundSegments: best.parsed.outboundSegments,
       inboundSegments: best.parsed.inboundSegments
-    }, null, 2));
+    }));
   }
 
   return {
