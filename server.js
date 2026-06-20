@@ -3364,6 +3364,21 @@ function mergeMultiImageFlightSegments(imageTexts = [], flight = {}) {
   const best = parsedCandidates[0];
   if (!best) return flight;
 
+  if (flightOcrTraceEnabled()) {
+    console.log("GT63 MULTI-IMAGE SEGMENT MERGE:", JSON.stringify({
+      candidates: candidates.map((candidate) => ({
+        index: candidate.index + 1,
+        profile: candidate.profile,
+        flightNumbers: extractGlobalFlightNumbers(candidate.rawText),
+        events: extractGlobalFlightEvents(candidate.rawText, flight)
+          .map((event) => ({ when: event.when, code: event.airportCode }))
+      })),
+      selectedImage: best.index + 1,
+      outboundSegments: best.parsed.outboundSegments,
+      inboundSegments: best.parsed.inboundSegments
+    }, null, 2));
+  }
+
   return {
     ...flight,
     outboundSegments: best.parsed.outboundSegments,
