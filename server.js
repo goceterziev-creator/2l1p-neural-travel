@@ -3036,6 +3036,27 @@ function extractGlobalFlightSegmentMetadata(context = "") {
   };
 }
 
+function extractGlobalFlightMetadataByNumber(rawText = "") {
+  const text = String(rawText || "");
+  const duration = "\\d{1,2}\\s*h(?:ours?)?\\s*\\d{1,2}\\s*min(?:utes)?|\\d{1,2}\\s+hours?\\s+\\d{1,2}\\s+minutes?";
+  const pattern = new RegExp(
+    `Flight\\s+duration\\s*:\\s*(${duration})[\\s\\S]{0,180}?Flight\\s+number\\s*:\\s*([A-Z0-9]{1,3}\\s?\\d{2,5})([\\s\\S]{0,180}?)\\b(?=Flight\\s+duration\\s*:|Flight\\s+number\\s*:|$)`,
+    "gi"
+  );
+  const metadata = new Map();
+  for (const match of text.matchAll(pattern)) {
+    const key = String(match[2] || "").replace(/\s+/g, " ").trim().toUpperCase();
+    if (!key || metadata.has(key)) continue;
+    const tail = String(match[3] || "");
+    metadata.set(key, {
+      duration: String(match[1] || "").replace(/\s+/g, " ").trim(),
+      class: tail.match(/\bClass\s*:\s*(Economy|Business|First|Premium(?:\s+Economy)?)/i)?.[1] || "",
+      airline: tail.match(/\bAirline\s*:\s*([A-Za-z][A-Za-z\s&.'-]{1,45})(?=\s|,|\.|$)/i)?.[1] || ""
+    });
+  }
+  return metadata;
+}
+
 function extractGlobalTransferTimes(rawText = "") {
   const compact = ocrCompactText(rawText);
   return [...compact.matchAll(/\b(?:Transfer\s+Time|Layover|stopover|connection)\s*[:\-]?\s*(\d{1,2}\s*h(?:ours?)?\s*\d{1,2}\s*min(?:utes)?|\d{1,3}\s*min(?:utes)?)/gi)]
@@ -3270,9 +3291,15 @@ function groupFlightEventsIntoSegments(events = [], flight = {}, rawText = "") {
   if (!outboundSegments.length || !inboundSegments.length) return null;
   const allSegments = [...outboundSegments, ...inboundSegments];
   const orderedFlightNumbers = extractGlobalFlightNumbers(rawText || events.map((event) => event.context).join(" "));
+  const metadataByFlightNumber = extractGlobalFlightMetadataByNumber(rawText);
   if (orderedFlightNumbers.length >= allSegments.length) {
     allSegments.forEach((segment, index) => {
       segment.flightNumber = orderedFlightNumbers[index] || segment.flightNumber;
+      const metadata = metadataByFlightNumber.get(String(segment.flightNumber || "").toUpperCase());
+      if (!metadata) return;
+      segment.duration = metadata.duration || segment.duration;
+      segment.airline = metadata.airline || segment.airline;
+      segment.class = metadata.class || segment.class;
     });
   }
 

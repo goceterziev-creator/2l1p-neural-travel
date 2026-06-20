@@ -433,6 +433,8 @@ assert.equal(multiScreenshotParsed.flight.outboundSegments[0].flightNumber, "LX 
 assert.equal(multiScreenshotParsed.flight.outboundSegments[1].flightNumber, "LX 14");
 assert.equal(multiScreenshotParsed.flight.inboundSegments[0].flightNumber, "LX 17");
 assert.equal(multiScreenshotParsed.flight.inboundSegments[1].flightNumber, "LX 1390");
+assert.equal(multiScreenshotParsed.flight.inboundSegments[0].duration, "7h 55min");
+assert.equal(multiScreenshotParsed.flight.inboundSegments[1].duration, "2 hours 15 minutes");
 
 const [swissSummaryImage, swissDetailsImage] = multiScreenshotSummaryAndDetailsOcr
   .split(/--- OCR IMAGE 2: desktop-details\.png ---/i);
@@ -491,6 +493,7 @@ assert.deepEqual(
 assert.match(recoveredSparseSwissSegments.inboundSegments[0].departure, /Jul 8 16:15/);
 assert.match(recoveredSparseSwissSegments.inboundSegments[1].arrival, /Jul 9 10:20/);
 assert.equal(recoveredSparseSwissSegments.inboundSegments[1].flightNumber, "LX 1390");
+assert.equal(recoveredSparseSwissSegments.inboundSegments[1].duration, "2 hours 15 minutes");
 
 const multiScreenshotPartialDetailsOcr = `
 --- OCR IMAGE 1: desktop-summary.png ---
