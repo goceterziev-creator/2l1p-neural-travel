@@ -3330,6 +3330,77 @@ function classifyFlightScreenshot(rawText = "") {
   return "unknown";
 }
 
+function extractLooseAirportRowTimeline(rawText = "") {
+  const normalized = normalizeLocalizedFlightTimelineText(String(rawText || "")).replace(/\r/g, "");
+  const timeline = [];
+  let currentDate = "";
+
+  normalized.split(/\n+/).forEach((rawLine) => {
+    const line = String(rawLine || "").replace(/\s+/g, " ").trim();
+    if (!line) return;
+    const monthFirst = line.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i);
+    const dayFirst = line.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+    if (monthFirst || dayFirst) {
+      currentDate = monthFirst
+        ? `${monthFirst[1]} ${monthFirst[2]}`
+        : `${dayFirst[2]} ${dayFirst[1]}`;
+    }
+
+    const eventMatch = line.match(/\b(\d{1,2}:\d{2})\b.{0,120}\(([A-Z0-9]{3})\)/i);
+    if (!eventMatch) return;
+    const code = String(eventMatch[2] || "").toUpperCase().replace("0", "O");
+    if (!isPlausibleIataCode(code)) return;
+    const event = { when: currentDate ? `${currentDate} ${eventMatch[1]}` : eventMatch[1], code };
+    const previous = timeline[timeline.length - 1];
+    if (!previous || previous.when !== event.when || previous.code !== event.code) timeline.push(event);
+  });
+
+  return timeline;
+}
+
+function anchorMultiImageTimelineDates(events = [], summaryTexts = []) {
+  const anchors = safeArray(summaryTexts)
+    .flatMap((text) => extractVisibleAirportRowTimeline(text))
+    .filter((event) => /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\b/i.test(event.when));
+  const anchorByEvent = new Map();
+  anchors.forEach((event) => {
+    const time = String(event.when || "").match(/\b\d{1,2}:\d{2}\b/)?.[0] || "";
+    const key = `${String(event.code || "").toUpperCase()}|${time}`;
+    if (time && !anchorByEvent.has(key)) anchorByEvent.set(key, event.when);
+  });
+
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const parse = (value = "") => {
+    const match = String(value || "").match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{1,2}):(\d{2})\b/i);
+    if (!match) return null;
+    return new Date(Date.UTC(new Date().getUTCFullYear(), monthNames.findIndex((month) => month.toLowerCase() === match[1].toLowerCase()), Number(match[2]), Number(match[3]), Number(match[4])));
+  };
+  const format = (date) => `${monthNames[date.getUTCMonth()]} ${date.getUTCDate()} ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
+  let previousDate = null;
+
+  return safeArray(events).map((event) => {
+    const time = String(event.when || "").match(/\b\d{1,2}:\d{2}\b/)?.[0] || "";
+    const key = `${String(event.code || "").toUpperCase()}|${time}`;
+    const anchoredWhen = anchorByEvent.get(key) || event.when;
+    let date = parse(anchoredWhen);
+
+    if (!date && previousDate && time) {
+      date = new Date(previousDate);
+      const [hours, minutes] = time.split(":").map(Number);
+      date.setUTCHours(hours, minutes, 0, 0);
+      if (date < previousDate) date.setUTCDate(date.getUTCDate() + 1);
+    }
+    if (date && previousDate && date < previousDate) {
+      const [hours, minutes] = time.split(":").map(Number);
+      date = new Date(previousDate);
+      date.setUTCHours(hours, minutes, 0, 0);
+      if (date < previousDate) date.setUTCDate(date.getUTCDate() + 1);
+    }
+    if (date) previousDate = date;
+    return { ...event, when: date ? format(date) : event.when };
+  });
+}
+
 function mergeMultiImageFlightSegments(imageTexts = [], flight = {}) {
   const candidates = safeArray(imageTexts)
     .map((rawText, index) => ({
@@ -3342,14 +3413,30 @@ function mergeMultiImageFlightSegments(imageTexts = [], flight = {}) {
 
   const detailCandidates = candidates.filter((candidate) => candidate.profile === "detail");
   const segmentSources = detailCandidates.length ? detailCandidates : candidates;
+  const summaryTexts = candidates
+    .filter((candidate) => candidate.profile === "summary")
+    .map((candidate) => candidate.rawText);
   const parsedCandidates = segmentSources
     .map((candidate) => {
-      const parsed = parseConnectingFlightSegments(candidate.rawText, flight);
+      const looseEvents = anchorMultiImageTimelineDates(
+        extractLooseAirportRowTimeline(candidate.rawText),
+        summaryTexts
+      ).map((event) => ({
+        ...event,
+        airportCode: event.code,
+        time: String(event.when || "").match(/\b\d{1,2}:\d{2}\b/)?.[0] || "",
+        context: extractGlobalFlightEventContext(candidate.rawText, event)
+      }));
+      const looseGrouped = groupFlightEventsIntoSegments(looseEvents, flight, candidate.rawText);
+      const parsed = looseGrouped
+        ? { ...flight, ...looseGrouped }
+        : parseConnectingFlightSegments(candidate.rawText, flight);
       const outboundCount = safeArray(parsed.outboundSegments).length;
       const inboundCount = safeArray(parsed.inboundSegments).length;
       return {
         ...candidate,
         parsed,
+        looseEvents,
         segmentCount: outboundCount + inboundCount,
         balanced: Math.min(outboundCount, inboundCount)
       };
@@ -3374,6 +3461,7 @@ function mergeMultiImageFlightSegments(imageTexts = [], flight = {}) {
           .map((event) => ({ when: event.when, code: event.airportCode }))
       })),
       selectedImage: best.index + 1,
+      selectedLooseEvents: best.looseEvents.map((event) => ({ when: event.when, code: event.airportCode })),
       outboundSegments: best.parsed.outboundSegments,
       inboundSegments: best.parsed.inboundSegments
     }));

@@ -453,6 +453,45 @@ assert.deepEqual(
 assert.equal(mergedSwissSegments.inboundSegments[1].flightNumber, "LX 1390");
 assert.equal(mergedSwissSegments.price, 762.61, "summary-derived price must remain unchanged");
 
+const swissDetailWithSparseReturnDates = `
+1 Jul
+11:05 Sofia Airport (SOF)
+Flight number: LX 1391
+12:25 Zurich Airport (ZRH)
+Transfer Time: 50min
+13:15 Zurich Airport (ZRH)
+Flight number: LX 14
+16:35 John F. Kennedy (JFK)
+16:15 John F. Kennedy (JFK)
+Flight number: LX 17
+06:10 Zurich Airport (ZRH)
+Transfer Time: 55min
+07:05 Zurich Airport (ZRH)
+Flight number: LX 1390
+10:20 Sofia Airport (SOF)
+`;
+const swissSummaryWithReturnAnchors = `
+Jul 1 (Wed)
+11:05 Sofia (SOF)
+16:35 New York (JFK)
+Jul 8 (Wed)
+16:15 New York (JFK)
+10:20 Sofia (SOF)
+Total: €762.61
+`;
+const recoveredSparseSwissSegments = mergeMultiImageFlightSegments(
+  [swissDetailWithSparseReturnDates, swissSummaryWithReturnAnchors],
+  { route: "SOF -> JFK / JFK -> SOF", price: 762.61 }
+);
+assert.deepEqual(
+  recoveredSparseSwissSegments.inboundSegments.map((segment) => `${segment.from}->${segment.to}`),
+  ["JFK->ZRH", "ZRH->SOF"],
+  "detail rows with sparse dates must retain both inbound segments"
+);
+assert.match(recoveredSparseSwissSegments.inboundSegments[0].departure, /Jul 8 16:15/);
+assert.match(recoveredSparseSwissSegments.inboundSegments[1].arrival, /Jul 9 10:20/);
+assert.equal(recoveredSparseSwissSegments.inboundSegments[1].flightNumber, "LX 1390");
+
 const multiScreenshotPartialDetailsOcr = `
 --- OCR IMAGE 1: desktop-summary.png ---
 Flight information
