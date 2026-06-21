@@ -2802,8 +2802,17 @@ function parseDirectRoundTripTicket(rawText = "", { airline = "", source = "dire
   const dates = extractFlightDateRange(compact);
   const outboundDate = String(dates?.outbound || "").replace(/^(\d{1,2})\s+([A-Za-z]{3,})/, "$2 $1");
   const inboundDate = String(dates?.inbound || "").replace(/^(\d{1,2})\s+([A-Za-z]{3,})/, "$2 $1");
+  const normalizeFlightNumber = (prefix = "", digits = "") => {
+    const code = String(prefix || "").toUpperCase();
+    const tail = String(digits || "");
+    const ocrDigit = { O: "0", I: "1", L: "1", S: "5", Z: "2" };
+    if (code.length === 3 && /^[A-Z]{2}[OILSZ]$/.test(code) && tail.length >= 3) {
+      return code.slice(0, 2) + " " + ocrDigit[code[2]] + tail;
+    }
+    return code + " " + tail;
+  };
   const flightNumbers = [...compact.matchAll(/\b([A-Z]{1,3})\s?(\d{3,5})\b/g)]
-    .map((match) => `${match[1]} ${match[2]}`)
+    .map((match) => normalizeFlightNumber(match[1], match[2]))
     .filter((value, index, list) => list.indexOf(value) === index);
   const formatLeg = (origin, destination, date, start, end, number) => {
     if (!origin || !destination || !start) return "";
