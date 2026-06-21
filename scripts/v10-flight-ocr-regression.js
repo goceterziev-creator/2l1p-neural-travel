@@ -436,7 +436,8 @@ assert.ok(multiScreenshotParsed.flight.transferTimes.includes("55min"));
   assert.equal(multiScreenshotParsed.flight.inboundSegments[0].flightNumber, "LX 17");
 assert.equal(multiScreenshotParsed.flight.inboundSegments[1].flightNumber, "LX 1390");
 assert.equal(multiScreenshotParsed.flight.inboundSegments[0].duration, "7h 55min");
-assert.equal(multiScreenshotParsed.flight.inboundSegments[1].duration, "2 hours 15 minutes");
+  assert.equal(multiScreenshotParsed.flight.inboundSegments[1].duration, "2 hours 15 minutes");
+  assert.deepEqual(multiScreenshotParsed.flight.transferTimes, ["50min", "55min"]);
 
 const [swissSummaryImage, swissDetailsImage] = multiScreenshotSummaryAndDetailsOcr
   .split(/--- OCR IMAGE 2: desktop-details\.png ---/i);
@@ -454,8 +455,11 @@ assert.deepEqual(
   ["JFK->ZRH", "ZRH->SOF"],
   "multi-image imports must prefer the detail timeline for inbound segments"
 );
-assert.equal(mergedSwissSegments.inboundSegments[1].flightNumber, "LX 1390");
-assert.equal(mergedSwissSegments.price, 762.61, "summary-derived price must remain unchanged");
+  assert.equal(mergedSwissSegments.inboundSegments[1].flightNumber, "LX 1390");
+  assert.match(mergedSwissSegments.departure, /SOF -> JFK, Jul 1 11:05 - Jul 1 16:35, via ZRH/);
+  assert.match(mergedSwissSegments.arrival, /JFK -> SOF, Jul 8 16:15 - Jul 9 10:20, via ZRH/);
+  assert.deepEqual(mergedSwissSegments.transferTimes, ["50min", "55min"]);
+  assert.equal(mergedSwissSegments.price, 762.61, "summary-derived price must remain unchanged");
 
 const swissDetailWithSparseReturnDates = `
 1 Jul

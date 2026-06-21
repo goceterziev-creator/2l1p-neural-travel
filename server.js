@@ -3267,19 +3267,16 @@ function groupFlightEventsIntoSegments(events = [], flight = {}, rawText = "") {
     const next = items[index + 1];
     const combinedContext = [event.context, next?.context].filter(Boolean).join(" ");
     const metadata = extractGlobalFlightSegmentMetadata(combinedContext);
-    const transferBefore = index > 0
-      ? transferTimes[transferIndex++] || (() => {
-          const previous = items[index - 1];
-          const arrivalTime = parseFlightTimelineMoment(previous?.when);
-          const departureTime = parseFlightTimelineMoment(event?.when);
-          const minutes = Number.isFinite(arrivalTime) && Number.isFinite(departureTime)
-            ? (departureTime - arrivalTime) / 60000
-            : NaN;
-          return Number.isFinite(minutes) && minutes >= 0 && minutes <= 36 * 60
-            ? `${Math.round(minutes)}min`
-            : "";
-        })()
-      : "";
+    const extractedTransfer = index > 0 ? transferTimes[transferIndex++] : "";
+    const previous = index > 0 ? items[index - 1] : null;
+    const arrivalTime = parseFlightTimelineMoment(previous?.when);
+    const departureTime = parseFlightTimelineMoment(event?.when);
+    const transferMinutes = Number.isFinite(arrivalTime) && Number.isFinite(departureTime)
+      ? (departureTime - arrivalTime) / 60000
+      : NaN;
+    const transferBefore = index > 0 && Number.isFinite(transferMinutes) && transferMinutes >= 0 && transferMinutes <= 36 * 60
+      ? `${Math.round(transferMinutes)}min`
+      : extractedTransfer;
     return {
       from: event.airportCode,
       to: next.airportCode,
@@ -3330,17 +3327,33 @@ function groupFlightEventsIntoSegments(events = [], flight = {}, rawText = "") {
   };
 }
 
+function applyStructuredSegmentSummaries(flight = {}) {
+  const buildSummary = (segments = []) => {
+    const list = safeArray(segments).filter((segment) => segment?.from && segment?.to && segment?.departure && segment?.arrival);
+    if (!list.length) return "";
+    const first = list[0];
+    const last = list[list.length - 1];
+    const stopovers = uniqueAirportCodes(list.slice(0, -1).map((segment) => segment.to));
+    return `${first.from} -> ${last.to}, ${first.departure} - ${last.arrival}${stopovers.length ? `, via ${stopovers.join(" + ")}` : ""}`;
+  };
+
+  const departure = buildSummary(flight.outboundSegments);
+  const arrival = buildSummary(flight.inboundSegments);
+  if (!departure || !arrival) return flight;
+  return { ...flight, departure, arrival };
+}
+
 function parseConnectingFlightSegments(rawText = "", flight = {}) {
   const events = extractGlobalFlightEvents(rawText, flight);
   const grouped = groupFlightEventsIntoSegments(events, flight, rawText);
   if (!grouped) return flight;
-  return {
+  return applyStructuredSegmentSummaries({
     ...flight,
     outboundSegments: grouped.outboundSegments,
     inboundSegments: grouped.inboundSegments,
     stopoverAirports: grouped.stopoverAirports,
     transferTimes: grouped.transferTimes
-  };
+  });
 }
 
 function classifyFlightScreenshot(rawText = "") {
@@ -3501,13 +3514,13 @@ function mergeMultiImageFlightSegments(imageTexts = [], flight = {}) {
     }));
   }
 
-  return {
+  return applyStructuredSegmentSummaries({
     ...flight,
     outboundSegments: best.parsed.outboundSegments,
     inboundSegments: best.parsed.inboundSegments,
     stopoverAirports: best.parsed.stopoverAirports,
     transferTimes: best.parsed.transferTimes
-  };
+  });
 }
 
 function extractRawExplicitAirportEventsForCode(rawText = "", code = "") {
