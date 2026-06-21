@@ -14,6 +14,7 @@ const {
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
   mergeMultiImageFlightSegments,
+  parseDirectRoundTripTicket,
   parseConnectingFlightCheckout,
   buildFlightOcrConfidence
 } = require("../server");
@@ -292,6 +293,25 @@ assert.equal(globalConnectingFlight.route, "SOF -> JFK / JFK -> SOF");
 assert.match(globalConnectingFlight.departure, /via ZRH/i);
 assert.match(globalConnectingFlight.arrival, /via ZRH/i);
 assert.equal(extractFlightPriceFromText(globalConnectingFlightOcr), 788.83);
+
+const directRoundTripTicketOcr = `
+Sofia to Bari
+Return 7 May - 13 May
+07 MAY
+06:55 Sofia
+07:15 Bari
+FR 5460
+13 MAY
+22:00 Bari
+00:20 Sofia
+FR 5454
+Total to pay EUR 219.36
+`;
+const directRoundTripTicket = parseDirectRoundTripTicket(directRoundTripTicketOcr, { airline: "Ryanair" });
+assert.equal(directRoundTripTicket.flight.route, "SOF -> BRI / BRI -> SOF");
+assert.match(directRoundTripTicket.flight.departure, /SOF -> BRI, May 7 06:55 - May 7 07:15, FR 5460/);
+assert.match(directRoundTripTicket.flight.arrival, /BRI -> SOF, May 13 22:00 - May 14 00:20, FR 5454/);
+assert.equal(directRoundTripTicket.flight.price, 219.36);
 
 const turkishOpenJawConnectingOcr = `
 Flight to Tokyo

@@ -2398,7 +2398,14 @@ function extractFlightDateRange(rawText = "") {
   const range =
     text.match(new RegExp(`(\\d{1,2})\\s*${month}\\s*(20\\d{2})\\s*[-–]\\s*(\\d{1,2})\\s*${month}\\s*(20\\d{2})`, "i")) ||
     text.match(new RegExp(`(\\d{1,2})\\s*${month}\\s*[-–]\\s*(\\d{1,2})\\s*${month}\\s*(20\\d{2})`, "i"));
-  if (!range) return null;
+  if (!range) {
+    const noYearRange = text.match(new RegExp("(\\d{1,2})\\s*" + month + "\\s*[-–]\\s*(\\d{1,2})\\s*" + month, "i"));
+    if (!noYearRange || !isValidOcrDay(noYearRange[1]) || !isValidOcrDay(noYearRange[3])) return null;
+    return {
+      outbound: noYearRange[1] + " " + noYearRange[2],
+      inbound: noYearRange[3] + " " + noYearRange[4]
+    };
+  }
   if (range.length >= 7) {
     if (!isValidOcrDay(range[1]) || !isValidOcrDay(range[4])) return null;
     return {
@@ -2783,7 +2790,47 @@ function parseBookingFlightCheckout(rawText = "", { destination = "" } = {}) {
   return { flight, hotel: {}, metadata: buildOcrMetadata("booking_flight_checkout", flight, missingFields) };
 }
 
+function parseDirectRoundTripTicket(rawText = "", { airline = "", source = "direct_round_trip_ticket" } = {}) {
+  const compact = ocrCompactText(rawText);
+  const pair = extractOcrCityPair(compact);
+  const times = compact.match(/\b\d{1,2}:\d{2}\b/g) || [];
+  const detectedCodes = uniqueAirportCodes(detectAirportCodes([pair?.from, pair?.to, compact].filter(Boolean).join(" ")));
+  const fromRecord = airportAliasRecord(pair?.from || "") || FLIGHT_AIRPORT_ALIASES.find((record) => record.code === detectedCodes[0]);
+  const toRecord = airportAliasRecord(pair?.to || "") || FLIGHT_AIRPORT_ALIASES.find((record) => record.code === detectedCodes.find((code) => code !== fromRecord?.code));
+  const from = fromRecord?.code || translateOcrCity(pair?.from || "");
+  const to = toRecord?.code || translateOcrCity(pair?.to || "");
+  const dates = extractFlightDateRange(compact);
+  const outboundDate = String(dates?.outbound || "").replace(/^(\d{1,2})\s+([A-Za-z]{3,})/, "$2 $1");
+  const inboundDate = String(dates?.inbound || "").replace(/^(\d{1,2})\s+([A-Za-z]{3,})/, "$2 $1");
+  const flightNumbers = [...compact.matchAll(/\b([A-Z]{1,3})\s?(\d{3,5})\b/g)]
+    .map((match) => `${match[1]} ${match[2]}`)
+    .filter((value, index, list) => list.indexOf(value) === index);
+  const formatLeg = (origin, destination, date, start, end, number) => {
+    if (!origin || !destination || !start) return "";
+    const range = date && end
+      ? normalizeOvernightSameDayRange(date + " " + start + " - " + date + " " + end)
+      : [date, start].filter(Boolean).join(" ");
+    return origin + " -> " + destination + (range ? ", " + range : "") + (number ? ", " + number : "");
+  };
+  const flight = {
+    airline: airline || inferPlainTicketAirline(compact) || "Airline needs review",
+    route: from && to ? from + " -> " + to + " / " + to + " -> " + from : "",
+    departure: formatLeg(from, to, outboundDate, times[0], times[1], flightNumbers[0]),
+    arrival: formatLeg(to, from, inboundDate, times[2], times[3], flightNumbers[1]),
+    baggage: extractFlightBaggageSummary(rawText),
+    notes: "Данните са извлечени от екран за избор на двупосочен полет.",
+    price: extractLabeledFlightPrice(compact) || extractFlightPriceFromText(compact)
+  };
+  const missingFields = [];
+  if (!flight.route) missingFields.push("flight.route");
+  if (!flight.departure || !flight.arrival) missingFields.push("flight.times");
+  if (!flight.price) missingFields.push("flight.price");
+  return { flight, hotel: {}, metadata: buildOcrMetadata(source, flight, missingFields) };
+}
+
 function parseRyanairCheckout(rawText = "") {
+  return parseDirectRoundTripTicket(rawText, { airline: "Ryanair", source: "ryanair_checkout" });
+  /*
   const compact = ocrCompactText(rawText);
   const pair = extractOcrCityPair(compact);
   const moneyValues = extractOcrMoneyValues(compact);
@@ -2804,6 +2851,7 @@ function parseRyanairCheckout(rawText = "") {
   if (!times.length) missingFields.push("flight.times");
   if (!flight.price) missingFields.push("flight.price");
   return { flight, hotel: {}, metadata: buildOcrMetadata("ryanair_checkout", flight, missingFields) };
+*/
 }
 
 function isPlausibleIataCode(value = "") {
@@ -4398,6 +4446,10 @@ function parseOcrByProfile(rawText = "", { kind = "flight", destination = "" } =
   if (source === "ryanair_checkout") return parseRyanairCheckout(rawText);
   if (source === "wizz_checkout") return parseWizzCheckout(rawText, { destination });
   if (kind === "flight") {
+    const direct = parseDirectRoundTripTicket(rawText);
+    if (direct?.flight?.route && direct.flight.departure && direct.flight.arrival && direct.flight.price) {
+      return direct;
+    }
     const generic = parseConnectingFlightCheckout(rawText, { destination });
     if (generic?.flight && (
       generic.flight.route ||
@@ -7320,5 +7372,6 @@ module.exports = {
   mergeMultiImageFlightSegments,
   parseConnectingFlightSegments,
   parseConnectingFlightCheckout,
+  parseDirectRoundTripTicket,
   buildFlightOcrConfidence
 };
