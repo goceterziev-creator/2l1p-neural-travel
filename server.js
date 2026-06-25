@@ -1662,6 +1662,13 @@ function ocrCompactText(rawText = "") {
   return String(rawText || "").replace(/\s+/g, " ").trim();
 }
 
+function normalizeOcrCurrencySymbols(rawText = "") {
+  return String(rawText || "")
+    .replace(/\u0420\u2019\u0412\u00a9/g, "\u20ac")
+    .replace(/\u0412\u00a9/g, "\u20ac")
+    .replace(/\u00a9/g, "\u20ac");
+}
+
 function parseOcrMoneyValue(value = "") {
   let amount = String(value || "")
     .replace(/[^\d,.\s]/g, "")
@@ -1695,14 +1702,15 @@ function isPlausibleFlightMoneyValue(value = 0) {
 }
 
 function extractOcrMoneyValues(rawText = "") {
-  const matches = ocrCompactText(rawText).match(/(?:EUR|EURO|\u20ac)(?:\s*euros?)?\s*\d[\d\s,.]*|\d[\d\s,.]*\s*(?:EUR|EURO|\u20ac)/gi) || [];
+  const text = ocrCompactText(normalizeOcrCurrencySymbols(rawText));
+  const matches = text.match(/(?:EUR|EURO|\u20ac)(?:\s*euros?)?\s*\d[\d\s,.]*|\d[\d\s,.]*\s*(?:EUR|EURO|\u20ac)/gi) || [];
   return matches
     .map((value) => parseCollapsedFlightMoneyValue(value))
     .filter(isPlausibleFlightMoneyValue);
 }
 
 function extractLabeledFlightPrice(rawText = "") {
-  const text = ocrCompactText(rawText);
+  const text = ocrCompactText(normalizeOcrCurrencySymbols(rawText));
   const match =
     text.match(/\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i) ||
     text.match(/\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)\b/i) ||
@@ -1721,7 +1729,7 @@ function extractFlightPriceFromText(rawText = "") {
   const labeled = extractLabeledFlightPrice(rawText);
   if (labeled > 0) return labeled;
 
-  const text = ocrCompactText(rawText);
+  const text = ocrCompactText(normalizeOcrCurrencySymbols(rawText));
   const pricePattern = /\d[\d\s,.]*\s?(?:\u20ac|eur)|(?:\u20ac|eur)(?:\s*euros?)?\s?\d[\d\s,.]*/gi;
   const matches = [...text.matchAll(pricePattern)];
   const prices = matches
@@ -2763,7 +2771,7 @@ function extractNumericEuFlightDates(rawText = "") {
 }
 
 function cityNameToAirportCode(value = "") {
-  const text = String(value || "").trim();
+  const text = String(value || "").replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "").trim();
   if (!text) return "";
   const record = airportAliasRecord(text);
   if (record?.code) return record.code;
@@ -2774,7 +2782,15 @@ function cityNameToAirportCode(value = "") {
 function extractBookingModalRouteTitles(rawText = "") {
   return String(rawText || "")
     .split(/\r?\n/)
-    .map((line, index) => ({ line: line.replace(/\s+/g, " ").trim(), index }))
+    .map((line, index) => ({
+      line: line
+        .replace(/(?:->|→|➜)/g, " - ")
+        .replace(/[)>›»]+|вЂє|В»/g, " - ")
+        .replace(/\s*-\s*(?:-\s*)+/g, " - ")
+        .replace(/\s+/g, " ")
+        .trim(),
+      index
+    }))
     .filter((item) => item.line)
     .map((item) => {
       const match = item.line.match(/^([\p{L}][\p{L}\s.'-]{1,40})\s*[-–—]\s*([\p{L}][\p{L}\s.'-]{1,40})$/u);
@@ -2812,7 +2828,7 @@ function extractBookingModalTimedAirportRows(rawText = "") {
 }
 
 function inferFlightNumbers(rawText = "") {
-  return [...ocrCompactText(rawText).matchAll(/\b([A-Z]{1,3})\s?(\d{2,5})\b/g)]
+  return [...ocrCompactText(rawText).matchAll(/\b([A-Z]{1,3})\s?(\d{2,5})(?!:)\b/g)]
     .map((match) => `${String(match[1] || "").toUpperCase()}${String(match[2] || "")}`)
     .filter((value) => !/^(?:EUR|USD)\d/i.test(value))
     .filter((value, index, list) => list.indexOf(value) === index);
@@ -3274,7 +3290,7 @@ function extractGlobalFlightEventContext(rawText = "", event = {}) {
 
 function extractGlobalFlightSegmentMetadata(context = "") {
   const text = ocrCompactText(context);
-  const flightNumber = (text.match(/\b([A-Z0-9]{2,3})\s?(\d{2,5})\b/i) || [])
+  const flightNumber = (text.match(/\b([A-Z0-9]{2,3})\s?(\d{2,5})(?!:)\b/i) || [])
     .slice(1, 3)
     .join(" ")
     .trim();
@@ -3329,7 +3345,7 @@ function extractGlobalTransferTimes(rawText = "") {
 }
 
 function extractGlobalFlightNumbers(rawText = "") {
-  return [...String(rawText || "").matchAll(/\b([A-Z]{1,3}\d?)\s?(\d{2,5})\b/g)]
+  return [...String(rawText || "").matchAll(/\b([A-Z]{1,3}\d?)\s?(\d{2,5})(?!:)\b/g)]
     .map((match) => `${match[1]} ${match[2]}`.replace(/\s+/g, " ").trim())
     .filter((value, index, list) => value && list.indexOf(value) === index);
 }
@@ -3371,9 +3387,36 @@ function preferredRouteAwareFlightEventTimeline(rawText = "", flight = {}) {
   if (!origin || !destination || origin === destination) return [];
   const sections = splitOcrTimelineSections(rawText);
   const candidates = sections.flatMap((section, index) => [
-    { index: index * 3, timeline: extractExplicitAirportRowTimeline(section) },
-    { index: index * 3 + 1, timeline: extractVisibleAirportRowTimeline(section) },
-    { index: index * 3 + 2, timeline: sortConnectingTimelineChronologically(extractConnectingFlightTimeline(section)) }
+    { index: index * 4, timeline: extractExplicitAirportRowTimeline(section) },
+    { index: index * 4 + 1, timeline: extractVisibleAirportRowTimeline(section) },
+    { index: index * 4 + 2, timeline: extractLooseAirportRowTimeline(section) },
+    { index: index * 4 + 3, timeline: sortConnectingTimelineChronologically(extractConnectingFlightTimeline(section)) }
+  ]).concat([
+    {
+      index: sections.length * 4,
+      timeline: mergeTimelineEvents(
+        extractExplicitAirportRowTimeline(rawText),
+        extractVisibleAirportRowTimeline(rawText),
+        extractLooseAirportRowTimeline(rawText)
+      )
+    },
+    {
+      index: sections.length * 4 + 1,
+      timeline: mergeTimelineEvents(
+        extractLooseAirportRowTimeline(rawText),
+        extractExplicitAirportRowTimeline(rawText),
+        extractVisibleAirportRowTimeline(rawText)
+      )
+    },
+    {
+      index: sections.length * 4 + 2,
+      timeline: sortConnectingTimelineChronologically(mergeTimelineEvents(
+        extractLooseAirportRowTimeline(rawText),
+        extractExplicitAirportRowTimeline(rawText),
+        extractVisibleAirportRowTimeline(rawText),
+        extractConnectingFlightTimeline(rawText)
+      ))
+    }
   ])
     .filter((candidate) => candidate.timeline.length >= 4)
     .map((candidate) => {
@@ -3427,6 +3470,70 @@ function splitGlobalRoundTripEvents(events = [], flight = {}) {
     const destination = routeMatches[0][2].toUpperCase();
     const inboundOrigin = routeMatches[routeMatches.length - 1][1].toUpperCase();
     const inboundDestination = routeMatches[routeMatches.length - 1][2].toUpperCase();
+    const timedEvents = list
+      .map((event, index) => ({ ...event, index, moment: parseFlightTimelineMoment(event.when) }))
+      .filter((event) => Number.isFinite(event.moment))
+      .sort((a, b) => a.moment - b.moment || a.index - b.index);
+    const orderedTimedEvents = [...timedEvents].sort((a, b) => a.index - b.index);
+    const canonicalStart = orderedTimedEvents.find((event) => event.airportCode === origin);
+    const endpointCandidates = canonicalStart
+      ? timedEvents
+        .filter((event) => event.airportCode === destination && event.moment > canonicalStart.moment)
+        .map((outboundEnd) => {
+          const inboundStart = timedEvents.find((event) =>
+            event.airportCode === inboundOrigin &&
+            event.moment > outboundEnd.moment
+          );
+          const inboundEnd = inboundStart
+            ? timedEvents.find((event) =>
+              event.airportCode === inboundDestination &&
+              event.moment > inboundStart.moment
+            )
+            : null;
+          const outboundStopCount = timedEvents.filter((event) =>
+            event.moment > canonicalStart.moment &&
+            event.moment < outboundEnd.moment &&
+            ![origin, destination].includes(event.airportCode)
+          ).length;
+          return {
+            outboundEnd,
+            inboundStart,
+            inboundEnd,
+            outboundStopCount,
+            returnGap: inboundStart ? inboundStart.moment - outboundEnd.moment : -1
+          };
+        })
+        .filter((candidate) => candidate.inboundStart && candidate.inboundEnd)
+        .sort((a, b) =>
+          b.outboundStopCount - a.outboundStopCount ||
+          b.returnGap - a.returnGap ||
+          a.outboundEnd.moment - b.outboundEnd.moment
+        )
+      : [];
+    const selectedEndpoints = endpointCandidates[0] || null;
+    const canonicalOutboundEnd = selectedEndpoints?.outboundEnd || null;
+    const canonicalInboundStart = selectedEndpoints?.inboundStart || null;
+    const canonicalInboundEnd = selectedEndpoints?.inboundEnd || null;
+    if (canonicalStart && canonicalOutboundEnd && canonicalInboundStart && canonicalInboundEnd) {
+      const between = (start, end) => timedEvents
+        .filter((event) => event.moment >= start.moment && event.moment <= end.moment)
+        .sort((a, b) => a.moment - b.moment || a.index - b.index)
+        .map(({ moment, index, ...event }) => event);
+      const outboundEvents = between(canonicalStart, canonicalOutboundEnd);
+      const inboundEvents = between(canonicalInboundStart, canonicalInboundEnd);
+      const outboundMiddle = outboundEvents.slice(1, -1).map((event) => event.airportCode);
+      const inboundMiddle = inboundEvents.slice(1, -1).map((event) => event.airportCode);
+      if (
+        outboundEvents.length >= 2 &&
+        inboundEvents.length >= 2 &&
+        !outboundMiddle.includes(origin) &&
+        !outboundMiddle.includes(inboundOrigin) &&
+        !inboundMiddle.includes(destination) &&
+        !inboundMiddle.includes(inboundDestination)
+      ) {
+        return { outboundEvents, inboundEvents };
+      }
+    }
     const routeCandidates = [];
 
     for (let outboundStartIndex = 0; outboundStartIndex < list.length; outboundStartIndex += 1) {
@@ -3519,6 +3626,20 @@ function groupFlightEventsIntoSegments(events = [], flight = {}, rawText = "") {
   if (!split) return null;
   const transferTimes = extractGlobalTransferTimes(events.map((event) => event.context).join(" "));
   let transferIndex = 0;
+  const normalizeSegmentDateOrder = (segment = {}) => {
+    const departureMoment = parseFlightTimelineMoment(segment.departure);
+    const arrivalMoment = parseFlightTimelineMoment(segment.arrival);
+    if (!Number.isFinite(departureMoment) || !Number.isFinite(arrivalMoment) || arrivalMoment >= departureMoment) return segment;
+    const arrivalTime = String(segment.arrival || "").match(/\b(\d{1,2}:\d{2})\b/)?.[1] || "";
+    if (!arrivalTime) return segment;
+    const date = new Date(departureMoment);
+    const [hours, minutes] = arrivalTime.split(":").map(Number);
+    date.setUTCHours(hours, minutes, 0, 0);
+    if (date.getTime() <= departureMoment) date.setUTCDate(date.getUTCDate() + 1);
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    segment.arrival = `${monthNames[date.getUTCMonth()]} ${date.getUTCDate()} ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
+    return segment;
+  };
 
   const buildSegments = (items = []) => safeArray(items).slice(0, -1).map((event, index) => {
     const next = items[index + 1];
@@ -3550,6 +3671,28 @@ function groupFlightEventsIntoSegments(events = [], flight = {}, rawText = "") {
   const outboundSegments = buildSegments(split.outboundEvents);
   const inboundSegments = buildSegments(split.inboundEvents);
   if (!outboundSegments.length || !inboundSegments.length) return null;
+  const outboundFinal = outboundSegments[outboundSegments.length - 1];
+  const inboundFirst = inboundSegments[0];
+  if (outboundFinal?.to && outboundFinal.to === inboundFirst?.from) {
+    const outboundArrivalMoment = parseFlightTimelineMoment(outboundFinal.arrival);
+    const inboundDepartureMoment = parseFlightTimelineMoment(inboundFirst.departure);
+    const boundaryGapMinutes = Number.isFinite(outboundArrivalMoment) && Number.isFinite(inboundDepartureMoment)
+      ? (inboundDepartureMoment - outboundArrivalMoment) / 60000
+      : NaN;
+    if (Number.isFinite(boundaryGapMinutes) && boundaryGapMinutes >= 0 && boundaryGapMinutes <= 180) {
+      const endpointEvents = safeArray(events)
+        .filter((event) => String(event?.airportCode || "").toUpperCase() === outboundFinal.to)
+        .map((event) => ({ ...event, moment: parseFlightTimelineMoment(event.when) }))
+        .filter((event) => Number.isFinite(event.moment))
+        .sort((a, b) => a.moment - b.moment);
+      const laterInboundStart = endpointEvents.find((event) => event.moment > inboundDepartureMoment + 6 * 60 * 60000);
+      if (laterInboundStart) {
+        outboundFinal.arrival = inboundFirst.departure;
+        inboundFirst.departure = laterInboundStart.when;
+      }
+    }
+  }
+  [...outboundSegments, ...inboundSegments].forEach(normalizeSegmentDateOrder);
   const allSegments = [...outboundSegments, ...inboundSegments];
   const orderedFlightNumbers = extractGlobalFlightNumbers(rawText || events.map((event) => event.context).join(" "));
   const metadataByFlightNumber = extractGlobalFlightMetadataByNumber(rawText);
@@ -4366,7 +4509,12 @@ function extractDirectionalFlightRouteTitles(rawText = "") {
     .split(/\r?\n/)
     .map((line, index) => ({
       index,
-      line: line.replace(/\s+/g, " ").trim()
+      line: line
+        .replace(/(?:->|→|➜)/g, " - ")
+        .replace(/[)>›»]+|вЂє|В»/g, " - ")
+        .replace(/\s*-\s*(?:-\s*)+/g, " - ")
+        .replace(/\s+/g, " ")
+        .trim()
     }))
     .filter((item) => item.line)
     .map((item) => {
@@ -4462,7 +4610,7 @@ function detectPartialRouteTitleConnectingFlight(rawText = "") {
     : [];
   const outboundVia = outboundStops.length ? `, via ${outboundStops.join(" + ")}` : "";
   const inboundVia = inboundStops.length ? `, via ${inboundStops.join(" + ")}` : "";
-  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL|LX|OS|LO)\s?\d{2,4}\b/gi) || [])]
+  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL|LX|OS|LO)\s?\d{2,4}(?!:)\b/gi) || [])]
     .map((number) => number.replace(/\s+/g, " "));
 
   return {
@@ -4554,6 +4702,7 @@ function inferConnectingAirlines(rawText = "") {
     ...extractVisibleAirlineLabels(rawText),
     ...knownAirlines
   ];
+  if (knownAirlines.length) return [...new Set(knownAirlines)];
   const preferredLabels = knownAirlines.includes("LOT Polish Airlines")
     ? labels.filter((label) => !/EuroAtlantic/i.test(label))
     : labels;
@@ -4600,8 +4749,15 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
     inboundEndIndex
   } = inferred;
   const inboundOrigin = inferredInboundOrigin || destinationCode;
+  const routeTitleOrigin = String(routeTitleFlight?.route || "").match(/\b([A-Z]{3})\s*->\s*[A-Z]{3}\b/)?.[1] || "";
   const routeTitleDestination = String(routeTitleFlight?.route || "").match(/\b[A-Z]{3}\s*->\s*([A-Z]{3})\b/)?.[1] || "";
-  if (routeTitleFlight && routeTitleDestination && routeTitleDestination !== destinationCode) {
+  if (
+    routeTitleFlight &&
+    (
+      (routeTitleOrigin && routeTitleOrigin !== origin) ||
+      (routeTitleDestination && routeTitleDestination !== destinationCode)
+    )
+  ) {
     return routeTitleFlight;
   }
 
@@ -4637,7 +4793,7 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
     stopLine("Отиване", outboundStops, outboundStopDetails),
     stopLine("Връщане", inboundStops, inboundStopDetails)
   ].filter(Boolean).join(" ");
-  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL|LX|OS|LO)\s?\d{2,4}\b/gi) || [])]
+  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL|LX|OS|LO)\s?\d{2,4}(?!:)\b/gi) || [])]
     .map((number) => number.replace(/\s+/g, " "));
 
   return {
@@ -4691,7 +4847,7 @@ function detectTokyoConnectingFlight(rawText = "") {
     .filter((code) => !["SOF", "NRT", "HND"].includes(code));
   const allStops = uniqueAirportCodes([...outboundStops, ...inboundStops]);
   const via = allStops.length ? `, via ${allStops.join(" + ")}` : "";
-  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|AF|KL|LO)\s?\d{2,4}\b/gi) || [])]
+  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|AF|KL|LO)\s?\d{2,4}(?!:)\b/gi) || [])]
     .map((number) => number.replace(/\s+/g, " "));
   const flightNumberSummary = flightNumbers.length ? `Полети: ${flightNumbers.join(", ")}.` : "";
 
