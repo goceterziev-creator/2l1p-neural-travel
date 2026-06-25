@@ -635,7 +635,18 @@ Flight number: LO 45
 Toronto » Sofia
 Travel time: 11h 50min 1 stop
 19:20 Lester B. Pearson (YYZ)
-Toronto, Canada
+8 Jul Toronto, Canada
+Flight duration: 08h 25min Flight number: LO 42
+LOT Economy
+09:45 Frederic Chopin (WAW)
+9 Jul Warsaw, Poland
+Transfer Time: 01h 00min
+10:45 Frederic Chopin (WAW)
+9 Jul Warsaw, Poland
+Flight duration: 02h 05min Flight number: LO 631
+LOT Economy
+13:50 Sofia Airport (SOF)
+9 Jul Sofia, Bulgaria
 --- OCR IMAGE 2: screenshot.png ---
 X Flight details
 Sofia )» Toronto
@@ -651,6 +662,20 @@ Transfer Time: 01h 30min
 1 Jul Warsaw, Poland
 Flight duration: 09h 20min | Flight number: LO 45
 LOT Operated by EuroAtlantic Airways
+Toronto » Sofia
+19:20 Lester B. Pearson (YYZ)
+8 Jul Toronto, Canada
+Flight duration: 08h 25min | Flight number: LO 42
+LOT | 787(Jet)
+09:45 Frederic Chopin (WAW)
+9 Jul Warsaw, Poland
+Transfer Time: 01h 00min
+10:45 Frederic Chopin (WAW)
+9 Jul Warsaw, Poland
+Flight duration: 02h 05min | Flight number: LO 631
+LOT | e175(Jet)
+13:50 Sofia Airport (SOF)
+9 Jul Sofia, Bulgaria
 782 ©
 Price per 1 passenger for return
 `;
@@ -658,8 +683,23 @@ const partialLotTorontoParsed = parseConnectingFlightCheckout(partialLotTorontoM
 assert.equal(partialLotTorontoParsed.flight.route, "SOF -> YYZ / YYZ -> SOF");
 assert.equal(partialLotTorontoParsed.flight.airline, "LOT Polish Airlines");
 assert.match(partialLotTorontoParsed.flight.departure, /SOF -> YYZ, Jul 1 14:35 - Jul 1 20:20, via WAW/i);
-assert.match(partialLotTorontoParsed.flight.arrival, /YYZ -> SOF, Jul 1 19:20/i);
-assert.match(partialLotTorontoParsed.flight.notes, /LO 632, LO 45/);
+assert.match(partialLotTorontoParsed.flight.arrival, /YYZ -> SOF, Jul 8 19:20 - Jul 9 13:50, via WAW/i);
+assert.deepEqual(
+  partialLotTorontoParsed.flight.outboundSegments.map((segment) => `${segment.departure} ${segment.from}->${segment.arrival} ${segment.to} ${segment.flightNumber}`),
+  [
+    "Jul 1 14:35 SOF->Jul 1 15:30 WAW LO 632",
+    "Jul 1 17:00 WAW->Jul 1 20:20 YYZ LO 45"
+  ]
+);
+assert.deepEqual(
+  partialLotTorontoParsed.flight.inboundSegments.map((segment) => `${segment.departure} ${segment.from}->${segment.arrival} ${segment.to} ${segment.flightNumber}`),
+  [
+    "Jul 8 19:20 YYZ->Jul 9 09:45 WAW LO 42",
+    "Jul 9 10:45 WAW->Jul 9 13:50 SOF LO 631"
+  ]
+);
+assert.deepEqual(partialLotTorontoParsed.flight.stopoverAirports, ["WAW"]);
+assert.match(partialLotTorontoParsed.flight.notes, /LO 632, LO 45, LO 42, LO 631/);
 assert.equal(partialLotTorontoParsed.flight.price, 782);
 assert.ok(!partialLotTorontoParsed.metadata.missingFields.includes("flight.route"));
 assert.ok(!partialLotTorontoParsed.metadata.missingFields.includes("flight.price"));

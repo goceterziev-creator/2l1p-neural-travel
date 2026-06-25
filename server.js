@@ -3017,9 +3017,10 @@ function parseRyanairCheckout(rawText = "") {
 function isPlausibleIataCode(value = "") {
   const code = String(value || "").trim();
   if (!/^[A-Z]{3}$/.test(code)) return false;
+  if (FLIGHT_AIRPORT_ALIASES.some((record) => record.code === code)) return true;
   return !new Set([
     "AIR", "AND", "ARR", "BAG", "DEP", "EUR", "FLY", "FROM",
-    "LEG", "THE", "TOO", "USD", "VIA"
+    "JET", "LEG", "LET", "THE", "TOO", "USD", "VIA"
   ]).has(code);
 }
 
@@ -3177,16 +3178,28 @@ function extractExplicitAirportRowTimeline(rawText = "") {
     if (!isPlausibleIataCode(code)) return;
 
     let time = (line.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
+    const hasInlineTime = Boolean(time);
     let date = extractMonthDay(line);
-    for (let cursor = index - 1; cursor >= Math.max(0, index - 4) && (!time || !date); cursor -= 1) {
-      const candidate = nearbyLines[cursor] || "";
-      if (!time) time = (candidate.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
-      if (!date) date = extractMonthDay(candidate);
-    }
-    for (let cursor = index + 1; cursor <= Math.min(nearbyLines.length - 1, index + 2) && (!time || !date); cursor += 1) {
-      const candidate = nearbyLines[cursor] || "";
-      if (!time) time = (candidate.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
-      if (!date) date = extractMonthDay(candidate);
+    const scanPrevious = () => {
+      for (let cursor = index - 1; cursor >= Math.max(0, index - 4) && (!time || !date); cursor -= 1) {
+        const candidate = nearbyLines[cursor] || "";
+        if (!time) time = (candidate.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
+        if (!date) date = extractMonthDay(candidate);
+      }
+    };
+    const scanNext = () => {
+      for (let cursor = index + 1; cursor <= Math.min(nearbyLines.length - 1, index + 2) && (!time || !date); cursor += 1) {
+        const candidate = nearbyLines[cursor] || "";
+        if (!time) time = (candidate.match(/\b(\d{1,2}:\d{2})\b/) || [])[1] || "";
+        if (!date) date = extractMonthDay(candidate);
+      }
+    };
+    if (hasInlineTime) {
+      scanNext();
+      scanPrevious();
+    } else {
+      scanPrevious();
+      scanNext();
     }
     if (time && date) pushEvent({ when: `${date.month} ${date.day} ${time}`, code });
   });
@@ -3590,22 +3603,29 @@ function extractLooseAirportRowTimeline(rawText = "") {
   const timeline = [];
   let currentDate = "";
 
-  normalized.split(/\n+/).forEach((rawLine) => {
+  const lines = normalized.split(/\n+/);
+  const extractLineDate = (line = "") => {
+    const monthFirst = String(line || "").match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i);
+    if (monthFirst) return `${monthFirst[1]} ${monthFirst[2]}`;
+    const dayFirst = String(line || "").match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
+    return dayFirst ? `${dayFirst[2]} ${dayFirst[1]}` : "";
+  };
+
+  lines.forEach((rawLine, index) => {
     const line = String(rawLine || "").replace(/\s+/g, " ").trim();
     if (!line) return;
-    const monthFirst = line.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i);
-    const dayFirst = line.match(/\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i);
-    if (monthFirst || dayFirst) {
-      currentDate = monthFirst
-        ? `${monthFirst[1]} ${monthFirst[2]}`
-        : `${dayFirst[2]} ${dayFirst[1]}`;
-    }
+    const lineDate = extractLineDate(line);
+    if (lineDate) currentDate = lineDate;
 
     const eventMatch = line.match(/\b(\d{1,2}:\d{2})\b.{0,120}\(([A-Z0-9]{3})\)/i);
     if (!eventMatch) return;
     const code = String(eventMatch[2] || "").toUpperCase().replace("0", "O");
     if (!isPlausibleIataCode(code)) return;
-    const event = { when: currentDate ? `${currentDate} ${eventMatch[1]}` : eventMatch[1], code };
+    const nextDate = [lines[index + 1], lines[index + 2]]
+      .map((candidate) => extractLineDate(String(candidate || "").replace(/\s+/g, " ").trim()))
+      .find(Boolean) || "";
+    const eventDate = lineDate || nextDate || currentDate;
+    const event = { when: eventDate ? `${eventDate} ${eventMatch[1]}` : eventMatch[1], code };
     const previous = timeline[timeline.length - 1];
     if (!previous || previous.when !== event.when || previous.code !== event.code) timeline.push(event);
   });
