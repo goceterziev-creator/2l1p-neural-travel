@@ -14,6 +14,7 @@ const {
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
   mergeMultiImageFlightSegments,
+  parseBookingLastminuteFlightModal,
   parseDirectRoundTripTicket,
   parseConnectingFlightCheckout,
   buildFlightOcrConfidence
@@ -314,6 +315,35 @@ assert.match(directRoundTripTicket.flight.departure, /SOF -> BRI, May 7 06:55 - 
 assert.match(directRoundTripTicket.flight.arrival, /BRI -> SOF, May 13 22:00 - May 14 00:20, FR 5454/);
 assert.equal(directRoundTripTicket.flight.price, 219.36);
 
+const bookingLastminuteFlightModalOcr = `
+Booking.com
+Flight details
+Sofia - Palermo
+16.07
+20:20 Sofia (SOF)
+21:15 Palermo (PMO)
+Wizzair
+W64313
+Return
+Palermo - Sofia
+18.07
+12:55 Palermo (PMO)
+15:45 Sofia (SOF)
+Wizzair
+W64314
+Total price for all travelers
+809 \u20ac
+`;
+const bookingLastminuteModal = parseBookingLastminuteFlightModal(bookingLastminuteFlightModalOcr);
+assert.equal(bookingLastminuteModal.flight.route, "SOF -> PMO / PMO -> SOF");
+assert.equal(bookingLastminuteModal.flight.dates, "16.07 - 18.07");
+assert.match(bookingLastminuteModal.flight.departure, /SOF -> PMO, 16\.07, 20:20 - 21:15, W64313/);
+assert.match(bookingLastminuteModal.flight.arrival, /PMO -> SOF, 18\.07, 12:55 - 15:45, W64314/);
+assert.equal(bookingLastminuteModal.flight.airline, "Wizz Air");
+assert.match(bookingLastminuteModal.flight.notes, /W64313, W64314/);
+assert.equal(bookingLastminuteModal.flight.price, 809);
+assert.deepEqual(bookingLastminuteModal.metadata.missingFields, []);
+
 const turkishOpenJawConnectingOcr = `
 Flight to Tokyo
 1 stop - 16h 10m
@@ -582,5 +612,56 @@ Total: €762.61
   notes: ""
 });
 assert.match(summaryOnlyOvernight.arrival, /JFK -> SOF, Jul 8 16:15 - Jul 9 10:20/i);
+
+const partialLotTorontoModalOcr = `
+--- OCR IMAGE 1: screenshot.png ---
+--- ENHANCED OCR ---
+X Flight details
+Sofia » Toronto
+Travel time: 12h 45min 1 stop
+14:35 Sofia Airport (SOF)
+1 Jul Sofia, Bulgaria
+Flight duration: 01h 55min Flight number: LO 632
+LOT Economy
+15:30 Frederic Chopin (WAW)
+1 Jul Warsaw, Poland
+Transfer Time: 01h 30min
+17:00 Frederic Chopin (WAW)
+1 Jul Warsaw, Poland
+Flight duration: 09h 20min Airline LOT
+Flight number: LO 45
+20:20 Lester B. Pearson (YYZ)
+1 Jul Toronto, Canada
+Toronto » Sofia
+Travel time: 11h 50min 1 stop
+19:20 Lester B. Pearson (YYZ)
+Toronto, Canada
+--- OCR IMAGE 2: screenshot.png ---
+X Flight details
+Sofia )» Toronto
+Total journey length: 12h 45min 1 stop
+14:35 Sofia Airport (SOF)
+1 Jul Sofia, Bulgaria
+Flight duration: 01h 55min | Flight number: LO 632
+LOT | e175(Jet)
+15:30 Frederic Chopin (WAW)
+1 Jul Warsaw, Poland
+Transfer Time: 01h 30min
+17:00 Frederic Chopin (WAW)
+1 Jul Warsaw, Poland
+Flight duration: 09h 20min | Flight number: LO 45
+LOT Operated by EuroAtlantic Airways
+782 ©
+Price per 1 passenger for return
+`;
+const partialLotTorontoParsed = parseConnectingFlightCheckout(partialLotTorontoModalOcr);
+assert.equal(partialLotTorontoParsed.flight.route, "SOF -> YYZ / YYZ -> SOF");
+assert.equal(partialLotTorontoParsed.flight.airline, "LOT Polish Airlines");
+assert.match(partialLotTorontoParsed.flight.departure, /SOF -> YYZ, Jul 1 14:35 - Jul 1 20:20, via WAW/i);
+assert.match(partialLotTorontoParsed.flight.arrival, /YYZ -> SOF, Jul 1 19:20/i);
+assert.match(partialLotTorontoParsed.flight.notes, /LO 632, LO 45/);
+assert.equal(partialLotTorontoParsed.flight.price, 782);
+assert.ok(!partialLotTorontoParsed.metadata.missingFields.includes("flight.route"));
+assert.ok(!partialLotTorontoParsed.metadata.missingFields.includes("flight.price"));
 
 console.log("V10 FLIGHT OCR REGRESSION PASS");

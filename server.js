@@ -1699,8 +1699,22 @@ function extractFlightPriceFromText(rawText = "") {
     .map((match) => parseCollapsedFlightMoneyValue(match[0]))
     .filter(isPlausibleFlightMoneyValue);
 
+  const wholeCurrencyPrices = [
+    ...text.matchAll(/\b(\d{2,5})\s*(?:\u20ac|eur|euro)(?=\s|$)/gi),
+    ...text.matchAll(/(?:\u20ac|eur|euro)\s*(\d{2,5})\b/gi)
+  ]
+    .map((match) => Number(match[1]))
+    .filter(isPlausibleFlightMoneyValue);
+
+  const repairedLabeledPrices = [
+    ...text.matchAll(/\b(\d{2,5})\s*(?:\u00a9|©)(?=\s|$).{0,90}\b(?:price\s+per|total|return|passenger)/gi),
+    ...text.matchAll(/\b(?:price\s+per|total|return|passenger)\b.{0,90}\b(\d{2,5})\s*(?:\u00a9|©)(?=\s|$)/gi)
+  ]
+    .map((match) => Number(match[1]))
+    .filter(isPlausibleFlightMoneyValue);
+
   const collapsedTotal = extractBottomCollapsedFlightTotal(rawText);
-  return Math.max(0, ...prices, collapsedTotal);
+  return Math.max(0, ...prices, ...wholeCurrencyPrices, ...repairedLabeledPrices, collapsedTotal);
 }
 
 function extractBookingFlightTotalPrice(rawText = "") {
@@ -1922,6 +1936,7 @@ const FLIGHT_AIRPORT_ALIASES = [
   { code: "MXP", city: "Милано", aliases: ["mxp", "milan", "milano", "милано", "malpensa"] },
   { code: "BGY", city: "Милано", aliases: ["bgy", "bergamo", "orioserio", "orio al serio"] },
   { code: "BRI", city: "Бари", aliases: ["bri", "bari", "бари"] },
+  { code: "PMO", city: "Palermo", aliases: ["pmo", "palermo", "палермо"] },
   { code: "NRT", city: "Токио", aliases: ["nrt", "narita", "нарита"] },
   { code: "HND", city: "Токио", aliases: ["hnd", "haneda", "ханеда"] },
   { code: "MLE", city: "Мале", aliases: ["mle", "male", "malé", "мале", "velana"] },
@@ -1954,6 +1969,8 @@ const GLOBAL_AIRPORT_ALIAS_EXTENSIONS = [
   },
   { code: "DOH", city: "Doha", aliases: ["doh", "doha", "hamad international", "hamad international airport", "\u0434\u043e\u0445\u0430"] },
   { code: "ATH", city: "Athens", aliases: ["ath", "athens", "athens international", "eleftherios venizelos", "\u0430\u0442\u0438\u043d\u0430"] },
+  { code: "WAW", city: "Warsaw", aliases: ["waw", "warsaw", "frederic chopin", "chopin", "варшава"] },
+  { code: "YYZ", city: "Toronto", aliases: ["yyz", "toronto", "pearson", "lester b pearson", "lester b. pearson", "торонто"] },
   { code: "TIA", city: "Tirana", aliases: ["tia", "tirana", "tirana international", "\u0442\u0438\u0440\u0430\u043d\u0430"] },
   { code: "HRG", city: "Hurghada", aliases: ["hrg", "hurghada", "\u0445\u0443\u0440\u0433\u0430\u0434\u0430"] },
   { code: "TLV", city: "Tel Aviv", aliases: ["tlv", "tel aviv", "ben gurion", "\u0442\u0435\u043b \u0430\u0432\u0438\u0432"] },
@@ -2566,6 +2583,9 @@ function detectOcrSource(rawText = "", kind = "flight") {
   const connectingDateTimeCount = kind === "flight"
     ? (text.match(/\b(?:mon|tue|wed|thu|fri|sat|sun)[,.]?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*\d{1,2}/g) || []).length
     : 0;
+  if (kind === "flight" && extractBookingModalRouteTitles(rawText).length >= 2 && extractBookingModalTimedAirportRows(rawText).length >= 4) {
+    return "booking_lastminute_flight_modal";
+  }
   if (kind === "flight" && connectingAirportCount >= 3) return "connecting_flight_checkout";
   if (kind === "flight" && /(turkish|lufthansa|qatar|emirates|etihad|air france|klm|layover|stopover|\b[12]\s*stops?\b|flight to tokyo|tokyo haneda|narita)/.test(text)) return "connecting_flight_checkout";
   if (/(price details|your details|enter your details|choose your fare|check and pay)/.test(text)) return "booking_flight_checkout";
@@ -2618,8 +2638,8 @@ function scoreFlightRouteConfidence(flight = {}, rawText = "") {
   const text = ocrCompactText(rawText).toUpperCase();
   if (!route || /needs review|detected from image/i.test(route)) return 0.35;
   if (isConnectingFlightProfile(rawText, flight)) return 0.9;
-  if (/\b(SOF|PRG|BCN|FCO|CIA|BRI|NRT|HND|MLE|IST)\b/.test(route.toUpperCase())) return 0.88;
-  if (/\b(SOF|PRG|BCN|FCO|CIA|BRI|NRT|HND|MLE|IST)\b/.test(text) && /->|→|\//.test(route)) return 0.82;
+  if (/\b(SOF|PRG|BCN|FCO|CIA|BRI|PMO|NRT|HND|MLE|IST)\b/.test(route.toUpperCase())) return 0.88;
+  if (/\b(SOF|PRG|BCN|FCO|CIA|BRI|PMO|NRT|HND|MLE|IST)\b/.test(text) && /->|→|\//.test(route)) return 0.82;
   if (/->|→|\//.test(route) && route.length >= 10) return 0.74;
   return 0.55;
 }
@@ -2688,6 +2708,137 @@ function getFlightCoreBlockingReasons(flight = {}, flightPrice = 0) {
   }
   if (Number(flightPrice || flight.price || 0) <= 0) reasons.push("Missing or invalid flight.price.");
   return reasons;
+}
+
+function normalizeNumericEuFlightDate(value = "") {
+  const match = String(value || "").match(/\b([0-3]?\d)[.\/]([01]?\d)\b/);
+  if (!match) return "";
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  if (!isValidOcrDay(day) || month < 1 || month > 12) return "";
+  return `${String(day).padStart(2, "0")}.${String(month).padStart(2, "0")}`;
+}
+
+function extractNumericEuFlightDates(rawText = "") {
+  return [...String(rawText || "").matchAll(/\b[0-3]?\d[.\/][01]?\d\b/g)]
+    .map((match) => normalizeNumericEuFlightDate(match[0]))
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index);
+}
+
+function cityNameToAirportCode(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const record = airportAliasRecord(text);
+  if (record?.code) return record.code;
+  if (/^sofia$/i.test(text)) return "SOF";
+  return "";
+}
+
+function extractBookingModalRouteTitles(rawText = "") {
+  return String(rawText || "")
+    .split(/\r?\n/)
+    .map((line, index) => ({ line: line.replace(/\s+/g, " ").trim(), index }))
+    .filter((item) => item.line)
+    .map((item) => {
+      const match = item.line.match(/^([\p{L}][\p{L}\s.'-]{1,40})\s*[-–—]\s*([\p{L}][\p{L}\s.'-]{1,40})$/u);
+      if (!match) return null;
+      const fromCode = cityNameToAirportCode(match[1]);
+      const toCode = cityNameToAirportCode(match[2]);
+      if (!fromCode || !toCode || fromCode === toCode) return null;
+      return {
+        ...item,
+        fromCity: match[1].trim(),
+        toCity: match[2].trim(),
+        fromCode,
+        toCode
+      };
+    })
+    .filter(Boolean);
+}
+
+function extractBookingModalTimedAirportRows(rawText = "") {
+  return String(rawText || "")
+    .split(/\r?\n/)
+    .map((line, index) => ({ line: line.replace(/\s+/g, " ").trim(), index }))
+    .flatMap((item) => {
+      const rows = [];
+      const parenPattern = /\b(\d{1,2}:\d{2})\b[^\n()]{0,80}\(([A-Z]{3})\)/gi;
+      for (const match of item.line.matchAll(parenPattern)) {
+        const code = String(match[2] || "").toUpperCase();
+        if (isPlausibleIataCode(code)) rows.push({ index: item.index, time: match[1], code });
+      }
+      if (rows.length) return rows;
+      const loose = item.line.match(/\b(\d{1,2}:\d{2})\b.*\b([A-Z]{3})\b/i);
+      const code = String(loose?.[2] || "").toUpperCase();
+      return loose && isPlausibleIataCode(code) ? [{ index: item.index, time: loose[1], code }] : [];
+    });
+}
+
+function inferFlightNumbers(rawText = "") {
+  return [...ocrCompactText(rawText).matchAll(/\b([A-Z]{1,3})\s?(\d{2,5})\b/g)]
+    .map((match) => `${String(match[1] || "").toUpperCase()}${String(match[2] || "")}`)
+    .filter((value) => !/^(?:EUR|USD)\d/i.test(value))
+    .filter((value, index, list) => list.indexOf(value) === index);
+}
+
+function parseBookingLastminuteFlightModal(rawText = "") {
+  const routeTitles = extractBookingModalRouteTitles(rawText);
+  const timedRows = extractBookingModalTimedAirportRows(rawText);
+  if (routeTitles.length < 2 || timedRows.length < 4) return null;
+
+  const legs = routeTitles.slice(0, 2).map((title, legIndex) => {
+    const nextTitleIndex = routeTitles[legIndex + 1]?.index ?? Number.POSITIVE_INFINITY;
+    const rows = timedRows
+      .filter((row) => row.index > title.index && row.index < nextTitleIndex)
+      .filter((row) => row.code === title.fromCode || row.code === title.toCode);
+    const departure = rows.find((row) => row.code === title.fromCode) || rows[0];
+    const arrival = rows.find((row, index) => row.code === title.toCode && index > rows.indexOf(departure)) ||
+      rows.find((row) => row.code === title.toCode) ||
+      rows[1];
+    return {
+      ...title,
+      departure,
+      arrival
+    };
+  });
+
+  const outbound = legs[0];
+  const inbound = legs[1];
+  if (!outbound?.departure?.time || !outbound?.arrival?.time || !inbound?.departure?.time || !inbound?.arrival?.time) {
+    return null;
+  }
+
+  const dates = extractNumericEuFlightDates(rawText);
+  const flightNumbers = inferFlightNumbers(rawText);
+  const airline = inferPlainTicketAirline(rawText) || inferConnectingAirline(rawText);
+  const price =
+    extractBookingFlightTotalPrice(rawText) ||
+    extractLabeledFlightPrice(rawText) ||
+    extractFlightPriceFromText(rawText) ||
+    extractBottomCollapsedFlightTotal(rawText);
+  const formatLeg = (leg, date, number) =>
+    `${leg.fromCode} -> ${leg.toCode}${date ? `, ${date}` : ""}, ${leg.departure.time} - ${leg.arrival.time}${number ? `, ${number}` : ""}`;
+  const flight = {
+    airline: airline && !/needs review/i.test(airline) ? airline : "Airline needs review",
+    route: `${outbound.fromCode} -> ${outbound.toCode} / ${inbound.fromCode} -> ${inbound.toCode}`,
+    dates: dates.slice(0, 2).join(" - "),
+    departure: formatLeg(outbound, dates[0], flightNumbers[0]),
+    arrival: formatLeg(inbound, dates[1], flightNumbers[1]),
+    baggage: extractFlightBaggageSummary(rawText),
+    notes: [
+      flightNumbers.length ? `Полети: ${flightNumbers.join(", ")}.` : "",
+      "Данните са извлечени от Booking/Lastminute flight modal."
+    ].filter(Boolean).join(" "),
+    price
+  };
+  const missingFields = [];
+  if (!flight.airline || /needs review/i.test(flight.airline)) missingFields.push("flight.airline");
+  if (!flight.route) missingFields.push("flight.route");
+  if (!flight.departure || !flight.arrival) missingFields.push("flight.times");
+  if (dates.length < 2) missingFields.push("flight.dates");
+  if (!flight.price) missingFields.push("flight.price");
+  return { flight, hotel: {}, metadata: buildOcrMetadata("booking_lastminute_flight_modal", flight, missingFields) };
 }
 
 function traceFlightOcrDecision(rawText = "", flight = {}, flightConfidence = {}, metadata = {}) {
@@ -4154,6 +4305,128 @@ function preferredGlobalConnectingTimeline(rawText = "") {
   return candidates[0] || null;
 }
 
+function extractDirectionalFlightRouteTitles(rawText = "") {
+  return String(rawText || "")
+    .split(/\r?\n/)
+    .map((line, index) => ({
+      index,
+      line: line.replace(/\s+/g, " ").trim()
+    }))
+    .filter((item) => item.line)
+    .map((item) => {
+      const match = item.line.match(/^([\p{L}][\p{L}\s.'-]{1,36})\s*(?:[)>›»]+|[-–—]\s*>?)\s*([\p{L}][\p{L}\s.'-]{1,36})$/u);
+      if (!match) return null;
+      const fromCode = cityNameToAirportCode(match[1]);
+      const toCode = cityNameToAirportCode(match[2]);
+      if (!fromCode || !toCode || fromCode === toCode) return null;
+      return {
+        ...item,
+        fromCity: match[1].trim(),
+        toCity: match[2].trim(),
+        fromCode,
+        toCode
+      };
+    })
+    .filter(Boolean);
+}
+
+function preferredPartialRouteTitleTimeline(rawText = "", origin = "", destination = "") {
+  const sections = splitOcrTimelineSections(rawText);
+  return sections
+    .flatMap((section, index) => [
+      { index: index * 2, timeline: extractVisibleAirportRowTimeline(section) },
+      { index: index * 2 + 1, timeline: extractExplicitAirportRowTimeline(section) }
+    ])
+    .concat([
+      { index: sections.length * 2, timeline: extractVisibleAirportRowTimeline(rawText) },
+      { index: sections.length * 2 + 1, timeline: extractExplicitAirportRowTimeline(rawText) }
+    ])
+    .map((candidate) => {
+      const codes = candidate.timeline.map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+      return {
+        ...candidate,
+        score: codes.length +
+          (codes.includes(origin) ? 8 : 0) +
+          (codes.includes(destination) ? 8 : 0) +
+          codes.filter((code) => ![origin, destination].includes(code)).length
+      };
+    })
+    .filter((candidate) => candidate.timeline.length >= 2)
+    .sort((a, b) => b.score - a.score || b.timeline.length - a.timeline.length || a.index - b.index)[0]?.timeline || [];
+}
+
+function detectPartialRouteTitleConnectingFlight(rawText = "") {
+  const titles = extractDirectionalFlightRouteTitles(rawText);
+  if (titles.length < 2) return null;
+
+  const outboundTitle = titles[0];
+  const inboundTitle = titles.find((title, index) =>
+    index > 0 &&
+    title.fromCode === outboundTitle.toCode &&
+    title.toCode === outboundTitle.fromCode
+  );
+  if (!inboundTitle) return null;
+
+  let timeline = mergeTimelineEvents(
+    extractGlobalFlightEvents(rawText, {
+      route: `${outboundTitle.fromCode} -> ${outboundTitle.toCode} / ${inboundTitle.fromCode} -> ${inboundTitle.toCode}`
+    }).map((event) => ({ when: event.when, code: event.airportCode })),
+    extractExplicitAirportRowTimeline(rawText),
+    extractVisibleAirportRowTimeline(rawText),
+    extractLooseAirportRowTimeline(rawText)
+  );
+  let codes = timeline.map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+  if (!codes.includes(outboundTitle.fromCode) || !codes.includes(outboundTitle.toCode)) {
+    timeline = preferredPartialRouteTitleTimeline(rawText, outboundTitle.fromCode, outboundTitle.toCode);
+    codes = timeline.map((event) => String(event?.code || "").toUpperCase()).filter(Boolean);
+  }
+  const outboundStartIndex = codes.indexOf(outboundTitle.fromCode);
+  const outboundEndIndex = codes.indexOf(outboundTitle.toCode, outboundStartIndex + 1);
+  if (outboundStartIndex < 0 || outboundEndIndex <= outboundStartIndex) return null;
+
+  const inboundStartIndex = codes.indexOf(inboundTitle.fromCode, outboundEndIndex + 1);
+  const inboundEndIndex = inboundStartIndex >= 0
+    ? codes.indexOf(inboundTitle.toCode, inboundStartIndex + 1)
+    : -1;
+  const outboundStart = timeline[outboundStartIndex];
+  const outboundEnd = timeline[outboundEndIndex];
+  const inboundStart = timeline[inboundStartIndex] || null;
+  const inboundEnd = timeline[inboundEndIndex] || null;
+  const outboundStops = uniqueAirportCodes(
+    timeline.slice(outboundStartIndex + 1, outboundEndIndex)
+      .map((item) => item.code)
+      .filter((code) => ![outboundTitle.fromCode, outboundTitle.toCode].includes(code))
+  );
+  const inboundStops = inboundStartIndex >= 0 && inboundEndIndex > inboundStartIndex
+    ? uniqueAirportCodes(
+      timeline.slice(inboundStartIndex + 1, inboundEndIndex)
+        .map((item) => item.code)
+        .filter((code) => ![inboundTitle.fromCode, inboundTitle.toCode].includes(code))
+    )
+    : [];
+  const outboundVia = outboundStops.length ? `, via ${outboundStops.join(" + ")}` : "";
+  const inboundVia = inboundStops.length ? `, via ${inboundStops.join(" + ")}` : "";
+  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL|LX|OS|LO)\s?\d{2,4}\b/gi) || [])]
+    .map((number) => number.replace(/\s+/g, " "));
+
+  return {
+    airline: inferConnectingAirline(rawText),
+    route: `${outboundTitle.fromCode} -> ${outboundTitle.toCode} / ${inboundTitle.fromCode} -> ${inboundTitle.toCode}`,
+    departure: `${outboundTitle.fromCode} -> ${outboundTitle.toCode}, ${outboundStart.when} - ${outboundEnd.when}${outboundVia}`,
+    arrival: inboundStart && inboundEnd
+      ? `${inboundTitle.fromCode} -> ${inboundTitle.toCode}, ${inboundStart.when} - ${inboundEnd.when}${inboundVia}`
+      : inboundStart
+      ? `${inboundTitle.fromCode} -> ${inboundTitle.toCode}, ${inboundStart.when}`
+      : "",
+    baggage: extractFlightBaggageSummary(rawText),
+    notes: [
+      flightNumbers.length ? `Полети: ${flightNumbers.join(", ")}.` : "",
+      inboundStart && !inboundEnd ? "Return leg is partially visible in OCR; verify final arrival time." : "",
+      "Проверете финално часовете, багажа и условията преди резервация."
+    ].filter(Boolean).join(" ")
+  };
+}
+
 function cleanFlightAirlineLabel(value = "") {
   const canonicalize = (label = "") => {
     const text = String(label || "").trim();
@@ -4168,6 +4441,7 @@ function cleanFlightAirlineLabel(value = "") {
       [/\bryanair\b/i, "Ryanair"],
       [/\bwizz(?:\s+air)?\b/i, "Wizz Air"],
       [/\bswiss\b/i, "SWISS"],
+      [/\bLOT(?:\s+Polish\s+Airlines)?\b/i, "LOT Polish Airlines"],
       [/\bklm\b/i, "KLM"]
     ];
     return known.find(([pattern]) => pattern.test(text))?.[1] || text;
@@ -4215,14 +4489,19 @@ function inferConnectingAirlines(rawText = "") {
     [/air france|\bAF\s?\d{2,4}\b/i, "Air France"],
     [/\bKLM\b|\bKL\s?\d{2,4}\b/i, "KLM"],
     [/\bswiss\b|\bLX\s?\d{2,4}\b/i, "SWISS"],
+    [/\bLOT\b|\bLO\s?\d{2,4}\b/i, "LOT Polish Airlines"],
     [/austrian airlines|\bOS\s?\d{2,4}\b/i, "Austrian Airlines"]
   ]
     .filter(([pattern]) => pattern.test(text))
     .map(([, airline]) => airline);
-  return cleanFlightAirlineLabel([
+  const labels = [
     ...extractVisibleAirlineLabels(rawText),
     ...knownAirlines
-  ].join(" + "))
+  ];
+  const preferredLabels = knownAirlines.includes("LOT Polish Airlines")
+    ? labels.filter((label) => !/EuroAtlantic/i.test(label))
+    : labels;
+  return cleanFlightAirlineLabel(preferredLabels.join(" + "))
     .split(/\s*\+\s*/)
     .filter(Boolean);
 }
@@ -4249,10 +4528,11 @@ function extractFlightBaggageSummary(rawText = "") {
 }
 
 function detectGenericConnectingFlight(rawText = "", destination = "") {
+  const routeTitleFlight = detectPartialRouteTitleConnectingFlight(rawText);
   const preferred = preferredGlobalConnectingTimeline(rawText);
   const timeline = preferred?.timeline || [];
   const inferred = preferred?.endpoints;
-  if (!inferred) return null;
+  if (!inferred) return routeTitleFlight;
 
   const {
     origin,
@@ -4264,6 +4544,10 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
     inboundEndIndex
   } = inferred;
   const inboundOrigin = inferredInboundOrigin || destinationCode;
+  const routeTitleDestination = String(routeTitleFlight?.route || "").match(/\b[A-Z]{3}\s*->\s*([A-Z]{3})\b/)?.[1] || "";
+  if (routeTitleFlight && routeTitleDestination && routeTitleDestination !== destinationCode) {
+    return routeTitleFlight;
+  }
 
   const outboundStart = timeline[outboundStartIndex];
   const outboundEnd = timeline[outboundEndIndex];
@@ -4297,7 +4581,7 @@ function detectGenericConnectingFlight(rawText = "", destination = "") {
     stopLine("Отиване", outboundStops, outboundStopDetails),
     stopLine("Връщане", inboundStops, inboundStopDetails)
   ].filter(Boolean).join(" ");
-  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL|LX|OS)\s?\d{2,4}\b/gi) || [])]
+  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|EY|AF|KL|LX|OS|LO)\s?\d{2,4}\b/gi) || [])]
     .map((number) => number.replace(/\s+/g, " "));
 
   return {
@@ -4351,7 +4635,7 @@ function detectTokyoConnectingFlight(rawText = "") {
     .filter((code) => !["SOF", "NRT", "HND"].includes(code));
   const allStops = uniqueAirportCodes([...outboundStops, ...inboundStops]);
   const via = allStops.length ? `, via ${allStops.join(" + ")}` : "";
-  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|AF|KL)\s?\d{2,4}\b/gi) || [])]
+  const flightNumbers = [...new Set(ocrCompactText(rawText).match(/\b(?:TK|LH|QR|EK|AF|KL|LO)\s?\d{2,4}\b/gi) || [])]
     .map((number) => number.replace(/\s+/g, " "));
   const flightNumberSummary = flightNumbers.length ? `Полети: ${flightNumbers.join(", ")}.` : "";
 
@@ -4450,6 +4734,7 @@ function parseWizzCheckout(rawText = "", { destination = "" } = {}) {
 function parseOcrByProfile(rawText = "", { kind = "flight", destination = "" } = {}) {
   const source = detectOcrSource(rawText, kind);
   if (source === "plain_ticket") return parsePlainTicket(rawText, { destination });
+  if (source === "booking_lastminute_flight_modal") return parseBookingLastminuteFlightModal(rawText);
   if (source === "connecting_flight_checkout") return parseConnectingFlightCheckout(rawText, { destination });
   if (source === "booking_flight_checkout") return parseBookingFlightCheckout(rawText, { destination });
   if (source === "ryanair_checkout") return parseRyanairCheckout(rawText);
@@ -7379,6 +7664,7 @@ module.exports = {
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
   mergeMultiImageFlightSegments,
+  parseBookingLastminuteFlightModal,
   parseConnectingFlightSegments,
   parseConnectingFlightCheckout,
   parseDirectRoundTripTicket,
