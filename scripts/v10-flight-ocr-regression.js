@@ -732,5 +732,13 @@ Toronto » Sofia
 `;
 const productionRouteSeparatorParsed = parseBookingLastminuteFlightModal(productionRouteSeparatorModalOcr);
 assert.equal(productionRouteSeparatorParsed.flight.route, "SOF -> YYZ / YYZ -> SOF");
+assert.equal(parseBookingLastminuteFlightModal(`
+ron → Tra
+14:35 Sofia Airport (SOF)
+20:20 Lester B. Pearson (YYZ)
+Tra → ron
+19:20 Lester B. Pearson (YYZ)
+13:50 Sofia Airport (SOF)
+`), null);
 
 console.log("V10 FLIGHT OCR REGRESSION PASS");

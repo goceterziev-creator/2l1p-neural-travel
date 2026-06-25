@@ -2779,6 +2779,16 @@ function normalizeOcrRouteTitleLine(line = "") {
     .trim();
 }
 
+function routeTitleEndpointCode(value = "") {
+  const text = normalizeSearchText(String(value || "").trim());
+  if (!text) return "";
+  const record = FLIGHT_AIRPORT_ALIASES.find((item) =>
+    item.code.toLowerCase() === text ||
+    safeArray(item.aliases).some((alias) => normalizeSearchText(alias) === text)
+  );
+  return record?.code || "";
+}
+
 function extractBookingModalRouteTitles(rawText = "") {
   return String(rawText || "")
     .split(/\r?\n/)
@@ -2787,8 +2797,8 @@ function extractBookingModalRouteTitles(rawText = "") {
     .map((item) => {
       const match = item.line.match(/^([\p{L}][\p{L}\s.'-]{1,40})\s*[-–—]\s*([\p{L}][\p{L}\s.'-]{1,40})$/u);
       if (!match) return null;
-      const fromCode = cityNameToAirportCode(match[1]);
-      const toCode = cityNameToAirportCode(match[2]);
+      const fromCode = routeTitleEndpointCode(match[1]);
+      const toCode = routeTitleEndpointCode(match[2]);
       if (!fromCode || !toCode || fromCode === toCode) return null;
       return {
         ...item,
@@ -4380,8 +4390,8 @@ function extractDirectionalFlightRouteTitles(rawText = "") {
     .map((item) => {
       const match = item.line.match(/^([\p{L}][\p{L}\s.'-]{1,36})\s*(?:[)>›»]+|[-–—]\s*>?)\s*([\p{L}][\p{L}\s.'-]{1,36})$/u);
       if (!match) return null;
-      const fromCode = cityNameToAirportCode(match[1]);
-      const toCode = cityNameToAirportCode(match[2]);
+      const fromCode = routeTitleEndpointCode(match[1]);
+      const toCode = routeTitleEndpointCode(match[2]);
       if (!fromCode || !toCode || fromCode === toCode) return null;
       return {
         ...item,
