@@ -1415,6 +1415,45 @@ function uniqueOfferFlights(flights = []) {
   });
 }
 
+function normalizeStoredFlightSegments(segments = []) {
+  return safeArray(segments)
+    .map((segment) => ({
+      from: String(segment?.from || "").trim().toUpperCase(),
+      to: String(segment?.to || "").trim().toUpperCase(),
+      departure: cleanFlightDisplayField(segment?.departure || ""),
+      arrival: cleanFlightDisplayField(segment?.arrival || ""),
+      duration: String(segment?.duration || "").replace(/\s+/g, " ").trim(),
+      flightNumber: String(segment?.flightNumber || "").replace(/\s+/g, " ").trim().toUpperCase(),
+      airline: String(segment?.airline || "").replace(/\s+/g, " ").trim(),
+      class: String(segment?.class || "").replace(/\s+/g, " ").trim(),
+      transferBefore: String(segment?.transferBefore || "").replace(/\s+/g, " ").trim()
+    }))
+    .filter((segment) => segment.from && segment.to && (segment.departure || segment.arrival || segment.flightNumber));
+}
+
+function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
+  const outboundSegments = normalizeStoredFlightSegments(f.outboundSegments);
+  const inboundSegments = normalizeStoredFlightSegments(f.inboundSegments);
+  const storedSegments = normalizeStoredFlightSegments(
+    safeArray(f.segments).length ? f.segments : [...outboundSegments, ...inboundSegments]
+  );
+
+  return {
+    airline: f.airline || "",
+    route: f.route || "",
+    departure: cleanFlightDisplayField(f.departure || ""),
+    arrival: cleanFlightDisplayField(f.arrival || ""),
+    baggage: cleanFlightBaggage(f.baggage || ""),
+    notes: cleanFlightNotes(f.notes || ""),
+    price: toNumber(f.price, fallbackPrice),
+    segments: storedSegments,
+    outboundSegments,
+    inboundSegments,
+    stopoverAirports: safeArray(f.stopoverAirports).map((code) => String(code || "").trim().toUpperCase()).filter(Boolean),
+    transferTimes: safeArray(f.transferTimes).map((time) => String(time || "").replace(/\s+/g, " ").trim()).filter(Boolean)
+  };
+}
+
 function normalizeOffer(body = {}) {
 const inputFlights = uniqueOfferFlights(Array.isArray(body.flights) ? body.flights : []);
 const inputHotels = Array.isArray(body.hotels) ? body.hotels : [];
@@ -1455,29 +1494,26 @@ const flightPrice = calculatedFlightPrice;
   const { valid: hotelImages, invalid: invalidHotelImages } = sanitizeHotelImages(body.hotelImages);
 
 const flights = inputFlights.length
-    ? inputFlights.map(f => ({
-      airline: f.airline || "",
-      route: f.route || "",
-      departure: cleanFlightDisplayField(f.departure || ""),
-      arrival: cleanFlightDisplayField(f.arrival || ""),
-      baggage: cleanFlightBaggage(f.baggage || ""),
-      notes: cleanFlightNotes(f.notes || ""),
-      price: toNumber(f.price, 0)
-    }))
+    ? inputFlights.map((f) => normalizeStoredFlight(f))
     .map((f) => fillFlightDisplayFallbacks(f, body))
     .filter(f =>
       f.airline || f.route || f.departure || f.arrival || f.baggage || f.notes || toNumber(f.price, 0) > 0
     )
   : [
-      {
+      normalizeStoredFlight({
         airline: body.flightAirline || "",
         route: body.flightRoute || "",
-        departure: cleanFlightDisplayField(body.flightDeparture || ""),
-        arrival: cleanFlightDisplayField(body.flightArrival || ""),
-        baggage: cleanFlightBaggage(body.flightBaggage || ""),
-        notes: cleanFlightNotes(body.flightNotes || ""),
-        price: flightPrice
-      }
+        departure: body.flightDeparture || "",
+        arrival: body.flightArrival || "",
+        baggage: body.flightBaggage || "",
+        notes: body.flightNotes || "",
+        price: flightPrice,
+        segments: body.flightSegments,
+        outboundSegments: body.flightOutboundSegments,
+        inboundSegments: body.flightInboundSegments,
+        stopoverAirports: body.flightStopoverAirports,
+        transferTimes: body.flightTransferTimes
+      }, flightPrice)
     ]
     .map((f) => fillFlightDisplayFallbacks(f, body))
     .filter(f =>
@@ -7094,10 +7130,27 @@ if (profileImport?.flight) {
   );
   profileImport.flight = parseConnectingFlightSegments(text, profileImport.flight);
   profileImport.flight = mergeMultiImageFlightSegments(ocrImageTexts, profileImport.flight);
+  profileImport.flight.segments = normalizeStoredFlightSegments(
+    safeArray(profileImport.flight.segments).length
+      ? profileImport.flight.segments
+      : [
+          ...safeArray(profileImport.flight.outboundSegments),
+          ...safeArray(profileImport.flight.inboundSegments)
+        ]
+  );
   const flightPrice = Number(profileImport.flight.price || 0);
   profileImport.flight.price = flightPrice;
   const flightConfidence = buildFlightOcrConfidence(text, profileImport.flight, profileImport.metadata);
   traceFlightOcrDecision(text, profileImport.flight, flightConfidence, profileImport.metadata);
+  console.log("GT63 FINAL IMPORTED FLIGHT OBJECT:", JSON.stringify({
+    flight: {
+      segments: profileImport.flight.segments,
+      outboundSegments: profileImport.flight.outboundSegments,
+      inboundSegments: profileImport.flight.inboundSegments
+    },
+    flightRoute: profileImport.flight.route,
+    notes: profileImport.flight.notes
+  }, null, 2));
   console.log("FLIGHT IMPORT RESPONSE:", {
     flightAirline: profileImport.flight.airline,
     flightRoute: profileImport.flight.route,
@@ -7688,5 +7741,6 @@ module.exports = {
   parseConnectingFlightSegments,
   parseConnectingFlightCheckout,
   parseDirectRoundTripTicket,
+  normalizeOffer,
   buildFlightOcrConfidence
 };

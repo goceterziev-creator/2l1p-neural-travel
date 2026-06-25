@@ -14,6 +14,7 @@ const {
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
   mergeMultiImageFlightSegments,
+  normalizeOffer,
   parseBookingLastminuteFlightModal,
   parseDirectRoundTripTicket,
   parseConnectingFlightCheckout,
@@ -701,6 +702,23 @@ assert.deepEqual(
 assert.deepEqual(partialLotTorontoParsed.flight.stopoverAirports, ["WAW"]);
 assert.match(partialLotTorontoParsed.flight.notes, /LO 632, LO 45, LO 42, LO 631/);
 assert.equal(partialLotTorontoParsed.flight.price, 782);
+const savedLotTorontoOffer = normalizeOffer({
+  destination: "Toronto",
+  flightPrice: partialLotTorontoParsed.flight.price,
+  flights: [partialLotTorontoParsed.flight]
+});
+assert.deepEqual(
+  savedLotTorontoOffer.flights[0].outboundSegments.map((segment) => `${segment.from}->${segment.to} ${segment.flightNumber}`),
+  ["SOF->WAW LO 632", "WAW->YYZ LO 45"]
+);
+assert.deepEqual(
+  savedLotTorontoOffer.flights[0].inboundSegments.map((segment) => `${segment.from}->${segment.to} ${segment.flightNumber}`),
+  ["YYZ->WAW LO 42", "WAW->SOF LO 631"]
+);
+assert.deepEqual(
+  savedLotTorontoOffer.flights[0].segments.map((segment) => `${segment.from}->${segment.to} ${segment.flightNumber}`),
+  ["SOF->WAW LO 632", "WAW->YYZ LO 45", "YYZ->WAW LO 42", "WAW->SOF LO 631"]
+);
 assert.ok(!partialLotTorontoParsed.metadata.missingFields.includes("flight.route"));
 assert.ok(!partialLotTorontoParsed.metadata.missingFields.includes("flight.price"));
 
