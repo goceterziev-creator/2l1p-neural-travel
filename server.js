@@ -6706,6 +6706,18 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, service: "2L1P Neural Travel", port: PORT, liveBaseUrl: LIVE_BASE_URL });
 });
 
+app.get("/api/admin/airport-resolver-metrics", requireCapability("agency.view"), (req, res) => {
+  res.json({
+    mode: "SHADOW",
+    metrics: {
+      totalAirportLookups: Number(airportResolverMetrics.totalAirportLookups || 0),
+      airportResolverMatches: Number(airportResolverMetrics.airportResolverMatches || 0),
+      airportResolverMismatches: Number(airportResolverMetrics.airportResolverMismatches || 0),
+      airportResolverFallbacks: Number(airportResolverMetrics.airportResolverFallbacks || 0)
+    }
+  });
+});
+
 app.get("/", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")));
 app.get("/admin", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")));
 

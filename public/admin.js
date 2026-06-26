@@ -421,6 +421,51 @@ function renderQaSnapshot() {
   `;
 }
 
+function renderAirportResolverMetrics(data = {}) {
+  const box = $("airportResolverMetrics");
+  if (!box) return;
+
+  const metrics = data.metrics || {};
+  const mode = data.mode || "SHADOW";
+  const lookups = Number(metrics.totalAirportLookups || 0);
+  const matches = Number(metrics.airportResolverMatches || 0);
+  const mismatches = Number(metrics.airportResolverMismatches || 0);
+  const fallbacks = Number(metrics.airportResolverFallbacks || 0);
+  const tone = mismatches > 0 ? "review" : "ready";
+  const label = mismatches > 0 ? "Shadow mismatch warning" : "Shadow OK";
+
+  box.innerHTML = `
+    <div class="risk-summary risk-${tone}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(mode)}</strong>
+    </div>
+    <div class="qa-grid">
+      <div class="qa-metric"><span>Lookups</span><strong>${lookups}</strong></div>
+      <div class="qa-metric"><span>Matches</span><strong>${matches}</strong></div>
+      <div class="qa-metric"><span>Mismatches</span><strong>${mismatches}</strong></div>
+      <div class="qa-metric"><span>Fallbacks</span><strong>${fallbacks}</strong></div>
+    </div>
+  `;
+}
+
+async function loadAirportResolverMetrics() {
+  try {
+    const data = await fetchJson("/api/admin/airport-resolver-metrics");
+    renderAirportResolverMetrics(data);
+  } catch (error) {
+    console.error("Airport resolver metrics error:", error);
+    renderAirportResolverMetrics({
+      mode: "SHADOW",
+      metrics: {
+        totalAirportLookups: 0,
+        airportResolverMatches: 0,
+        airportResolverMismatches: 0,
+        airportResolverFallbacks: 0
+      }
+    });
+  }
+}
+
 function pipelineStage(offer = {}) {
   const status = String(offer.status || "draft").toLowerCase();
   const hasWarnings = getOfferWarnings(offer).length > 0;
@@ -3600,6 +3645,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     await loadStats();
   } catch (e) {
     console.error("LOAD STATS ERROR:", e);
+  }
+
+  try {
+    await loadAirportResolverMetrics();
+  } catch (e) {
+    console.error("LOAD AIRPORT RESOLVER METRICS ERROR:", e);
   }
 
   try {
