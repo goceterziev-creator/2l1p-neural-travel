@@ -2052,6 +2052,7 @@ const airportResolverMetrics = {
   airportResolverMismatches: 0,
   airportResolverFallbacks: 0
 };
+const airportResolverRecentMismatches = [];
 
 function normalizeAirportAliases(database = {}) {
   if (!database || typeof database !== "object") throw new Error("Airport database must be an object");
@@ -2131,11 +2132,17 @@ function observeAirportResolverLookup(value = "", hardcodedResult = null) {
   }
 
   airportResolverMetrics.airportResolverMismatches += 1;
-  console.warn("GT63 AIRPORT RESOLVER SHADOW MISMATCH:", {
+  const mismatch = {
+    time: new Date().toISOString(),
     lookupText: String(value || "").slice(0, 160),
-    oldResult: oldCode,
-    newResult: newCode
-  });
+    hardcoded: oldCode,
+    json: newCode,
+    hardcodedCity: hardcodedResult?.city || "",
+    jsonCity: shadowResult?.city || ""
+  };
+  airportResolverRecentMismatches.push(mismatch);
+  if (airportResolverRecentMismatches.length > 20) airportResolverRecentMismatches.shift();
+  console.warn("GT63 AIRPORT RESOLVER SHADOW MISMATCH:", mismatch);
 }
 
 function airportAliasRecord(value = "") {
@@ -6714,7 +6721,8 @@ app.get("/api/admin/airport-resolver-metrics", requireCapability("agency.view"),
       airportResolverMatches: Number(airportResolverMetrics.airportResolverMatches || 0),
       airportResolverMismatches: Number(airportResolverMetrics.airportResolverMismatches || 0),
       airportResolverFallbacks: Number(airportResolverMetrics.airportResolverFallbacks || 0)
-    }
+    },
+    recentMismatches: airportResolverRecentMismatches.slice().reverse()
   });
 });
 

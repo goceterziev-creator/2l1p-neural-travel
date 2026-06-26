@@ -433,6 +433,16 @@ function renderAirportResolverMetrics(data = {}) {
   const fallbacks = Number(metrics.airportResolverFallbacks || 0);
   const tone = mismatches > 0 ? "review" : "ready";
   const label = mismatches > 0 ? "Shadow mismatch warning" : "Shadow OK";
+  const recentMismatches = Array.isArray(data.recentMismatches) ? data.recentMismatches : [];
+  const mismatchRows = recentMismatches.length
+    ? recentMismatches.map((item) => `
+      <div class="qa-metric">
+        <span>${escapeHtml(item.lookupText || "Unknown lookup")}</span>
+        <strong>${escapeHtml(item.hardcoded || "-")} / ${escapeHtml(item.json || "-")}</strong>
+        <small>${escapeHtml(item.time || "")}</small>
+      </div>
+    `).join("")
+    : `<div class="muted">No airport shadow mismatches captured.</div>`;
 
   box.innerHTML = `
     <div class="risk-summary risk-${tone}">
@@ -445,6 +455,8 @@ function renderAirportResolverMetrics(data = {}) {
       <div class="qa-metric"><span>Mismatches</span><strong>${mismatches}</strong></div>
       <div class="qa-metric"><span>Fallbacks</span><strong>${fallbacks}</strong></div>
     </div>
+    <h4>Last mismatches</h4>
+    <div class="qa-grid">${mismatchRows}</div>
   `;
 }
 
@@ -461,7 +473,8 @@ async function loadAirportResolverMetrics() {
         airportResolverMatches: 0,
         airportResolverMismatches: 0,
         airportResolverFallbacks: 0
-      }
+      },
+      recentMismatches: []
     });
   }
 }
