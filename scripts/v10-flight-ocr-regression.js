@@ -1,8 +1,10 @@
 const assert = require("assert");
 
 process.env.DB_FILE = process.env.DB_FILE || "storage/generated/V10_FLIGHT_OCR_TEST_DATABASE.json";
+process.env.AIRPORT_CONFIG_FILE = process.env.AIRPORT_CONFIG_FILE || "storage/generated/V10_AIRPORTS_TEST_CONFIG.json";
 
 const {
+  airportResolverMetrics,
   buildBookingAndroidFlightProfileTrace,
   classifyFlightScreenshot,
   cleanupFlightDateTimeDisplay,
@@ -15,11 +17,21 @@ const {
   inferConnectingAirline,
   mergeMultiImageFlightSegments,
   normalizeOffer,
+  normalizeAirportAliases,
+  findAirport,
   parseBookingLastminuteFlightModal,
   parseDirectRoundTripTicket,
   parseConnectingFlightCheckout,
   buildFlightOcrConfidence
 } = require("../server");
+
+const airportSeed = require("../data/airports.json");
+const airportRecords = normalizeAirportAliases(airportSeed);
+for (const code of ["SOF", "PMO", "BVA", "JFK", "YYZ", "WAW", "ZRH", "VIE", "IST", "NRT", "HND", "MLE", "AUH", "ATH", "DXB", "FCO", "CIA", "MXP", "BGY", "BRI", "PRG", "BCN"]) {
+  assert.ok(airportRecords.some((record) => record.code === code), `airport seed must include ${code}`);
+  assert.equal(findAirport(code)?.code, code, `shadow airport lookup must resolve ${code}`);
+}
+assert.ok(Number.isFinite(airportResolverMetrics.totalAirportLookups), "airport resolver metrics must be available");
 
 const fuzzyFlightOcr = `
 NIS.DOOKING.CO

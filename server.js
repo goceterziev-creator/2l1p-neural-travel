@@ -26,6 +26,10 @@ const DB_FILE = process.env.DB_FILE
   ? path.resolve(process.env.DB_FILE)
   : path.join(DATA_DIR, "DATABASE", "database.json");
 const DB_DIR = path.dirname(DB_FILE);
+const AIRPORT_REPOSITORY_SEED_FILE = path.join(__dirname, "data", "airports.json");
+const AIRPORT_RUNTIME_FILE = process.env.AIRPORT_CONFIG_FILE
+  ? path.resolve(process.env.AIRPORT_CONFIG_FILE)
+  : path.join(DATA_DIR, "CONFIG", "airports.json");
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
 console.log("SERVING FROM:", PUBLIC_DIR);
@@ -2042,13 +2046,107 @@ GLOBAL_AIRPORT_ALIAS_EXTENSIONS.forEach((extension) => {
   FLIGHT_AIRPORT_ALIASES.push(extension);
 });
 
-function airportAliasRecord(value = "") {
+const airportResolverMetrics = {
+  totalAirportLookups: 0,
+  airportResolverMatches: 0,
+  airportResolverMismatches: 0,
+  airportResolverFallbacks: 0
+};
+
+function normalizeAirportAliases(database = {}) {
+  if (!database || typeof database !== "object") throw new Error("Airport database must be an object");
+  if (Number(database._schemaVersion) !== 1) throw new Error("Unsupported airport database schema version");
+  if (!database.airports || typeof database.airports !== "object") throw new Error("Airport database missing airports object");
+
+  return Object.entries(database.airports).map(([code, airport]) => {
+    const normalizedCode = String(code || airport?.code || "").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(normalizedCode)) throw new Error(`Invalid airport code: ${code}`);
+    if (!airport || typeof airport !== "object") throw new Error(`Invalid airport record: ${normalizedCode}`);
+    const aliases = [...new Set([
+      normalizedCode,
+      airport.city,
+      airport.airport,
+      ...safeArray(airport.aliases)
+    ].filter(Boolean).map((alias) => String(alias).trim()).filter(Boolean))];
+
+    return {
+      code: normalizedCode,
+      city: String(airport.city || normalizedCode).trim(),
+      country: String(airport.country || "").trim(),
+      airport: String(airport.airport || "").trim(),
+      active: airport.active !== false,
+      aliases
+    };
+  }).filter((airport) => airport.active);
+}
+
+function loadAirportDatabase() {
+  try {
+    const runtimeDir = path.dirname(AIRPORT_RUNTIME_FILE);
+    if (!fs.existsSync(runtimeDir)) fs.mkdirSync(runtimeDir, { recursive: true });
+    if (!fs.existsSync(AIRPORT_RUNTIME_FILE)) {
+      fs.copyFileSync(AIRPORT_REPOSITORY_SEED_FILE, AIRPORT_RUNTIME_FILE);
+    }
+    const parsed = JSON.parse(fs.readFileSync(AIRPORT_RUNTIME_FILE, "utf8"));
+    const airports = normalizeAirportAliases(parsed);
+    console.log("GT63 AIRPORT DATABASE SHADOW MODE:", {
+      enabled: true,
+      runtimeFile: AIRPORT_RUNTIME_FILE,
+      airports: airports.length
+    });
+    return { enabled: true, runtimeFile: AIRPORT_RUNTIME_FILE, airports };
+  } catch (error) {
+    console.warn("GT63 AIRPORT DATABASE SHADOW MODE DISABLED:", {
+      runtimeFile: AIRPORT_RUNTIME_FILE,
+      error: error.message
+    });
+    return { enabled: false, runtimeFile: AIRPORT_RUNTIME_FILE, airports: [], error: error.message };
+  }
+}
+
+const airportDatabaseShadow = loadAirportDatabase();
+
+function findAirport(value = "") {
   const text = normalizeSearchText(value);
-  if (!text) return null;
-  return FLIGHT_AIRPORT_ALIASES.find((record) =>
+  if (!text || !airportDatabaseShadow?.enabled) return null;
+  return airportDatabaseShadow.airports.find((record) =>
     record.code.toLowerCase() === text ||
     safeArray(record.aliases).some((alias) => text.includes(normalizeSearchText(alias)))
   ) || null;
+}
+
+function observeAirportResolverLookup(value = "", hardcodedResult = null) {
+  airportResolverMetrics.totalAirportLookups += 1;
+  if (!airportDatabaseShadow?.enabled) {
+    airportResolverMetrics.airportResolverFallbacks += 1;
+    return;
+  }
+
+  const shadowResult = findAirport(value);
+  const oldCode = hardcodedResult?.code || null;
+  const newCode = shadowResult?.code || null;
+  if (oldCode === newCode) {
+    airportResolverMetrics.airportResolverMatches += 1;
+    return;
+  }
+
+  airportResolverMetrics.airportResolverMismatches += 1;
+  console.warn("GT63 AIRPORT RESOLVER SHADOW MISMATCH:", {
+    lookupText: String(value || "").slice(0, 160),
+    oldResult: oldCode,
+    newResult: newCode
+  });
+}
+
+function airportAliasRecord(value = "") {
+  const text = normalizeSearchText(value);
+  if (!text) return null;
+  const hardcodedResult = FLIGHT_AIRPORT_ALIASES.find((record) =>
+    record.code.toLowerCase() === text ||
+    safeArray(record.aliases).some((alias) => text.includes(normalizeSearchText(alias)))
+  ) || null;
+  observeAirportResolverLookup(value, hardcodedResult);
+  return hardcodedResult;
 }
 
 function detectAirportCodes(rawText = "") {
@@ -7754,6 +7852,10 @@ module.exports = {
   groupFlightEventsIntoSegments,
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
+  airportResolverMetrics,
+  findAirport,
+  loadAirportDatabase,
+  normalizeAirportAliases,
   mergeMultiImageFlightSegments,
   parseBookingLastminuteFlightModal,
   parseConnectingFlightSegments,

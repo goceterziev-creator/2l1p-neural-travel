@@ -1,0 +1,160 @@
+{
+  "_schemaVersion": 1,
+  "_lastUpdated": "2026-06-26",
+  "airports": {
+    "SOF": {
+      "active": true,
+      "city": "Sofia",
+      "country": "Bulgaria",
+      "airport": "Sofia Airport",
+      "aliases": ["SOF", "Sofia", "Sofia Airport", "София"]
+    },
+    "PMO": {
+      "active": true,
+      "city": "Palermo",
+      "country": "Italy",
+      "airport": "Palermo Airport",
+      "aliases": ["PMO", "Palermo", "Палермо"]
+    },
+    "BVA": {
+      "active": true,
+      "city": "Paris",
+      "country": "France",
+      "airport": "Paris Beauvais Airport",
+      "aliases": ["BVA", "Beauvais", "Paris Beauvais", "Париж Бове"]
+    },
+    "JFK": {
+      "active": true,
+      "city": "New York",
+      "country": "United States",
+      "airport": "John F. Kennedy International Airport",
+      "aliases": ["JFK", "John F Kennedy", "John F. Kennedy", "Kennedy", "New York", "NewYork", "Ню Йорк", "Дж. Ф. Кенеди"]
+    },
+    "YYZ": {
+      "active": true,
+      "city": "Toronto",
+      "country": "Canada",
+      "airport": "Toronto Pearson International Airport",
+      "aliases": ["YYZ", "Toronto", "Pearson", "Lester B Pearson", "Lester B. Pearson", "Торонто"]
+    },
+    "WAW": {
+      "active": true,
+      "city": "Warsaw",
+      "country": "Poland",
+      "airport": "Warsaw Chopin Airport",
+      "aliases": ["WAW", "Warsaw", "Frederic Chopin", "Chopin", "Варшава"]
+    },
+    "ZRH": {
+      "active": true,
+      "city": "Zurich",
+      "country": "Switzerland",
+      "airport": "Zurich Airport",
+      "aliases": ["ZRH", "Zurich", "Zürich", "Zurich Airport", "Zürich Airport", "Цюрих"]
+    },
+    "VIE": {
+      "active": true,
+      "city": "Vienna",
+      "country": "Austria",
+      "airport": "Vienna International Airport",
+      "aliases": ["VIE", "Vienna", "Vienna International", "Vienna International Airport", "Виена"]
+    },
+    "IST": {
+      "active": true,
+      "city": "Istanbul",
+      "country": "Turkey",
+      "airport": "Istanbul Airport",
+      "aliases": ["IST", "Istanbul", "Istanbul Airport", "Истанбул"]
+    },
+    "NRT": {
+      "active": true,
+      "city": "Tokyo",
+      "country": "Japan",
+      "airport": "Narita International Airport",
+      "aliases": ["NRT", "Narita", "Narita International", "Нарита"]
+    },
+    "HND": {
+      "active": true,
+      "city": "Tokyo",
+      "country": "Japan",
+      "airport": "Tokyo Haneda Airport",
+      "aliases": ["HND", "Haneda", "Tokyo Haneda", "Ханеда"]
+    },
+    "MLE": {
+      "active": true,
+      "city": "Male",
+      "country": "Maldives",
+      "airport": "Velana International Airport",
+      "aliases": ["MLE", "Male", "Malé", "Maldives", "Velana", "Velana International Airport", "Мале", "Малдиви", "Велана"]
+    },
+    "AUH": {
+      "active": true,
+      "city": "Abu Dhabi",
+      "country": "United Arab Emirates",
+      "airport": "Zayed International Airport",
+      "aliases": ["AUH", "Abu Dhabi", "Zayed International", "Абу Даби"]
+    },
+    "ATH": {
+      "active": true,
+      "city": "Athens",
+      "country": "Greece",
+      "airport": "Athens International Airport",
+      "aliases": ["ATH", "Athens", "Athens International", "Eleftherios Venizelos", "Атина"]
+    },
+    "DXB": {
+      "active": true,
+      "city": "Dubai",
+      "country": "United Arab Emirates",
+      "airport": "Dubai International Airport",
+      "aliases": ["DXB", "Dubai", "Dubai International", "Dubai International Airport", "Дубай", "Летище Дубай"]
+    },
+    "FCO": {
+      "active": true,
+      "city": "Rome",
+      "country": "Italy",
+      "airport": "Rome Fiumicino Airport",
+      "aliases": ["FCO", "Rome", "Roma", "Fiumicino", "Рим"]
+    },
+    "CIA": {
+      "active": true,
+      "city": "Rome",
+      "country": "Italy",
+      "airport": "Rome Ciampino Airport",
+      "aliases": ["CIA", "Ciampino", "Rome Ciampino"]
+    },
+    "MXP": {
+      "active": true,
+      "city": "Milan",
+      "country": "Italy",
+      "airport": "Milan Malpensa Airport",
+      "aliases": ["MXP", "Milan", "Milano", "Malpensa", "Милано"]
+    },
+    "BGY": {
+      "active": true,
+      "city": "Milan",
+      "country": "Italy",
+      "airport": "Bergamo Orio al Serio Airport",
+      "aliases": ["BGY", "Bergamo", "Orio al Serio", "Oriosério"]
+    },
+    "BRI": {
+      "active": true,
+      "city": "Bari",
+      "country": "Italy",
+      "airport": "Bari Karol Wojtyla Airport",
+      "aliases": ["BRI", "Bari", "Бари"]
+    },
+    "PRG": {
+      "active": true,
+      "city": "Prague",
+      "country": "Czechia",
+      "airport": "Václav Havel Airport Prague",
+      "aliases": ["PRG", "Prague", "Praha", "Vaclav Havel", "Václav Havel", "Прага"]
+    },
+    "BCN": {
+      "active": true,
+      "city": "Barcelona",
+      "country": "Spain",
+      "airport": "Barcelona El Prat Airport",
+      "aliases": ["BCN", "Barcelona", "El Prat", "Barcelona El Prat", "Барселона"]
+    }
+  }
+}

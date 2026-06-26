@@ -8,3 +8,5 @@ DATABASE/database.db
 DATABASE/*.json
 backups/*.json
 *.bak.env.local
+CONFIG/
+storage/generated/V10_AIRPORTS_TEST_CONFIG.json
