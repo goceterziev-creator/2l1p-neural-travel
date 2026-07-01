@@ -1,10 +1,14 @@
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 
 process.env.DB_FILE = process.env.DB_FILE || "storage/generated/V10_FLIGHT_OCR_TEST_DATABASE.json";
 process.env.AIRPORT_CONFIG_FILE = process.env.AIRPORT_CONFIG_FILE || "storage/generated/V10_AIRPORTS_TEST_CONFIG.json";
+process.env.REGRESSION_LIBRARY_DIR = process.env.REGRESSION_LIBRARY_DIR || "storage/generated/V10_REGRESSION_LIBRARY_TEST";
 
 const {
   airportResolverMetrics,
+  archiveRegressionCaseSafe,
   buildBookingAndroidFlightProfileTrace,
   classifyFlightScreenshot,
   cleanupFlightDateTimeDisplay,
@@ -21,6 +25,7 @@ const {
   findAirport,
   parseBookingLastminuteFlightModal,
   parseDirectRoundTripTicket,
+  summarizeRegressionLibrary,
   parseConnectingFlightCheckout,
   buildFlightOcrConfidence
 } = require("../server");
@@ -32,6 +37,56 @@ for (const code of ["SOF", "PMO", "BVA", "JFK", "YYZ", "WAW", "ZRH", "VIE", "IST
   assert.equal(findAirport(code)?.code, code, `shadow airport lookup must resolve ${code}`);
 }
 assert.ok(Number.isFinite(airportResolverMetrics.totalAirportLookups), "airport resolver metrics must be available");
+
+fs.rmSync(process.env.REGRESSION_LIBRARY_DIR, { recursive: true, force: true });
+const archiveResult = archiveRegressionCaseSafe({
+  type: "flight",
+  files: [
+    {
+      originalname: "regression-test.png",
+      buffer: Buffer.from("fake-image")
+    }
+  ],
+  rawOcrText: "SOF -> JFK Total: €762.61",
+  parsedOutput: { airline: "SWISS", route: "SOF -> JFK / JFK -> SOF", price: 762.61 },
+  trace: { confidence: { price: 0.91 } },
+  metadata: { source: "test_fixture" },
+  decision: "PASS",
+  route: "SOF -> JFK / JFK -> SOF",
+  price: 762.61,
+  sourceProfile: "test_fixture"
+});
+assert.equal(archiveResult.archived, true, "regression case archive should succeed");
+assert.ok(fs.existsSync(path.join(archiveResult.path, "metadata.json")), "metadata.json should be written");
+assert.ok(fs.existsSync(path.join(archiveResult.path, "parsed_output.json")), "parsed_output.json should be written");
+const regressionStats = summarizeRegressionLibrary();
+assert.ok(regressionStats.flightCases >= 1, "regression library should count archived flight cases");
+const sensitiveArchive = archiveRegressionCaseSafe({
+  type: "flight",
+  files: [{ originalname: "sensitive.png", buffer: Buffer.from("fake-image") }],
+  rawOcrText: "Card number 4111 1111 1111 1111",
+  parsedOutput: { route: "SOF -> JFK" },
+  decision: "REVIEW"
+});
+assert.equal(sensitiveArchive.archived, true, "sensitive archive should still save metadata");
+assert.equal(sensitiveArchive.screenshotsArchived, false, "sensitive archive must skip screenshots");
+assert.ok(!fs.existsSync(path.join(sensitiveArchive.path, "screenshot_1.png")), "sensitive screenshot should not be written");
+
+const originalWriteFileSync = fs.writeFileSync;
+fs.writeFileSync = () => {
+  throw new Error("simulated archive write failure");
+};
+try {
+  const failedArchive = archiveRegressionCaseSafe({
+    type: "hotel",
+    parsedOutput: { name: "Test Hotel" },
+    metadata: { source: "test_fixture" },
+    decision: "REVIEW"
+  });
+  assert.equal(failedArchive.archived, false, "archive failure should return a safe result");
+} finally {
+  fs.writeFileSync = originalWriteFileSync;
+}
 
 const fuzzyFlightOcr = `
 NIS.DOOKING.CO

@@ -479,6 +479,46 @@ async function loadAirportResolverMetrics() {
   }
 }
 
+function renderRegressionLibraryMetrics(data = {}) {
+  const box = $("regressionLibraryMetrics");
+  if (!box) return;
+
+  const flightCases = Number(data.flightCases || 0);
+  const hotelCases = Number(data.hotelCases || 0);
+  const lastArchived = data.lastArchivedCase || null;
+  const lastError = data.lastArchiveError || null;
+  const tone = lastError ? "review" : "ready";
+  const label = lastError ? "Archive warning" : "Archive OK";
+
+  box.innerHTML = `
+    <div class="risk-summary risk-${tone}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(lastError ? "CHECK" : "PASSIVE")}</strong>
+    </div>
+    <div class="qa-grid">
+      <div class="qa-metric"><span>Flight cases</span><strong>${flightCases}</strong></div>
+      <div class="qa-metric"><span>Hotel cases</span><strong>${hotelCases}</strong></div>
+      <div class="qa-metric"><span>Last archived</span><strong>${escapeHtml(lastArchived?.decision || "-")}</strong><small>${escapeHtml(lastArchived?.path || "")}</small></div>
+      <div class="qa-metric"><span>Last error</span><strong>${escapeHtml(lastError?.message || "-")}</strong><small>${escapeHtml(lastError?.time || "")}</small></div>
+    </div>
+  `;
+}
+
+async function loadRegressionLibraryMetrics() {
+  try {
+    const data = await fetchJson("/api/admin/regression-library-metrics");
+    renderRegressionLibraryMetrics(data);
+  } catch (error) {
+    console.error("Regression library metrics error:", error);
+    renderRegressionLibraryMetrics({
+      flightCases: 0,
+      hotelCases: 0,
+      lastArchivedCase: null,
+      lastArchiveError: { message: "Metrics unavailable", time: "" }
+    });
+  }
+}
+
 function pipelineStage(offer = {}) {
   const status = String(offer.status || "draft").toLowerCase();
   const hasWarnings = getOfferWarnings(offer).length > 0;
@@ -3664,6 +3704,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     await loadAirportResolverMetrics();
   } catch (e) {
     console.error("LOAD AIRPORT RESOLVER METRICS ERROR:", e);
+  }
+
+  try {
+    await loadRegressionLibraryMetrics();
+  } catch (e) {
+    console.error("LOAD REGRESSION LIBRARY METRICS ERROR:", e);
   }
 
   try {

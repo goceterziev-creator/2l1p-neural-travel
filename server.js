@@ -30,6 +30,11 @@ const AIRPORT_REPOSITORY_SEED_FILE = path.join(__dirname, "data", "airports.json
 const AIRPORT_RUNTIME_FILE = process.env.AIRPORT_CONFIG_FILE
   ? path.resolve(process.env.AIRPORT_CONFIG_FILE)
   : path.join(DATA_DIR, "CONFIG", "airports.json");
+const REGRESSION_LIBRARY_DIR = process.env.REGRESSION_LIBRARY_DIR
+  ? path.resolve(process.env.REGRESSION_LIBRARY_DIR)
+  : (fs.existsSync("/data")
+    ? path.join("/data", "REGRESSION_LIBRARY")
+    : path.join(__dirname, "storage", "regression-library"));
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
 console.log("SERVING FROM:", PUBLIC_DIR);
@@ -6726,6 +6731,10 @@ app.get("/api/admin/airport-resolver-metrics", requireCapability("agency.view"),
   });
 });
 
+app.get("/api/admin/regression-library-metrics", requireCapability("agency.view"), (req, res) => {
+  res.json(summarizeRegressionLibrary());
+});
+
 app.get("/", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")));
 app.get("/admin", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")));
 
@@ -7185,6 +7194,143 @@ function getUploadedImageFiles(req) {
   return req.file ? [req.file] : [];
 }
 
+const regressionLibraryMetrics = {
+  lastArchivedCase: null,
+  lastArchiveError: null
+};
+
+function sanitizeRegressionPathPart(value = "", fallback = "case") {
+  const cleaned = String(value || "")
+    .replace(/[^\p{L}\p{N}._-]+/gu, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+  return cleaned || fallback;
+}
+
+function regressionTimestampParts(date = new Date()) {
+  const iso = date.toISOString();
+  return {
+    folder: iso.slice(0, 16).replace("T", "_").replace(":", "-"),
+    iso
+  };
+}
+
+function looksLikeSensitiveRegressionContent(value = "") {
+  const text = String(value || "");
+  return Boolean(
+    /\b(?:passport|паспорт|лична карта|identity card|id card|national id)\b/i.test(text) ||
+    /\b(?:cvv|cvc|card number|credit card|debit card|expiry|expiration)\b/i.test(text) ||
+    /\b(?:mastercard|american express)\b/i.test(text) ||
+    /\b(?:\d[ -]?){13,19}\b/.test(text)
+  );
+}
+
+function extractEnhancedOcrArchiveText(rawText = "") {
+  const marker = "--- ENHANCED OCR ---";
+  const parts = String(rawText || "").split(marker);
+  if (parts.length < 2) return "";
+  return parts.slice(1).join(marker).trim();
+}
+
+function writeJsonFile(filePath, value) {
+  fs.writeFileSync(filePath, JSON.stringify(value || {}, null, 2), "utf8");
+}
+
+function summarizeRegressionLibrary() {
+  const countCases = (type) => {
+    const dir = path.join(REGRESSION_LIBRARY_DIR, type);
+    if (!fs.existsSync(dir)) return 0;
+    return fs.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).length;
+  };
+  return {
+    root: REGRESSION_LIBRARY_DIR,
+    flightCases: countCases("flights"),
+    hotelCases: countCases("hotels"),
+    lastArchivedCase: regressionLibraryMetrics.lastArchivedCase,
+    lastArchiveError: regressionLibraryMetrics.lastArchiveError
+  };
+}
+
+function archiveRegressionCaseSafe({
+  type = "flight",
+  files = [],
+  rawOcrText = "",
+  enhancedOcrText = "",
+  parsedOutput = {},
+  trace = {},
+  metadata = {},
+  decision = "PASS",
+  route = "",
+  destination = "",
+  price = 0,
+  sourceProfile = "",
+  offerId = ""
+} = {}) {
+  try {
+    const normalizedType = type === "hotel" ? "hotel" : "flight";
+    const pluralType = normalizedType === "hotel" ? "hotels" : "flights";
+    const { folder, iso } = regressionTimestampParts();
+    const label = sanitizeRegressionPathPart(route || destination || parsedOutput?.name || parsedOutput?.route || normalizedType);
+    const normalizedDecision = sanitizeRegressionPathPart(String(decision || "PASS").toUpperCase(), "PASS");
+    const caseDir = path.join(REGRESSION_LIBRARY_DIR, pluralType, `${folder}_${label}_${normalizedDecision}`);
+    fs.mkdirSync(caseDir, { recursive: true });
+
+    const contentForPrivacy = [
+      rawOcrText,
+      enhancedOcrText,
+      JSON.stringify(parsedOutput || {}),
+      JSON.stringify(trace || {})
+    ].join("\n");
+    const skipScreenshots = looksLikeSensitiveRegressionContent(contentForPrivacy);
+
+    if (!skipScreenshots) {
+      safeArray(files).slice(0, 4).forEach((file, index) => {
+        if (!Buffer.isBuffer(file?.buffer)) return;
+        const ext = path.extname(file.originalname || "") || ".png";
+        fs.writeFileSync(path.join(caseDir, `screenshot_${index + 1}${ext}`), file.buffer);
+      });
+    }
+
+    if (rawOcrText) fs.writeFileSync(path.join(caseDir, "raw_ocr.txt"), String(rawOcrText), "utf8");
+    if (enhancedOcrText) fs.writeFileSync(path.join(caseDir, "enhanced_ocr.txt"), String(enhancedOcrText), "utf8");
+    writeJsonFile(path.join(caseDir, "parsed_output.json"), parsedOutput);
+    writeJsonFile(path.join(caseDir, "trace.json"), trace);
+    writeJsonFile(path.join(caseDir, "metadata.json"), {
+      timestamp: iso,
+      type: normalizedType,
+      sourceProfile,
+      decision: normalizedDecision,
+      route,
+      destination,
+      price: Number(price || 0),
+      confidence: trace?.confidence || trace?.flightConfidence || null,
+      offerId,
+      screenshotCount: safeArray(files).length,
+      screenshotsArchived: !skipScreenshots,
+      appVersion: OCR_ENGINE_VERSION,
+      commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || "",
+      metadata
+    });
+
+    regressionLibraryMetrics.lastArchivedCase = {
+      type: normalizedType,
+      decision: normalizedDecision,
+      path: caseDir,
+      timestamp: iso
+    };
+    regressionLibraryMetrics.lastArchiveError = null;
+    return { archived: true, path: caseDir, screenshotsArchived: !skipScreenshots };
+  } catch (error) {
+    regressionLibraryMetrics.lastArchiveError = {
+      time: new Date().toISOString(),
+      message: error.message
+    };
+    console.warn("GT63 REGRESSION LIBRARY ARCHIVE FAILED:", error.message);
+    return { archived: false, error: error.message };
+  }
+}
+
 function mergeImportedHotelRecords(records = []) {
   const validRecords = records.filter(Boolean);
   const firstValue = (field) => {
@@ -7293,7 +7439,7 @@ if (profileImport?.flight) {
     flightPrice,
     requiresOperatorReview: flightConfidence.risk.requiresOperatorReview
   });
-  return res.json({
+  const responsePayload = {
     success: true,
     rawText: text,
     flightPrice,
@@ -7311,7 +7457,22 @@ if (profileImport?.flight) {
     flightConfidence,
     risk: flightConfidence.risk,
     operatorWarnings: flightConfidence.risk.warnings
+  };
+  await archiveRegressionCaseSafe({
+    type: "flight",
+    files: imageFiles,
+    rawOcrText: text,
+    enhancedOcrText: extractEnhancedOcrArchiveText(text),
+    parsedOutput: profileImport.flight,
+    trace: { flightConfidence, metadata: profileImport.metadata },
+    metadata: profileImport.metadata,
+    decision: flightConfidence.risk.requiresOperatorReview ? "REVIEW" : "PASS",
+    route: profileImport.flight.route,
+    destination: req.body?.destination || "",
+    price: flightPrice,
+    sourceProfile: profileImport.metadata?.source || ""
   });
+  return res.json(responsePayload);
 }
 
    // ===== SIMPLE PARSER =====
@@ -7423,7 +7584,7 @@ if (tokyoFlight) {
     requiresOperatorReview: flightConfidence.risk.requiresOperatorReview
   });
 
-  return res.json({
+  const responsePayload = {
     success: true,
     rawText: text,
     flightPrice,
@@ -7440,7 +7601,22 @@ if (tokyoFlight) {
     flightConfidence,
     risk: flightConfidence.risk,
     operatorWarnings: flightConfidence.risk.warnings
+  };
+  await archiveRegressionCaseSafe({
+    type: "flight",
+    files: imageFiles,
+    rawOcrText: text,
+    enhancedOcrText: extractEnhancedOcrArchiveText(text),
+    parsedOutput: flight,
+    trace: { flightConfidence, metadata: enrichedImport.metadata },
+    metadata: enrichedImport.metadata,
+    decision: flightConfidence.risk.requiresOperatorReview ? "REVIEW" : "PASS",
+    route: flight.route,
+    destination: req.body?.destination || "",
+    price: flightPrice,
+    sourceProfile: enrichedImport.metadata?.source || "tokyo_fallback"
   });
+  return res.json(responsePayload);
 }
 
 const forcedFlight = normalizeFlightFromDestination(req.body?.destination, text);
@@ -7465,7 +7641,7 @@ if (forcedFlight) {
     requiresOperatorReview: flightConfidence.risk.requiresOperatorReview
   });
 
-  return res.json({
+  const responsePayload = {
     success: true,
     rawText: text,
     flightPrice,
@@ -7480,7 +7656,22 @@ if (forcedFlight) {
     flightConfidence,
     risk: flightConfidence.risk,
     operatorWarnings: flightConfidence.risk.warnings
+  };
+  await archiveRegressionCaseSafe({
+    type: "flight",
+    files: imageFiles,
+    rawOcrText: text,
+    enhancedOcrText: extractEnhancedOcrArchiveText(text),
+    parsedOutput: flight,
+    trace: { flightConfidence, metadata: enrichedImport.metadata },
+    metadata: enrichedImport.metadata,
+    decision: flightConfidence.risk.requiresOperatorReview ? "REVIEW" : "PASS",
+    route: flight.route,
+    destination: req.body?.destination || "",
+    price: flightPrice,
+    sourceProfile: enrichedImport.metadata?.source || "forced_destination_fallback"
   });
+  return res.json(responsePayload);
 }
 
 // ✈️ Airline
@@ -7748,7 +7939,7 @@ console.log("FLIGHT IMPORT RESPONSE:", {
 const flightConfidence = buildFlightOcrConfidence(text, flight);
 traceFlightOcrDecision(text, flight, flightConfidence, genericDateTimeEnrichment.metadata);
 
-return res.json({
+const responsePayload = {
   success: true,
   rawText: text,
   flightPrice: Number(flight.price || 0),
@@ -7763,7 +7954,22 @@ return res.json({
   flightConfidence,
   risk: flightConfidence.risk,
   operatorWarnings: flightConfidence.risk.warnings
+};
+await archiveRegressionCaseSafe({
+  type: "flight",
+  files: imageFiles,
+  rawOcrText: text,
+  enhancedOcrText: extractEnhancedOcrArchiveText(text),
+  parsedOutput: flight,
+  trace: { flightConfidence, metadata: genericDateTimeEnrichment.metadata },
+  metadata: genericDateTimeEnrichment.metadata,
+  decision: flightConfidence.risk.requiresOperatorReview ? "REVIEW" : "PASS",
+  route: flight.route,
+  destination: req.body?.destination || "",
+  price: Number(flight.price || 0),
+  sourceProfile: genericDateTimeEnrichment.metadata?.source || "fallback_flight"
 });
+return res.json(responsePayload);
   } catch (err) {
     console.error("IMPORT ERROR:", err);
     res.status(500).json({ error: "Import failed", details: err.message });
@@ -7833,6 +8039,22 @@ Rules:
       hotel.images = imageUrls;
     }
     const metadata = normalizeHotelProfileMetadata(hotel, rawParsedHotels[0] || {});
+    const operatorWarnings = metadata.missingFields.includes("hotel.price")
+      ? ["Hotel price is not visible in the screenshot. Enter it manually."]
+      : [];
+    await archiveRegressionCaseSafe({
+      type: "hotel",
+      files: imageFiles,
+      rawOcrText: JSON.stringify(rawParsedHotels, null, 2),
+      parsedOutput: hotel,
+      trace: { rawParsedHotels, metadata },
+      metadata,
+      decision: operatorWarnings.length ? "REVIEW" : "PASS",
+      route: "",
+      destination: hotel.area || hotel.location || req.body?.destination || "",
+      price: Number(hotel.price || 0),
+      sourceProfile: metadata.source || ""
+    });
 
     res.json({
       success: true,
@@ -7840,9 +8062,7 @@ Rules:
       metadata,
       source: metadata.source,
       missingFields: metadata.missingFields,
-      operatorWarnings: metadata.missingFields.includes("hotel.price")
-        ? ["Hotel price is not visible in the screenshot. Enter it manually."]
-        : []
+      operatorWarnings
     });
   } catch (err) {
     console.error("IMPORT HOTEL IMAGE ERROR:", err);
@@ -7882,5 +8102,7 @@ module.exports = {
   parseConnectingFlightCheckout,
   parseDirectRoundTripTicket,
   normalizeOffer,
-  buildFlightOcrConfidence
+  buildFlightOcrConfidence,
+  archiveRegressionCaseSafe,
+  summarizeRegressionLibrary
 };
