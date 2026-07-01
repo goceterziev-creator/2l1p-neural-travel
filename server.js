@@ -6763,6 +6763,10 @@ app.get("/api/admin/regression-library-metrics", requireCapability("agency.view"
   res.json(summarizeRegressionLibrary());
 });
 
+app.get("/api/admin/beta-health", requireCapability("agency.view"), (req, res) => {
+  res.json(summarizeBetaHealth());
+});
+
 app.get("/", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")));
 app.get("/admin", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")));
 
@@ -7277,6 +7281,140 @@ function summarizeRegressionLibrary() {
     hotelCases: countCases("hotels"),
     lastArchivedCase: regressionLibraryMetrics.lastArchivedCase,
     lastArchiveError: regressionLibraryMetrics.lastArchiveError
+  };
+}
+
+function readRegressionJsonSafe(filePath, fallback = null) {
+  try {
+    if (!fs.existsSync(filePath)) return fallback;
+    return JSON.parse(fs.readFileSync(filePath, "utf8") || "null") || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeBetaDecision(value = "") {
+  const decision = String(value || "").trim().toUpperCase();
+  if (decision === "REJECT" || decision === "REJECTED") return "REJECT";
+  if (decision === "REVIEW") return "REVIEW";
+  return "PASS";
+}
+
+function normalizeReviewReason(value = "") {
+  return String(value || "")
+    .replace(/^\[[^\]]+\]\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function extractReviewReasonsFromCase({ metadata = {}, trace = {}, parsedOutput = {}, decision = "PASS" } = {}) {
+  const reasons = [
+    ...safeArray(trace?.flightConfidence?.risk?.blockingReasons),
+    ...safeArray(trace?.flightConfidence?.risk?.warnings),
+    ...safeArray(trace?.risk?.warnings),
+    ...safeArray(trace?.operatorWarnings),
+    ...safeArray(trace?.metadata?.missingFields).map((field) => `Missing OCR field: ${field}`),
+    ...safeArray(metadata?.metadata?.missingFields).map((field) => `Missing OCR field: ${field}`),
+    ...safeArray(metadata?.missingFields).map((field) => `Missing OCR field: ${field}`),
+    ...safeArray(parsedOutput?.operatorWarnings),
+    ...safeArray(parsedOutput?.validationWarnings)
+  ]
+    .map(normalizeReviewReason)
+    .filter(Boolean);
+
+  if (!reasons.length && normalizeBetaDecision(decision) === "REVIEW") {
+    reasons.push("Operator review required");
+  }
+
+  return [...new Set(reasons)];
+}
+
+function listRegressionCases(type = "flight") {
+  const pluralType = type === "hotel" ? "hotels" : "flights";
+  const dir = path.join(REGRESSION_LIBRARY_DIR, pluralType);
+  if (!fs.existsSync(dir)) return [];
+
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const caseDir = path.join(dir, entry.name);
+      const stat = fs.statSync(caseDir);
+      const metadata = readRegressionJsonSafe(path.join(caseDir, "metadata.json"), {});
+      const trace = readRegressionJsonSafe(path.join(caseDir, "trace.json"), {});
+      const parsedOutput = readRegressionJsonSafe(path.join(caseDir, "parsed_output.json"), {});
+      const decision = normalizeBetaDecision(metadata.decision || entry.name.split("_").pop());
+      const timestamp = metadata.timestamp || stat.mtime.toISOString();
+      const route = metadata.route ||
+        parsedOutput.route ||
+        parsedOutput.flightRoute ||
+        metadata.destination ||
+        parsedOutput.name ||
+        "-";
+      const airline = parsedOutput.airline || parsedOutput.flightAirline || metadata.airline || "-";
+      const reasons = extractReviewReasonsFromCase({ metadata, trace, parsedOutput, decision });
+
+      return {
+        type,
+        path: caseDir,
+        timestamp,
+        decision,
+        route,
+        airline,
+        reviewReasons: reasons,
+        price: Number(metadata.price || parsedOutput.price || parsedOutput.flightPrice || 0)
+      };
+    })
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
+function summarizeBetaHealth() {
+  const cases = [
+    ...listRegressionCases("flight"),
+    ...listRegressionCases("hotel")
+  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const passImports = cases.filter((item) => item.decision === "PASS").length;
+  const reviewImports = cases.filter((item) => item.decision === "REVIEW").length;
+  const rejectImports = cases.filter((item) => item.decision === "REJECT").length;
+  const totalImports = cases.length;
+  const reviewRate = totalImports ? Number(((reviewImports / totalImports) * 100).toFixed(1)) : 0;
+  const reasonCounts = new Map();
+
+  cases
+    .filter((item) => item.decision === "REVIEW")
+    .forEach((item) => {
+      const reasons = item.reviewReasons.length ? item.reviewReasons : ["Operator review required"];
+      reasons.forEach((reason) => {
+        reasonCounts.set(reason, (reasonCounts.get(reason) || 0) + 1);
+      });
+    });
+
+  const topReviewReasons = [...reasonCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 5)
+    .map(([reason, count]) => ({ reason, count }));
+
+  const recentReviewCases = cases
+    .filter((item) => item.decision === "REVIEW")
+    .slice(0, 10)
+    .map((item) => ({
+      timestamp: item.timestamp,
+      type: item.type,
+      route: item.route,
+      airline: item.airline,
+      reviewReason: item.reviewReasons[0] || "Operator review required"
+    }));
+
+  return {
+    totalImports,
+    passImports,
+    reviewImports,
+    rejectImports,
+    reviewRate,
+    topReviewReasons,
+    recentReviewCases,
+    regressionSummary: summarizeRegressionLibrary()
   };
 }
 
@@ -8132,5 +8270,6 @@ module.exports = {
   normalizeOffer,
   buildFlightOcrConfidence,
   archiveRegressionCaseSafe,
-  summarizeRegressionLibrary
+  summarizeRegressionLibrary,
+  summarizeBetaHealth
 };

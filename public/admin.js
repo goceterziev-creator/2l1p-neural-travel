@@ -519,6 +519,83 @@ async function loadRegressionLibraryMetrics() {
   }
 }
 
+function renderBetaHealthMetrics(data = {}) {
+  const box = $("betaHealthMetrics");
+  if (!box) return;
+
+  const totalImports = Number(data.totalImports || 0);
+  const passImports = Number(data.passImports || 0);
+  const reviewImports = Number(data.reviewImports || 0);
+  const rejectImports = Number(data.rejectImports || 0);
+  const reviewRate = Number(data.reviewRate || 0);
+  const tone = reviewRate > 30 ? "risk" : reviewRate >= 15 ? "review" : "ready";
+  const label = tone === "ready" ? "Beta healthy" : tone === "review" ? "Review load rising" : "High review load";
+  const topReasons = Array.isArray(data.topReviewReasons) ? data.topReviewReasons : [];
+  const recentCases = Array.isArray(data.recentReviewCases) ? data.recentReviewCases : [];
+  const regression = data.regressionSummary || {};
+
+  const reasonRows = topReasons.length
+    ? topReasons.map((item, index) => `
+      <div class="qa-metric">
+        <span>${index + 1}. ${escapeHtml(item.reason || "Review")}</span>
+        <strong>${Number(item.count || 0)}</strong>
+      </div>
+    `).join("")
+    : `<div class="muted">No review reasons captured yet.</div>`;
+
+  const recentRows = recentCases.length
+    ? recentCases.map((item) => `
+      <div class="qa-metric">
+        <span>${escapeHtml(item.route || "-")}</span>
+        <strong>${escapeHtml(item.airline || item.type || "-")}</strong>
+        <small>${escapeHtml(item.reviewReason || "Review")} · ${escapeHtml(item.timestamp || "")}</small>
+      </div>
+    `).join("")
+    : `<div class="muted">No recent review cases.</div>`;
+
+  box.innerHTML = `
+    <div class="risk-summary risk-${tone}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${reviewRate.toFixed(1)}%</strong>
+    </div>
+    <div class="qa-grid">
+      <div class="qa-metric"><span>Total imports</span><strong>${totalImports}</strong></div>
+      <div class="qa-metric"><span>PASS</span><strong>${passImports}</strong></div>
+      <div class="qa-metric"><span>REVIEW</span><strong>${reviewImports}</strong></div>
+      <div class="qa-metric"><span>REJECT</span><strong>${rejectImports}</strong></div>
+    </div>
+    <h4>Top review reasons</h4>
+    <div class="qa-grid">${reasonRows}</div>
+    <h4>Recent review cases</h4>
+    <div class="qa-grid">${recentRows}</div>
+    <h4>Regression snapshot</h4>
+    <div class="qa-grid">
+      <div class="qa-metric"><span>Flight cases</span><strong>${Number(regression.flightCases || 0)}</strong></div>
+      <div class="qa-metric"><span>Hotel cases</span><strong>${Number(regression.hotelCases || 0)}</strong></div>
+      <div class="qa-metric"><span>Last archived</span><strong>${escapeHtml(regression.lastArchivedCase?.decision || "-")}</strong><small>${escapeHtml(regression.lastArchivedCase?.path || "")}</small></div>
+    </div>
+  `;
+}
+
+async function loadBetaHealthMetrics() {
+  try {
+    const data = await fetchJson("/api/admin/beta-health");
+    renderBetaHealthMetrics(data);
+  } catch (error) {
+    console.error("Beta health metrics error:", error);
+    renderBetaHealthMetrics({
+      totalImports: 0,
+      passImports: 0,
+      reviewImports: 0,
+      rejectImports: 0,
+      reviewRate: 0,
+      topReviewReasons: [],
+      recentReviewCases: [],
+      regressionSummary: {}
+    });
+  }
+}
+
 function pipelineStage(offer = {}) {
   const status = String(offer.status || "draft").toLowerCase();
   const hasWarnings = getOfferWarnings(offer).length > 0;
@@ -3710,6 +3787,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     await loadRegressionLibraryMetrics();
   } catch (e) {
     console.error("LOAD REGRESSION LIBRARY METRICS ERROR:", e);
+  }
+
+  try {
+    await loadBetaHealthMetrics();
+  } catch (e) {
+    console.error("LOAD BETA HEALTH METRICS ERROR:", e);
   }
 
   try {

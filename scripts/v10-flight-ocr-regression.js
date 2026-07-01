@@ -26,6 +26,7 @@ const {
   parseBookingLastminuteFlightModal,
   parseDirectRoundTripTicket,
   summarizeRegressionLibrary,
+  summarizeBetaHealth,
   parseConnectingFlightCheckout,
   buildFlightOcrConfidence
 } = require("../server");
@@ -71,6 +72,13 @@ const sensitiveArchive = archiveRegressionCaseSafe({
 assert.equal(sensitiveArchive.archived, true, "sensitive archive should still save metadata");
 assert.equal(sensitiveArchive.screenshotsArchived, false, "sensitive archive must skip screenshots");
 assert.ok(!fs.existsSync(path.join(sensitiveArchive.path, "screenshot_1.png")), "sensitive screenshot should not be written");
+const betaHealthStats = summarizeBetaHealth();
+assert.ok(betaHealthStats.totalImports >= 2, "beta health should count archived imports");
+assert.ok(betaHealthStats.passImports >= 1, "beta health should count PASS imports");
+assert.ok(betaHealthStats.reviewImports >= 1, "beta health should count REVIEW imports");
+assert.ok(betaHealthStats.reviewRate > 0, "beta health should calculate review rate");
+assert.ok(Array.isArray(betaHealthStats.topReviewReasons), "beta health should expose top review reasons");
+assert.ok(Array.isArray(betaHealthStats.recentReviewCases), "beta health should expose recent review cases");
 
 const originalWriteFileSync = fs.writeFileSync;
 fs.writeFileSync = () => {
