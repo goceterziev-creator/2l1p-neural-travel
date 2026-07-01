@@ -17,6 +17,7 @@ const PORT = process.env.PORT || 3001;
 const LIVE_BASE_URL = process.env.LIVE_BASE_URL || `http://localhost:${PORT}`;
 const SESSION_COOKIE = "aya_session";
 const AUTH_SECRET = process.env.AUTH_SECRET || "dev-auth-secret-change-me";
+const BETA_AUTH_BYPASS = process.env.BETA_AUTH_BYPASS === "true";
 const AGENCY_WHATSAPP_PHONE = String(process.env.AGENCY_WHATSAPP_PHONE || "359885078980").replace(/[^\d]/g, "");
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const OCR_ENGINE_VERSION = "8.3.2";
@@ -38,6 +39,9 @@ const REGRESSION_LIBRARY_DIR = process.env.REGRESSION_LIBRARY_DIR
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
 console.log("SERVING FROM:", PUBLIC_DIR);
+if (BETA_AUTH_BYPASS) {
+  console.warn("GT63 BETA AUTH BYPASS ENABLED: admin pages and APIs use bootstrap admin context without login.");
+}
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -372,15 +376,38 @@ function publicInvite(invite = {}) {
 function resolveSessionContext(req) {
   const token = parseCookies(req)[SESSION_COOKIE];
   const session = verifySession(token);
-  if (!session) return null;
   const db = readDb();
-  const user = db.users.find((candidate) => candidate.id === session.userId) || null;
-  if (!user || !isSessionValidForUser(session, user)) return null;
-  return {
-    user,
-    session,
-    identity: normalizeSessionIdentity(user)
-  };
+  if (session) {
+    const user = db.users.find((candidate) => candidate.id === session.userId) || null;
+    if (!user || !isSessionValidForUser(session, user)) return null;
+    return {
+      user,
+      session,
+      identity: normalizeSessionIdentity(user)
+    };
+  }
+
+  if (BETA_AUTH_BYPASS) {
+    const email = String(process.env.ADMIN_EMAIL || "demo@aya.com").toLowerCase();
+    const user = db.users.find((candidate) => String(candidate.email || "").toLowerCase() === email) ||
+      db.users.find((candidate) => candidate.id === "USR-ADMIN") ||
+      db.users.find((candidate) => getCurrentUserRole(candidate) === "admin") ||
+      null;
+    if (!user) return null;
+    const identity = normalizeSessionIdentity(user);
+    return {
+      user,
+      session: {
+        ...identity,
+        iat: Date.now(),
+        exp: Date.now() + SESSION_MAX_AGE_SECONDS * 1000,
+        betaAuthBypass: true
+      },
+      identity
+    };
+  }
+
+  return null;
 }
 
 function getCurrentUser(req) {
@@ -6563,7 +6590,8 @@ app.get("/api/auth/me", requireAuthApi, (req, res) => {
       sessionVersion: identity.sessionVersion,
       issuedAt: req.session?.iat ? new Date(Number(req.session.iat)).toISOString() : null,
       expiresAt: sessionExpiresAt(req.session),
-      valid: true
+      valid: true,
+      betaAuthBypass: Boolean(req.session?.betaAuthBypass)
     },
     agency: agency ? {
       agencyId: agency.agencyId || agency.id,
