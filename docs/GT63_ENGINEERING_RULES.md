@@ -1,6 +1,6 @@
 # GT63 Engineering Rules
 
-Version: 1.1
+Version: 2.0
 
 These rules define how GT63 changes are reviewed, stabilized, and promoted toward production behavior.
 
@@ -18,63 +18,225 @@ Before locking a change, check:
 
 The goal is not to slow development down. The goal is to avoid winning the move and losing the position.
 
+---
+
 ## RULE #2 — SHADOW BEFORE SWITCH
 
-New production-critical resolvers, parsers, mappings, and decision layers must run in shadow mode before they replace existing behavior.
+For any critical migration:
 
-Shadow mode means:
+1. Keep production behavior.
+2. Run shadow implementation.
+3. Compare outputs.
+4. Measure mismatches.
+5. Switch only after confidence is proven.
 
-- old behavior remains the production result
-- new behavior observes the same input
-- differences are counted and logged
-- mismatches are visible to the operator/admin layer
-- no production switch happens until GT63 explicitly approves it
+Never switch blind.
 
-Shadow mode is not optional for risky changes. It is the safe bridge between "implemented" and "trusted".
+Shadow mode is not optional for risky changes. It is the safe bridge between implemented and trusted.
+
+---
 
 ## RULE #3 — REVIEW IS A VALID OUTCOME
 
-The system must not guess when confidence is low.
+The system is allowed to say:
 
-If a parser, resolver, OCR result, or validation layer is uncertain, the correct result can be:
+REVIEW
 
-- import with operator review
-- warning only in admin
-- no client-facing warning
-- blocked import when core data is missing
+instead of:
 
-Review is not failure. Review is production discipline.
+PASS
+
+when confidence is insufficient.
+
+Review is preferable to guessing.
 
 The client should see a clean proposal. The operator should see the truth.
 
+---
+
 ## RULE #4 — REGRESSION OR IT DIDN'T HAPPEN
 
-A fix is not locked just because it works once in the browser.
+If a bug was fixed:
 
-Every production-relevant parser, resolver, pricing, OCR, PDF, or persistence change needs a regression proof when feasible.
+- create regression
+- verify regression fails before fix
+- verify regression passes after fix
 
-Regression proof can be:
-
-- a focused script fixture
-- an existing QA harness assertion
-- a before/after OCR trace
-- a documented manual test with exact screenshot/PDF evidence
+No regression = fix not complete.
 
 If a bug happened once, GT63 assumes it can happen again. The fix should teach the system how to catch it next time.
 
+---
+
 ## RULE #5 — AUTOMATE THE 2ND REPETITION
 
-The first repetition can be manual.
+After the second repetition of the same manual task:
 
-The second repetition should become a checklist, fixture, script, admin diagnostic, or documented rule.
+STOP
 
-If the same type of issue appears twice, GT63 should stop treating it as an isolated bug and start treating it as a workflow or system gap.
+Ask:
 
-Examples:
+- can this become automation?
+- can this become configuration?
+- can this become database?
+- can this become workflow?
 
-- repeated OCR false positives become a confidence or validation rule
-- repeated resolver mismatches become shadow diagnostics
-- repeated PDF layout issues become print/layout constraints
-- repeated manual checks become QA fixtures or admin visibility
+Do not accept endless repetition.
 
 Automation does not always mean code. Sometimes the right automation is a canonical document that prevents the same decision from being reopened.
+
+---
+
+## RULE #6 — DEMOS BEFORE FEATURES
+
+Before building a new feature:
+
+Show the current workflow to a real user.
+
+If the user cannot validate the value:
+do not build the feature yet.
+
+Real feedback beats assumptions.
+
+---
+
+## RULE #7 — SCREENSHOT FIRST
+
+When investigating OCR issues:
+
+1. screenshot
+2. raw OCR
+3. parser output
+4. production decision
+
+Never debug parser output before seeing the screenshot.
+
+The screenshot is the source of truth.
+
+---
+
+## RULE #8 — DIVERSITY BEFORE VOLUME
+
+When building regression libraries:
+
+Prefer:
+
+10 different providers
+
+over
+
+100 screenshots from one provider.
+
+Diversity reveals architecture weaknesses.
+
+Volume reveals implementation weaknesses.
+
+---
+
+## RULE #9 — FIX THE PATTERN, NOT THE WEBSITE
+
+After the third similar fix:
+
+STOP
+
+Identify the common pattern.
+
+Do not create provider-specific fixes if a shared solution exists.
+
+Fix the pattern.
+
+Not the website.
+
+---
+
+## RULE #10 — ONE BOTTLENECK AT A TIME
+
+Identify the largest source of review cases.
+
+Focus engineering effort on that bottleneck only.
+
+Do not optimize secondary problems before measuring impact.
+
+Metrics decide priority.
+
+---
+
+## RULE #11 — SHADOW BEFORE SWITCH
+
+For any critical migration:
+
+1. keep production behavior
+2. run shadow implementation
+3. compare outputs
+4. measure mismatches
+5. switch only after confidence is proven
+
+Never switch blind.
+
+---
+
+## RULE #12 — REVIEW IS A VALID OUTCOME
+
+The system is allowed to say:
+
+REVIEW
+
+instead of:
+
+PASS
+
+when confidence is insufficient.
+
+Review is preferable to guessing.
+
+---
+
+## RULE #13 — METRICS BEFORE OPINIONS
+
+If metrics exist:
+
+use metrics.
+
+Do not prioritize work using intuition alone.
+
+Dashboard data overrides assumptions.
+
+---
+
+## RULE #14 — PRODUCTION DATA BEFORE ARCHITECTURE
+
+Before building a new subsystem:
+
+Collect real production examples.
+
+Architecture should be driven by observed patterns,
+not theoretical possibilities.
+
+---
+
+## RULE #15 — ARCHIVE BEFORE FIX
+
+Before fixing a production issue:
+
+Archive:
+
+- screenshot
+- OCR
+- parser output
+- review reasons
+
+The case must be reproducible before modification begins.
+
+---
+
+## RULE #16 — 80/20 FIRST
+
+Prioritize the smallest change that removes the largest amount of review workload.
+
+Do not attempt to solve every problem simultaneously.
+
+Solve the highest-impact problem first.
+
+Measure again.
+
+Repeat.
