@@ -843,4 +843,31 @@ Tra → ron
 13:50 Sofia Airport (SOF)
 `), null);
 
+const strongIataCandidateRepairOcr = `
+Your selection
+Sofia to New York
+Thursday, 9 July 2026
+11:05 Sofia
+Sofia (SOF)
+16:35 New York
+John F Kennedy International (JFK)
+SOF JFK
+New York to Sofia
+Thursday, 23 July 2026
+21:45 New York
+John F Kennedy International (JFK)
+15:20 Sofia
+Sofia (SOF)
+JFK SOF
+Total price flights: EUR 2,257.94
+`;
+const strongIataCandidateParsed = parseConnectingFlightCheckout(strongIataCandidateRepairOcr);
+assert.equal(strongIataCandidateParsed.flight.route, "SOF -> JFK / JFK -> SOF");
+assert.ok(!strongIataCandidateParsed.flight.route.includes("TIA"), "strong IATA pair route must not fall back to stale TIA");
+assert.ok(!strongIataCandidateParsed.flight.departure.includes("TIA"), "strong IATA pair departure must not include stale TIA stopovers");
+assert.ok(!strongIataCandidateParsed.flight.arrival.includes("TIA"), "strong IATA pair arrival must not include stale TIA stopovers");
+assert.equal(strongIataCandidateParsed.flight.price, 2257.94);
+assert.match(strongIataCandidateParsed.flight.departure, /Jul 9 2026|9 July 2026/i);
+assert.match(strongIataCandidateParsed.flight.arrival, /Jul 23 2026|23 July 2026/i);
+
 console.log("V10 FLIGHT OCR REGRESSION PASS");

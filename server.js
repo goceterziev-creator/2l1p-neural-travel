@@ -1740,6 +1740,8 @@ function extractOcrMoneyValues(rawText = "") {
 function extractLabeledFlightPrice(rawText = "") {
   const text = ocrCompactText(rawText);
   const match =
+    text.match(/\b(?:TOTAL\s+price\s+flights?|TOTAL\s+flights?|flight\s+TOTAL|TOTAL\s+price)\s*[:\-]?\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i) ||
+    text.match(/\b(?:TOTAL\s+price\s+flights?|TOTAL\s+flights?|flight\s+TOTAL|TOTAL\s+price)\s*[:\-]?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)\b/i) ||
     text.match(/\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\s*(?:\u20ac|EUR|EURO)?(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b/i) ||
     text.match(/\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\s*([0-9][0-9\s,.]*[,.][0-9]{2})\s*(?:\u20ac|EUR|EURO)\b/i) ||
     text.match(/(?:\u20ac|EUR|EURO)(?:\s*euros?)?\s*([0-9][0-9\s,.]*[,.][0-9]{2})\b(?=.{0,120}\bTOTAL\s+price\s+for\s+(?:all\s+travelers|\d+\s+(?:travelers|passengers|adults?))\b)/i) ||
@@ -4162,6 +4164,9 @@ function enrichFlightOfferLevelDateTimes(rawText = "", flight = {}, metadata = {
 }
 
 function enrichFlightStopSummary(rawText = "", flight = {}, destination = "") {
+  if (flight?.routeCandidateSource === "strong_iata_pair" && !extractGlobalFlightEvents(rawText, flight).length) {
+    return flight;
+  }
   const connectingFlight = detectGenericConnectingFlight(rawText, destination);
   const timedFlight = enrichRoundTripEndpointTimes(rawText, flight);
   const detailedStops = extractPreferredRoundTripStopDetails(rawText, timedFlight);
@@ -4562,6 +4567,138 @@ function extractDirectionalFlightRouteTitles(rawText = "") {
     .filter(Boolean);
 }
 
+function extractNaturalLanguageFlightDates(rawText = "") {
+  const monthMap = {
+    january: "Jan",
+    february: "Feb",
+    march: "Mar",
+    april: "Apr",
+    may: "May",
+    june: "Jun",
+    july: "Jul",
+    august: "Aug",
+    september: "Sep",
+    october: "Oct",
+    november: "Nov",
+    december: "Dec"
+  };
+  const seen = new Set();
+  return [...String(rawText || "").matchAll(/\b(?:[A-Za-z]{3,14},?\s+)?(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/gi)]
+    .map((match) => {
+      const month = monthMap[String(match[2] || "").toLowerCase()];
+      const display = `${month} ${Number(match[1])} ${match[3]}`;
+      return { raw: match[0], display };
+    })
+    .filter((item) => {
+      const key = item.display.toLowerCase();
+      if (!item.display || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function extractPlainRouteTitlePairs(rawText = "") {
+  return String(rawText || "")
+    .split(/\r?\n/)
+    .map((line, index) => ({
+      index,
+      line: String(line || "").replace(/\s+/g, " ").trim()
+    }))
+    .filter((item) => item.line)
+    .map((item) => {
+      const match = item.line.match(/^([\p{L}][\p{L}\s.'-]{1,36})\s+(?:to|[-\u2013\u2014]\s*>?)\s+([\p{L}][\p{L}\s.'-]{1,36})$/iu);
+      if (!match) return null;
+      const fromCode = routeTitleEndpointCode(match[1]);
+      const toCode = routeTitleEndpointCode(match[2]);
+      if (!fromCode || !toCode || fromCode === toCode) return null;
+      return {
+        ...item,
+        fromCode,
+        toCode
+      };
+    })
+    .filter(Boolean);
+}
+
+function detectStrongIataPairConnectingFlight(rawText = "") {
+  const lines = String(rawText || "").split(/\r?\n/);
+  const pairs = lines.flatMap((line, index) =>
+    [...String(line || "").matchAll(/\b([A-Z]{3})\s*(?:[-\u2013\u2014>]+\s*)?([A-Z]{3})\b/g)]
+      .map((match) => ({
+        fromCode: match[1],
+        toCode: match[2],
+        index,
+        raw: match[0],
+        line: String(line || "")
+      }))
+  )
+    .filter((pair) =>
+      pair.fromCode !== pair.toCode &&
+      isPlausibleIataCode(pair.fromCode) &&
+      isPlausibleIataCode(pair.toCode)
+    );
+  if (pairs.length < 2) return null;
+
+  const titles = extractPlainRouteTitlePairs(rawText);
+  const roundTripTitles = titles
+    .map((title) => ({
+      outbound: title,
+      inbound: titles.find((candidate) =>
+        candidate.index > title.index &&
+        candidate.fromCode === title.toCode &&
+        candidate.toCode === title.fromCode
+      )
+    }))
+    .find((candidate) => candidate.inbound);
+
+  const reversedPairs = pairs
+    .map((pair) => {
+      const reverse = pairs.find((candidate) =>
+        candidate.index > pair.index &&
+        candidate.fromCode === pair.toCode &&
+        candidate.toCode === pair.fromCode
+      );
+      if (!reverse) return null;
+      const titleBoost = roundTripTitles?.outbound?.fromCode === pair.fromCode &&
+        roundTripTitles?.outbound?.toCode === pair.toCode
+        ? 100
+        : 0;
+      const labelContext = lines
+        .slice(Math.max(0, pair.index - 4), Math.min(lines.length, reverse.index + 5))
+        .join(" ");
+      const contextBoost = /\b(?:selection|flight|itinerary|details|your flights?|departing|return|to)\b/i.test(labelContext) ? 10 : 0;
+      return {
+        pair,
+        reverse,
+        score: titleBoost + contextBoost + Math.max(0, 20 - pair.index)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || a.pair.index - b.pair.index);
+
+  const selected = reversedPairs[0];
+  if (!selected) return null;
+  const dates = extractNaturalLanguageFlightDates(rawText);
+  const route = `${selected.pair.fromCode} -> ${selected.pair.toCode} / ${selected.reverse.fromCode} -> ${selected.reverse.toCode}`;
+  const flightNumbers = extractGlobalFlightNumbers(rawText);
+  return {
+    airline: inferConnectingAirline(rawText),
+    route,
+    routeCandidateSource: "strong_iata_pair",
+    departure: dates[0]
+      ? `${selected.pair.fromCode} -> ${selected.pair.toCode}, ${dates[0].display}`
+      : `${selected.pair.fromCode} -> ${selected.pair.toCode}`,
+    arrival: dates[1]
+      ? `${selected.reverse.fromCode} -> ${selected.reverse.toCode}, ${dates[1].display}`
+      : `${selected.reverse.fromCode} -> ${selected.reverse.toCode}`,
+    baggage: extractFlightBaggageSummary(rawText),
+    notes: [
+      flightNumbers.length ? `\u041f\u043e\u043b\u0435\u0442\u0438: ${flightNumbers.join(", ")}.` : "",
+      "\u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0444\u0438\u043d\u0430\u043b\u043d\u043e \u0447\u0430\u0441\u043e\u0432\u0435\u0442\u0435, \u0431\u0430\u0433\u0430\u0436\u0430 \u0438 \u0443\u0441\u043b\u043e\u0432\u0438\u044f\u0442\u0430 \u043f\u0440\u0435\u0434\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u0430\u0446\u0438\u044f."
+    ].filter(Boolean).join(" ")
+  };
+}
+
 function preferredPartialRouteTitleTimeline(rawText = "", origin = "", destination = "") {
   const sections = splitOcrTimelineSections(rawText);
   return sections
@@ -4886,7 +5023,8 @@ function detectTokyoConnectingFlight(rawText = "") {
 function parseConnectingFlightCheckout(rawText = "", { destination = "" } = {}) {
   const compact = ocrCompactText(rawText);
   const tokyoFlight = detectTokyoConnectingFlight(rawText);
-  const connectingFlight = detectGenericConnectingFlight(rawText, destination) || tokyoFlight;
+  const strongIataPairFlight = detectStrongIataPairConnectingFlight(rawText);
+  const connectingFlight = strongIataPairFlight || detectGenericConnectingFlight(rawText, destination) || tokyoFlight;
   if (connectingFlight) {
     const price =
       extractBookingFlightTotalPrice(rawText) ||
