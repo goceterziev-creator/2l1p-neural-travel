@@ -155,6 +155,23 @@
       "country": "Spain",
       "airport": "Barcelona El Prat Airport",
       "aliases": ["BCN", "Barcelona", "El Prat", "Barcelona El Prat", "Барселона"]
+    },
+    "TIA": {
+      "active": true,
+      "city": "Tirana",
+      "country": "Albania",
+      "airport": "Tirana International Airport Nënë Tereza",
+      "aliases": [
+        "TIA",
+        "Tirana",
+        "Тирана",
+        "Tirana International Airport",
+        "Tirana International Airport Nene Tereza",
+        "Tirana International Airport Nënë Tereza",
+        "Nene Tereza",
+        "Nënë Tereza",
+        "Rinas"
+      ]
     }
   }
 }

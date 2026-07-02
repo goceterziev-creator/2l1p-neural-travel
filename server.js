@@ -2122,22 +2122,43 @@ function loadAirportDatabase() {
     }
     const parsed = JSON.parse(fs.readFileSync(AIRPORT_RUNTIME_FILE, "utf8"));
     const airports = normalizeAirportAliases(parsed);
+    const seedMissingRuntimeCodes = compareAirportSeedToRuntime(parsed);
+    if (seedMissingRuntimeCodes.length) {
+      console.warn("GT63 AIRPORT DATABASE SHADOW SEED/RUNTIME GAP:", {
+        runtimeFile: AIRPORT_RUNTIME_FILE,
+        missingRuntimeCodes: seedMissingRuntimeCodes
+      });
+    }
     console.log("GT63 AIRPORT DATABASE SHADOW MODE:", {
       enabled: true,
       runtimeFile: AIRPORT_RUNTIME_FILE,
-      airports: airports.length
+      airports: airports.length,
+      seedMissingRuntimeCodes
     });
-    return { enabled: true, runtimeFile: AIRPORT_RUNTIME_FILE, airports };
+    return { enabled: true, runtimeFile: AIRPORT_RUNTIME_FILE, airports, seedMissingRuntimeCodes };
   } catch (error) {
     console.warn("GT63 AIRPORT DATABASE SHADOW MODE DISABLED:", {
       runtimeFile: AIRPORT_RUNTIME_FILE,
       error: error.message
     });
-    return { enabled: false, runtimeFile: AIRPORT_RUNTIME_FILE, airports: [], error: error.message };
+    return { enabled: false, runtimeFile: AIRPORT_RUNTIME_FILE, airports: [], seedMissingRuntimeCodes: [], error: error.message };
   }
 }
 
 const airportDatabaseShadow = loadAirportDatabase();
+
+function compareAirportSeedToRuntime(runtimeDatabase = {}) {
+  try {
+    if (!fs.existsSync(AIRPORT_REPOSITORY_SEED_FILE)) return [];
+    const seed = JSON.parse(fs.readFileSync(AIRPORT_REPOSITORY_SEED_FILE, "utf8"));
+    const seedCodes = Object.keys(seed.airports || {}).map((code) => String(code || "").toUpperCase());
+    const runtimeCodes = new Set(Object.keys(runtimeDatabase.airports || {}).map((code) => String(code || "").toUpperCase()));
+    return seedCodes.filter((code) => code && !runtimeCodes.has(code));
+  } catch (error) {
+    console.warn("GT63 AIRPORT DATABASE SEED/RUNTIME COMPARE SKIPPED:", error.message);
+    return [];
+  }
+}
 
 function findAirport(value = "") {
   const text = normalizeSearchText(value);
@@ -6749,6 +6770,7 @@ app.get("/api/health", (req, res) => {
 app.get("/api/admin/airport-resolver-metrics", requireCapability("agency.view"), (req, res) => {
   res.json({
     mode: "SHADOW",
+    seedMissingRuntimeCodes: safeArray(airportDatabaseShadow?.seedMissingRuntimeCodes),
     metrics: {
       totalAirportLookups: Number(airportResolverMetrics.totalAirportLookups || 0),
       airportResolverMatches: Number(airportResolverMetrics.airportResolverMatches || 0),
@@ -7305,6 +7327,7 @@ function normalizeReviewReason(value = "") {
     .replace(/^\[[^\]]+\]\s*/g, "")
     .replace(/\s+/g, " ")
     .trim()
+    .replace(/[.!:]+$/g, "")
     .slice(0, 120);
 }
 
@@ -7380,6 +7403,16 @@ function summarizeBetaHealth() {
   const totalImports = cases.length;
   const reviewRate = totalImports ? Number(((reviewImports / totalImports) * 100).toFixed(1)) : 0;
   const reasonCounts = new Map();
+  const routeStats = new Map();
+
+  cases
+    .forEach((item) => {
+      const route = String(item.route || "-").trim() || "-";
+      const current = routeStats.get(route) || { route, count: 0, reviewCount: 0 };
+      current.count += 1;
+      if (item.decision === "REVIEW") current.reviewCount += 1;
+      routeStats.set(route, current);
+    });
 
   cases
     .filter((item) => item.decision === "REVIEW")
@@ -7394,6 +7427,15 @@ function summarizeBetaHealth() {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 5)
     .map(([reason, count]) => ({ reason, count }));
+
+  const topAffectedRoutes = [...routeStats.values()]
+    .sort((a, b) => b.count - a.count || b.reviewCount - a.reviewCount || a.route.localeCompare(b.route))
+    .slice(0, 5)
+    .map((item) => ({
+      route: item.route,
+      count: item.count,
+      reviewRate: item.count ? Number(((item.reviewCount / item.count) * 100).toFixed(1)) : 0
+    }));
 
   const recentReviewCases = cases
     .filter((item) => item.decision === "REVIEW")
@@ -7413,6 +7455,7 @@ function summarizeBetaHealth() {
     rejectImports,
     reviewRate,
     topReviewReasons,
+    topAffectedRoutes,
     recentReviewCases,
     regressionSummary: summarizeRegressionLibrary()
   };

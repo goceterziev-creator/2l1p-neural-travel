@@ -434,15 +434,25 @@ function renderAirportResolverMetrics(data = {}) {
   const tone = mismatches > 0 ? "review" : "ready";
   const label = mismatches > 0 ? "Shadow mismatch warning" : "Shadow OK";
   const recentMismatches = Array.isArray(data.recentMismatches) ? data.recentMismatches : [];
+  const seedMissingRuntimeCodes = Array.isArray(data.seedMissingRuntimeCodes) ? data.seedMissingRuntimeCodes : [];
   const mismatchRows = recentMismatches.length
     ? recentMismatches.map((item) => `
       <div class="qa-metric">
-        <span>${escapeHtml(item.lookupText || "Unknown lookup")}</span>
-        <strong>${escapeHtml(item.hardcoded || "-")} / ${escapeHtml(item.json || "-")}</strong>
-        <small>${escapeHtml(item.time || "")}</small>
+        <span>lookup: ${escapeHtml(item.lookupText || "Unknown lookup")}</span>
+        <strong>hardcoded: ${escapeHtml(item.hardcoded || "missing")}</strong>
+        <small>json: ${escapeHtml(item.json || "missing")} · ${escapeHtml(item.time || "")}</small>
       </div>
     `).join("")
     : `<div class="muted">No airport shadow mismatches captured.</div>`;
+  const seedGapRows = seedMissingRuntimeCodes.length
+    ? seedMissingRuntimeCodes.map((code) => `
+      <div class="qa-metric">
+        <span>Seed airport missing from runtime config</span>
+        <strong>${escapeHtml(code)}</strong>
+        <small>Runtime config was not overwritten.</small>
+      </div>
+    `).join("")
+    : `<div class="muted">Runtime config contains all seed airport codes.</div>`;
 
   box.innerHTML = `
     <div class="risk-summary risk-${tone}">
@@ -457,6 +467,8 @@ function renderAirportResolverMetrics(data = {}) {
     </div>
     <h4>Last mismatches</h4>
     <div class="qa-grid">${mismatchRows}</div>
+    <h4>Seed/runtime config note</h4>
+    <div class="qa-grid">${seedGapRows}</div>
   `;
 }
 
@@ -474,7 +486,8 @@ async function loadAirportResolverMetrics() {
         airportResolverMismatches: 0,
         airportResolverFallbacks: 0
       },
-      recentMismatches: []
+      recentMismatches: [],
+      seedMissingRuntimeCodes: []
     });
   }
 }
@@ -531,6 +544,7 @@ function renderBetaHealthMetrics(data = {}) {
   const tone = reviewRate > 30 ? "risk" : reviewRate >= 15 ? "review" : "ready";
   const label = tone === "ready" ? "Beta healthy" : tone === "review" ? "Review load rising" : "High review load";
   const topReasons = Array.isArray(data.topReviewReasons) ? data.topReviewReasons : [];
+  const topRoutes = Array.isArray(data.topAffectedRoutes) ? data.topAffectedRoutes : [];
   const recentCases = Array.isArray(data.recentReviewCases) ? data.recentReviewCases : [];
   const regression = data.regressionSummary || {};
 
@@ -542,6 +556,16 @@ function renderBetaHealthMetrics(data = {}) {
       </div>
     `).join("")
     : `<div class="muted">No review reasons captured yet.</div>`;
+
+  const routeRows = topRoutes.length
+    ? topRoutes.map((item) => `
+      <div class="qa-metric">
+        <span>${escapeHtml(item.route || "-")}</span>
+        <strong>${Number(item.count || 0)} cases</strong>
+        <small>${Number(item.reviewRate || 0).toFixed(1)}% review</small>
+      </div>
+    `).join("")
+    : `<div class="muted">No affected routes captured yet.</div>`;
 
   const recentRows = recentCases.length
     ? recentCases.map((item) => `
@@ -566,6 +590,8 @@ function renderBetaHealthMetrics(data = {}) {
     </div>
     <h4>Top review reasons</h4>
     <div class="qa-grid">${reasonRows}</div>
+    <h4>Top affected routes</h4>
+    <div class="qa-grid">${routeRows}</div>
     <h4>Recent review cases</h4>
     <div class="qa-grid">${recentRows}</div>
     <h4>Regression snapshot</h4>
@@ -590,6 +616,7 @@ async function loadBetaHealthMetrics() {
       rejectImports: 0,
       reviewRate: 0,
       topReviewReasons: [],
+      topAffectedRoutes: [],
       recentReviewCases: [],
       regressionSummary: {}
     });

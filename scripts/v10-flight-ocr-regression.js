@@ -5,6 +5,9 @@ const path = require("path");
 process.env.DB_FILE = process.env.DB_FILE || "storage/generated/V10_FLIGHT_OCR_TEST_DATABASE.json";
 process.env.AIRPORT_CONFIG_FILE = process.env.AIRPORT_CONFIG_FILE || "storage/generated/V10_AIRPORTS_TEST_CONFIG.json";
 process.env.REGRESSION_LIBRARY_DIR = process.env.REGRESSION_LIBRARY_DIR || "storage/generated/V10_REGRESSION_LIBRARY_TEST";
+if (process.env.AIRPORT_CONFIG_FILE.includes("storage/generated/")) {
+  fs.rmSync(process.env.AIRPORT_CONFIG_FILE, { force: true });
+}
 
 const {
   airportResolverMetrics,
@@ -33,7 +36,7 @@ const {
 
 const airportSeed = require("../data/airports.json");
 const airportRecords = normalizeAirportAliases(airportSeed);
-for (const code of ["SOF", "PMO", "BVA", "JFK", "YYZ", "WAW", "ZRH", "VIE", "IST", "NRT", "HND", "MLE", "AUH", "ATH", "DXB", "FCO", "CIA", "MXP", "BGY", "BRI", "PRG", "BCN"]) {
+for (const code of ["SOF", "PMO", "BVA", "JFK", "YYZ", "WAW", "ZRH", "VIE", "IST", "NRT", "HND", "MLE", "AUH", "ATH", "DXB", "FCO", "CIA", "MXP", "BGY", "BRI", "PRG", "BCN", "TIA"]) {
   assert.ok(airportRecords.some((record) => record.code === code), `airport seed must include ${code}`);
   assert.equal(findAirport(code)?.code, code, `shadow airport lookup must resolve ${code}`);
 }
@@ -66,7 +69,10 @@ const sensitiveArchive = archiveRegressionCaseSafe({
   type: "flight",
   files: [{ originalname: "sensitive.png", buffer: Buffer.from("fake-image") }],
   rawOcrText: "Card number 4111 1111 1111 1111",
-  parsedOutput: { route: "SOF -> JFK" },
+  parsedOutput: {
+    route: "SOF -> JFK",
+    operatorWarnings: ["Missing OCR field: flight.price."]
+  },
   decision: "REVIEW"
 });
 assert.equal(sensitiveArchive.archived, true, "sensitive archive should still save metadata");
@@ -78,6 +84,9 @@ assert.ok(betaHealthStats.passImports >= 1, "beta health should count PASS impor
 assert.ok(betaHealthStats.reviewImports >= 1, "beta health should count REVIEW imports");
 assert.ok(betaHealthStats.reviewRate > 0, "beta health should calculate review rate");
 assert.ok(Array.isArray(betaHealthStats.topReviewReasons), "beta health should expose top review reasons");
+assert.ok(betaHealthStats.topReviewReasons.some((item) => item.reason === "Missing OCR field: flight.price"), "beta health should normalize duplicate review reason punctuation");
+assert.ok(Array.isArray(betaHealthStats.topAffectedRoutes), "beta health should expose top affected routes");
+assert.ok(betaHealthStats.topAffectedRoutes.some((item) => item.route === "SOF -> JFK" && item.count >= 1), "beta health should count affected routes");
 assert.ok(Array.isArray(betaHealthStats.recentReviewCases), "beta health should expose recent review cases");
 
 const originalWriteFileSync = fs.writeFileSync;
