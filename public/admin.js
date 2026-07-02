@@ -15,6 +15,7 @@ let operationalCommandFilter = "all";
 let createSurfaceOpen = false;
 let opsPanelState = {};
 let currentCapabilities = [];
+let regressionCaseCache = [];
 const NAV_STATE_KEY = "gt63_navigation_state_v1";
 const WORKSPACE_LAZY_FLAGS = {
   activity: "lazy",
@@ -514,13 +515,119 @@ function renderRegressionLibraryMetrics(data = {}) {
       <div class="qa-metric"><span>Last archived</span><strong>${escapeHtml(lastArchived?.decision || "-")}</strong><small>${escapeHtml(lastArchived?.path || "")}</small></div>
       <div class="qa-metric"><span>Last error</span><strong>${escapeHtml(lastError?.message || "-")}</strong><small>${escapeHtml(lastError?.time || "")}</small></div>
     </div>
+    <div class="toolbar compact-toolbar">
+      <button type="button" class="ghost" id="openLatestRegressionCase">Open latest case</button>
+    </div>
+    <h4>Latest regression cases</h4>
+    <div id="regressionCaseList"><div class="muted">Loading cases...</div></div>
+    <div id="regressionCaseInspector"></div>
   `;
+}
+
+function prettyJson(value) {
+  try {
+    return JSON.stringify(value || {}, null, 2);
+  } catch {
+    return String(value || "");
+  }
+}
+
+function renderRegressionCaseList(cases = []) {
+  const box = $("regressionCaseList");
+  if (!box) return;
+  regressionCaseCache = Array.isArray(cases) ? cases : [];
+
+  if (!regressionCaseCache.length) {
+    box.innerHTML = `<div class="muted">No regression cases archived yet.</div>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="qa-grid">
+      ${regressionCaseCache.map((item) => `
+        <div class="qa-metric">
+          <span>${escapeHtml(item.route || "-")}</span>
+          <strong>${escapeHtml(item.decision || "-")} · ${escapeHtml(item.type || "-")}</strong>
+          <small>${escapeHtml(item.airline || "-")} · ${escapeHtml((item.reviewReasons || [])[0] || "No review reason")} · ${escapeHtml(item.timestamp || "")}</small>
+          <button type="button" class="ghost regression-open-case" data-case-id="${escapeHtml(item.id || "")}">Open</button>
+        </div>
+      `).join("")}
+    </div>
+  `;
+
+  $("openLatestRegressionCase")?.addEventListener("click", () => {
+    const latest = regressionCaseCache[0];
+    if (latest?.id) openRegressionCase(latest.id);
+  });
+  box.querySelectorAll(".regression-open-case").forEach((button) => {
+    button.addEventListener("click", () => openRegressionCase(button.dataset.caseId || ""));
+  });
+}
+
+function renderRegressionCaseInspector(data = null, error = "") {
+  const box = $("regressionCaseInspector");
+  if (!box) return;
+
+  if (error) {
+    box.innerHTML = `<div class="note risk-note">${escapeHtml(error)}</div>`;
+    return;
+  }
+
+  if (!data) {
+    box.innerHTML = "";
+    return;
+  }
+
+  const files = Array.isArray(data.files) ? data.files : [];
+  box.innerHTML = `
+    <h4>Case inspector</h4>
+    <div class="qa-grid">
+      <div class="qa-metric"><span>Case</span><strong>${escapeHtml(data.id || "-")}</strong><small>${escapeHtml(data.path || "")}</small></div>
+      <div class="qa-metric"><span>Decision</span><strong>${escapeHtml(data.decision || "-")}</strong><small>${escapeHtml(data.timestamp || "")}</small></div>
+      <div class="qa-metric"><span>Route</span><strong>${escapeHtml(data.route || "-")}</strong><small>${escapeHtml(data.airline || "-")}</small></div>
+      <div class="qa-metric"><span>Files</span><strong>${files.length}</strong><small>${escapeHtml(files.join(", "))}</small></div>
+    </div>
+    <h4>Metadata</h4>
+    <pre class="debug-pre">${escapeHtml(prettyJson(data.metadata))}</pre>
+    <h4>Parsed Output</h4>
+    <pre class="debug-pre">${escapeHtml(prettyJson(data.parsedOutput))}</pre>
+    <h4>Trace</h4>
+    <pre class="debug-pre">${escapeHtml(prettyJson(data.trace))}</pre>
+    <h4>Raw OCR</h4>
+    <pre class="debug-pre">${escapeHtml(data.rawOcr || "")}</pre>
+    <h4>Enhanced OCR</h4>
+    <pre class="debug-pre">${escapeHtml(data.enhancedOcr || "")}</pre>
+  `;
+}
+
+async function loadRegressionCases() {
+  try {
+    const data = await fetchJson("/api/admin/regression-cases?limit=20");
+    renderRegressionCaseList(data.cases || []);
+  } catch (error) {
+    console.error("Regression cases error:", error);
+    renderRegressionCaseList([]);
+    renderRegressionCaseInspector(null, "Regression cases unavailable.");
+  }
+}
+
+async function openRegressionCase(caseId = "") {
+  if (!caseId) return;
+  renderRegressionCaseInspector({ id: caseId, decision: "Loading..." });
+  try {
+    const data = await fetchJson(`/api/admin/regression-cases/${encodeURIComponent(caseId)}`);
+    renderRegressionCaseInspector(data);
+  } catch (error) {
+    console.error("Regression case detail error:", error);
+    renderRegressionCaseInspector(null, error.message || "Regression case unavailable.");
+  }
 }
 
 async function loadRegressionLibraryMetrics() {
   try {
     const data = await fetchJson("/api/admin/regression-library-metrics");
     renderRegressionLibraryMetrics(data);
+    await loadRegressionCases();
   } catch (error) {
     console.error("Regression library metrics error:", error);
     renderRegressionLibraryMetrics({
@@ -529,6 +636,7 @@ async function loadRegressionLibraryMetrics() {
       lastArchivedCase: null,
       lastArchiveError: { message: "Metrics unavailable", time: "" }
     });
+    renderRegressionCaseList([]);
   }
 }
 

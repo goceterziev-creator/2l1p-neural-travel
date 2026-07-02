@@ -6785,6 +6785,25 @@ app.get("/api/admin/regression-library-metrics", requireCapability("agency.view"
   res.json(summarizeRegressionLibrary());
 });
 
+app.get("/api/admin/regression-cases", requireCapability("agency.view"), (req, res) => {
+  const limit = Math.max(1, Math.min(100, Number(req.query.limit || 20)));
+  const cases = listRegressionCases()
+    .slice(0, limit)
+    .map(({ path: casePath, ...item }) => ({
+      ...item,
+      path: casePath
+    }));
+  res.json({ cases });
+});
+
+app.get("/api/admin/regression-cases/:id", requireCapability("agency.view"), (req, res) => {
+  const detail = readRegressionCaseDetail(req.params.id);
+  if (!detail) {
+    return res.status(404).json({ error: "Regression case not found" });
+  }
+  res.json(detail);
+});
+
 app.get("/api/admin/beta-health", requireCapability("agency.view"), (req, res) => {
   res.json(summarizeBetaHealth());
 });
@@ -7315,6 +7334,30 @@ function readRegressionJsonSafe(filePath, fallback = null) {
   }
 }
 
+function readRegressionJsonForInspector(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return {};
+    const raw = fs.readFileSync(filePath, "utf8");
+    try {
+      return JSON.parse(raw || "{}") || {};
+    } catch (error) {
+      return { parseError: error.message, raw };
+    }
+  } catch (error) {
+    return { readError: error.message };
+  }
+}
+
+function readRegressionTextSafe(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return "";
+    return fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    console.warn("GT63 REGRESSION LIBRARY READ FAILED:", filePath, error.message);
+    return "";
+  }
+}
+
 function normalizeBetaDecision(value = "") {
   const decision = String(value || "").trim().toUpperCase();
   if (decision === "REJECT" || decision === "REJECTED") return "REJECT";
@@ -7363,7 +7406,14 @@ function extractReviewReasonsFromCase({ metadata = {}, trace = {}, parsedOutput 
   return [...new Set(reasons)];
 }
 
-function listRegressionCases(type = "flight") {
+function listRegressionCases(type = "all") {
+  if (type === "all") {
+    return [
+      ...listRegressionCases("flight"),
+      ...listRegressionCases("hotel")
+    ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+
   const pluralType = type === "hotel" ? "hotels" : "flights";
   const dir = path.join(REGRESSION_LIBRARY_DIR, pluralType);
   if (!fs.existsSync(dir)) return [];
@@ -7388,6 +7438,7 @@ function listRegressionCases(type = "flight") {
       const reasons = extractReviewReasonsFromCase({ metadata, trace, parsedOutput, decision });
 
       return {
+        id: entry.name,
         type,
         path: caseDir,
         timestamp,
@@ -7401,11 +7452,43 @@ function listRegressionCases(type = "flight") {
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 }
 
+function readRegressionCaseDetail(id = "") {
+  const cleanId = path.basename(String(id || ""));
+  if (!cleanId || cleanId !== String(id || "")) return null;
+  const item = listRegressionCases().find((entry) => entry.id === cleanId);
+  if (!item) return null;
+
+  try {
+    const entries = fs.existsSync(item.path) ? fs.readdirSync(item.path, { withFileTypes: true }) : [];
+    const files = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b));
+
+    return {
+      id: item.id,
+      type: item.type,
+      decision: item.decision,
+      route: item.route,
+      airline: item.airline,
+      timestamp: item.timestamp,
+      path: item.path,
+      reviewReasons: item.reviewReasons,
+      metadata: readRegressionJsonForInspector(path.join(item.path, "metadata.json")),
+      parsedOutput: readRegressionJsonForInspector(path.join(item.path, "parsed_output.json")),
+      trace: readRegressionJsonForInspector(path.join(item.path, "trace.json")),
+      rawOcr: readRegressionTextSafe(path.join(item.path, "raw_ocr.txt")),
+      enhancedOcr: readRegressionTextSafe(path.join(item.path, "enhanced_ocr.txt")),
+      files
+    };
+  } catch (error) {
+    console.warn("GT63 REGRESSION CASE INSPECTOR FAILED:", cleanId, error.message);
+    return null;
+  }
+}
+
 function summarizeBetaHealth() {
-  const cases = [
-    ...listRegressionCases("flight"),
-    ...listRegressionCases("hotel")
-  ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const cases = listRegressionCases();
 
   const passImports = cases.filter((item) => item.decision === "PASS").length;
   const reviewImports = cases.filter((item) => item.decision === "REVIEW").length;
@@ -8343,6 +8426,8 @@ module.exports = {
   normalizeOffer,
   buildFlightOcrConfidence,
   archiveRegressionCaseSafe,
+  listRegressionCases,
+  readRegressionCaseDetail,
   summarizeRegressionLibrary,
   summarizeBetaHealth
 };

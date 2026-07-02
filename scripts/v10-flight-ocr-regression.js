@@ -22,12 +22,14 @@ const {
   extractGlobalFlightDateTimeCandidates,
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
+  listRegressionCases,
   mergeMultiImageFlightSegments,
   normalizeOffer,
   normalizeAirportAliases,
   findAirport,
   parseBookingLastminuteFlightModal,
   parseDirectRoundTripTicket,
+  readRegressionCaseDetail,
   summarizeRegressionLibrary,
   summarizeBetaHealth,
   parseConnectingFlightCheckout,
@@ -65,6 +67,16 @@ assert.ok(fs.existsSync(path.join(archiveResult.path, "metadata.json")), "metada
 assert.ok(fs.existsSync(path.join(archiveResult.path, "parsed_output.json")), "parsed_output.json should be written");
 const regressionStats = summarizeRegressionLibrary();
 assert.ok(regressionStats.flightCases >= 1, "regression library should count archived flight cases");
+const regressionCases = listRegressionCases();
+assert.ok(Array.isArray(regressionCases), "regression case inspector should expose a list");
+assert.ok(regressionCases.some((item) => item.id && item.route === "SOF -> JFK / JFK -> SOF"), "regression case list should include archived case ids");
+const archivedCase = regressionCases.find((item) => item.route === "SOF -> JFK / JFK -> SOF");
+const archivedCaseDetail = readRegressionCaseDetail(archivedCase.id);
+assert.equal(archivedCaseDetail.id, archivedCase.id, "regression case detail should load by id");
+assert.equal(archivedCaseDetail.parsedOutput.route, "SOF -> JFK / JFK -> SOF", "regression case detail should include parsed output");
+assert.ok(archivedCaseDetail.rawOcr.includes("SOF -> JFK"), "regression case detail should include raw OCR");
+assert.ok(archivedCaseDetail.files.includes("metadata.json"), "regression case detail should list files");
+assert.equal(readRegressionCaseDetail("missing-case"), null, "missing regression case should return a safe null");
 const sensitiveArchive = archiveRegressionCaseSafe({
   type: "flight",
   files: [{ originalname: "sensitive.png", buffer: Buffer.from("fake-image") }],
