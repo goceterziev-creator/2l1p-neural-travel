@@ -71,7 +71,10 @@ const sensitiveArchive = archiveRegressionCaseSafe({
   rawOcrText: "Card number 4111 1111 1111 1111",
   parsedOutput: {
     route: "SOF -> JFK",
-    operatorWarnings: ["Missing OCR field: flight.price."]
+    operatorWarnings: [
+      "Missing OCR field: flight.price.",
+      "Flight date/time confidence below production threshold."
+    ]
   },
   decision: "REVIEW"
 });
@@ -85,6 +88,9 @@ assert.ok(betaHealthStats.reviewImports >= 1, "beta health should count REVIEW i
 assert.ok(betaHealthStats.reviewRate > 0, "beta health should calculate review rate");
 assert.ok(Array.isArray(betaHealthStats.topReviewReasons), "beta health should expose top review reasons");
 assert.ok(betaHealthStats.topReviewReasons.some((item) => item.reason === "Missing OCR field: flight.price"), "beta health should normalize duplicate review reason punctuation");
+assert.ok(Array.isArray(betaHealthStats.reviewReasonGroups), "beta health should expose review reason groups");
+assert.ok(betaHealthStats.reviewReasonGroups.some((item) => item.category === "PRICE" && item.count >= 1), "beta health should group price review reasons");
+assert.ok(betaHealthStats.reviewReasonGroups.some((item) => item.category === "DATES" && item.count >= 1), "beta health should group date/time review reasons");
 assert.ok(Array.isArray(betaHealthStats.topAffectedRoutes), "beta health should expose top affected routes");
 assert.ok(betaHealthStats.topAffectedRoutes.some((item) => item.route === "SOF -> JFK" && item.count >= 1), "beta health should count affected routes");
 assert.ok(Array.isArray(betaHealthStats.recentReviewCases), "beta health should expose recent review cases");

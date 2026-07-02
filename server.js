@@ -7331,6 +7331,16 @@ function normalizeReviewReason(value = "") {
     .slice(0, 120);
 }
 
+function groupReviewReason(value = "") {
+  const reason = normalizeSearchText(value);
+  if (!reason) return "OTHER";
+  if (reason.includes("price") || reason.includes("currency") || reason.includes("fare") || reason.includes("total") || reason.includes("flight.price")) return "PRICE";
+  if (reason.includes("airline") || reason.includes("carrier") || reason.includes("flight.airline")) return "AIRLINE";
+  if (reason.includes("route") || reason.includes("airport") || reason.includes("destination") || reason.includes("flight.route")) return "ROUTE";
+  if (reason.includes("date") || reason.includes("time") || reason.includes("hour") || reason.includes("flight.dates") || reason.includes("flight.times")) return "DATES";
+  return "OTHER";
+}
+
 function extractReviewReasonsFromCase({ metadata = {}, trace = {}, parsedOutput = {}, decision = "PASS" } = {}) {
   const reasons = [
     ...safeArray(trace?.flightConfidence?.risk?.blockingReasons),
@@ -7403,6 +7413,13 @@ function summarizeBetaHealth() {
   const totalImports = cases.length;
   const reviewRate = totalImports ? Number(((reviewImports / totalImports) * 100).toFixed(1)) : 0;
   const reasonCounts = new Map();
+  const categoryCounts = new Map([
+    ["PRICE", 0],
+    ["AIRLINE", 0],
+    ["ROUTE", 0],
+    ["DATES", 0],
+    ["OTHER", 0]
+  ]);
   const routeStats = new Map();
 
   cases
@@ -7418,8 +7435,13 @@ function summarizeBetaHealth() {
     .filter((item) => item.decision === "REVIEW")
     .forEach((item) => {
       const reasons = item.reviewReasons.length ? item.reviewReasons : ["Operator review required"];
+      const categories = new Set();
       reasons.forEach((reason) => {
         reasonCounts.set(reason, (reasonCounts.get(reason) || 0) + 1);
+        categories.add(groupReviewReason(reason));
+      });
+      categories.forEach((category) => {
+        categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
       });
     });
 
@@ -7427,6 +7449,13 @@ function summarizeBetaHealth() {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 5)
     .map(([reason, count]) => ({ reason, count }));
+
+  const reviewReasonGroups = [...categoryCounts.entries()]
+    .map(([category, count]) => ({
+      category,
+      count,
+      reviewShare: reviewImports ? Number(((count / reviewImports) * 100).toFixed(1)) : 0
+    }));
 
   const topAffectedRoutes = [...routeStats.values()]
     .sort((a, b) => b.count - a.count || b.reviewCount - a.reviewCount || a.route.localeCompare(b.route))
@@ -7455,6 +7484,7 @@ function summarizeBetaHealth() {
     rejectImports,
     reviewRate,
     topReviewReasons,
+    reviewReasonGroups,
     topAffectedRoutes,
     recentReviewCases,
     regressionSummary: summarizeRegressionLibrary()

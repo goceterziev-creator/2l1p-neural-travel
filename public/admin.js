@@ -544,6 +544,7 @@ function renderBetaHealthMetrics(data = {}) {
   const tone = reviewRate > 30 ? "risk" : reviewRate >= 15 ? "review" : "ready";
   const label = tone === "ready" ? "Beta healthy" : tone === "review" ? "Review load rising" : "High review load";
   const topReasons = Array.isArray(data.topReviewReasons) ? data.topReviewReasons : [];
+  const reasonGroups = Array.isArray(data.reviewReasonGroups) ? data.reviewReasonGroups : [];
   const topRoutes = Array.isArray(data.topAffectedRoutes) ? data.topAffectedRoutes : [];
   const recentCases = Array.isArray(data.recentReviewCases) ? data.recentReviewCases : [];
   const regression = data.regressionSummary || {};
@@ -556,6 +557,16 @@ function renderBetaHealthMetrics(data = {}) {
       </div>
     `).join("")
     : `<div class="muted">No review reasons captured yet.</div>`;
+
+  const groupRows = reasonGroups.length
+    ? reasonGroups.map((item) => `
+      <div class="qa-metric">
+        <span>${escapeHtml(item.category || "OTHER")}</span>
+        <strong>${Number(item.count || 0)}</strong>
+        <small>${Number(item.reviewShare || 0).toFixed(1)}% of review cases</small>
+      </div>
+    `).join("")
+    : `<div class="muted">No review groups captured yet.</div>`;
 
   const routeRows = topRoutes.length
     ? topRoutes.map((item) => `
@@ -590,6 +601,8 @@ function renderBetaHealthMetrics(data = {}) {
     </div>
     <h4>Top review reasons</h4>
     <div class="qa-grid">${reasonRows}</div>
+    <h4>Review reason groups</h4>
+    <div class="qa-grid">${groupRows}</div>
     <h4>Top affected routes</h4>
     <div class="qa-grid">${routeRows}</div>
     <h4>Recent review cases</h4>
@@ -616,6 +629,7 @@ async function loadBetaHealthMetrics() {
       rejectImports: 0,
       reviewRate: 0,
       topReviewReasons: [],
+      reviewReasonGroups: [],
       topAffectedRoutes: [],
       recentReviewCases: [],
       regressionSummary: {}

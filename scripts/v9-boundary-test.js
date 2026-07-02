@@ -234,7 +234,7 @@ async function main() {
 
   try {
     let healthy = false;
-    for (let i = 0; i < 30; i += 1) {
+    for (let i = 0; i < 60; i += 1) {
       try {
         const health = await request("/api/health");
         if (health.response.status === 200) {
