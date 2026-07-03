@@ -7,7 +7,7 @@
       "city": "Sofia",
       "country": "Bulgaria",
       "airport": "Sofia Airport",
-      "aliases": ["SOF", "Sofia", "Sofia Airport", "София"]
+      "aliases": ["SOF", "Sofia", "Sofia Airport", "София", "Codpua", "Codus", "Cobus"]
     },
     "PMO": {
       "active": true,
@@ -186,7 +186,11 @@
         "Nuremberg Airport",
         "Nurnberg Airport",
         "NГјrnberg Airport",
-        "РќСЋСЂРЅР±РµСЂРі"
+        "РќСЋСЂРЅР±РµСЂРі",
+        "HiopHbepr",
+        "HiopH6epr",
+        "HiooHbepr",
+        "HopHbepr"
       ]
     }
   }

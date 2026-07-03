@@ -199,6 +199,45 @@ assert.match(nurembergParsed.flight.arrival, /NUE -> SOF, Jul 16 18:45 - Jul 17 
 assert.ok(!nurembergParsed.metadata.missingFields.includes("flight.price"));
 assert.ok(!nurembergParsed.metadata.missingFields.includes("flight.times"));
 
+const noisyBulgarianEskTurkishNurembergOcr = `
+LeTtannu 3anoneTa X
+Codpua ~~ HiopHbepr
+Bpeme Ha NLTYBaHeTO: 13h 25min 1 npexaysane
+21:10 » Nervwe Coun (SOF)
+0 MpopuratenHocT 4a naneta: 01h 30min
+Turkish Airlines
+Homep ra noneTa: TK1030
+22:40 * Istanbul Airport (IST)
+(©  Bpeme 2anpecTon: 03h 05min
+07:45 eo Istanbul Airport (IST)
+® MpoaLrxATENHOCT 4a noneta: 02h 50min
+Turkish Airlines
+Homep kanoneta: TK1503
+09:35 “® Nurnberg Airport (NUE)
+10 Kn HiooHbepr, NrepuMa-uns
+HiopHbepr Codus
+Bpeme Ha nuLTyeaHeTo: 13h 00min  1npekavaa-e
+18:45 © Nurnberg Airport (NUE)
+0 MpooLraATENHOCT 4a noneta: 02h 50min
+Turkish Airlines
+Homep ra noneTa: TK1506
+22:35 “Istanbul Airport (IST)
+(VU  Bpeme zanpectos: 08n EEmin
+07:30 eo Istanbul Airport (IST)
+B) FpoaurxaTenHocT a noneta: 01h 15min
+Turkish Airlines
+08:45 * Nerve Cows (SOF)
+655 ©
+Цена за 2 пътници, двупосочно
+`;
+assert.equal(extractFlightPriceFromText(noisyBulgarianEskTurkishNurembergOcr), 655, "Noisy Bulgarian eSky total price should be selected from passenger/return context");
+const noisyNurembergParsed = parseConnectingFlightCheckout(noisyBulgarianEskTurkishNurembergOcr);
+assert.equal(noisyNurembergParsed.flight.airline, "Turkish Airlines");
+assert.equal(noisyNurembergParsed.flight.route, "SOF -> NUE / NUE -> SOF");
+assert.equal(noisyNurembergParsed.flight.price, 655);
+assert.match(noisyNurembergParsed.flight.departure, /SOF -> NUE, .*21:10 - .*09:35, via IST/);
+assert.match(noisyNurembergParsed.flight.arrival, /NUE -> SOF, .*18:45 - .*08:45, via IST/);
+
 const profile = buildBookingAndroidFlightProfileTrace(fuzzyFlightOcr);
 assert.equal(profile.detected, true, "fuzzy flight modal profile should be detected");
 assert.equal(profile.profile, "booking_flight_modal");

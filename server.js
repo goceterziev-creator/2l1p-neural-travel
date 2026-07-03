@@ -1795,9 +1795,15 @@ function extractFlightPriceFromText(rawText = "") {
   ]
     .map((match) => Number(match[1]))
     .filter(isPlausibleFlightMoneyValue);
+  const localizedContextPrices = [
+    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|\\u00a9|\\u0412\\u00a9|\\?).{0,140}${localizedTotalPriceContext}`, "gi")),
+    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,140}\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|\\u00a9|\\u0412\\u00a9|\\?)`, "gi"))
+  ]
+    .map((match) => Number(match[1]))
+    .filter(isPlausibleFlightMoneyValue);
 
   const collapsedTotal = extractBottomCollapsedFlightTotal(rawText);
-  return Math.max(0, ...prices, ...wholeCurrencyPrices, ...repairedLabeledPrices, ...localizedRepairedPrices, collapsedTotal);
+  return Math.max(0, ...prices, ...wholeCurrencyPrices, ...repairedLabeledPrices, ...localizedRepairedPrices, ...localizedContextPrices, collapsedTotal);
 }
 
 function extractBookingFlightTotalPrice(rawText = "") {
@@ -2011,7 +2017,7 @@ function translateOcrDate(value = "") {
 }
 
 const FLIGHT_AIRPORT_ALIASES = [
-  { code: "SOF", city: "София", aliases: ["sof", "sofia", "софия", "sofia airport"] },
+  { code: "SOF", city: "София", aliases: ["sof", "sofia", "софия", "sofia airport", "codpua", "codus", "cobus"] },
   { code: "PRG", city: "Прага", aliases: ["prg", "prague", "praha", "прага", "vaclav havel"] },
   { code: "BCN", city: "Барселона", aliases: ["bcn", "barcelona", "барселона", "el prat", "barcelona el prat"] },
   { code: "FCO", city: "Рим", aliases: ["fco", "rome", "roma", "рим", "fiumicino"] },
@@ -2055,7 +2061,7 @@ const GLOBAL_AIRPORT_ALIAS_EXTENSIONS = [
   { code: "WAW", city: "Warsaw", aliases: ["waw", "warsaw", "frederic chopin", "chopin", "варшава"] },
   { code: "YYZ", city: "Toronto", aliases: ["yyz", "toronto", "pearson", "lester b pearson", "lester b. pearson", "торонто"] },
   { code: "TIA", city: "Tirana", aliases: ["tia", "tirana", "tirana international", "\u0442\u0438\u0440\u0430\u043d\u0430"] },
-  { code: "NUE", city: "Nuremberg", aliases: ["nue", "nuremberg", "nurnberg", "n\u00fcrnberg", "\u043d\u044e\u0440\u043d\u0431\u0435\u0440\u0433"] },
+  { code: "NUE", city: "Nuremberg", aliases: ["nue", "nuremberg", "nurnberg", "n\u00fcrnberg", "\u043d\u044e\u0440\u043d\u0431\u0435\u0440\u0433", "hiophbepr", "hioph6epr", "hioohbepr", "hopnbepr"] },
   { code: "HRG", city: "Hurghada", aliases: ["hrg", "hurghada", "\u0445\u0443\u0440\u0433\u0430\u0434\u0430"] },
   { code: "TLV", city: "Tel Aviv", aliases: ["tlv", "tel aviv", "ben gurion", "\u0442\u0435\u043b \u0430\u0432\u0438\u0432"] },
   { code: "AUH", city: "Abu Dhabi", aliases: ["auh", "abu dhabi", "zayed international", "\u0430\u0431\u0443 \u0434\u0430\u0431\u0438"] },
@@ -2943,7 +2949,7 @@ function cityNameToAirportCode(value = "") {
 
 function normalizeOcrRouteTitleLine(line = "") {
   return String(line || "")
-    .replace(/\)\s*(?:>|\u00bb)|\u00bb\s*>|->|\u2192|\u279c|[\u00bb\u203a>]/g, " - ")
+    .replace(/\)\s*(?:>|\u00bb)|\u00bb\s*>|->|\u2192|\u279c|[\u00bb\u203a>~]+/g, " - ")
     .replace(/\s*-\s*(?:-\s*)+/g, " - ")
     .replace(/\s+/g, " ")
     .trim();
@@ -4553,6 +4559,19 @@ function preferredGlobalConnectingTimeline(rawText = "") {
 }
 
 function extractDirectionalFlightRouteTitles(rawText = "") {
+  const inferAdjacentEndpoints = (line = "") => {
+    const words = String(line || "").split(/\s+/).filter(Boolean);
+    for (let cursor = 1; cursor < words.length; cursor += 1) {
+      const fromCity = words.slice(0, cursor).join(" ");
+      const toCity = words.slice(cursor).join(" ");
+      const fromCode = routeTitleEndpointCode(fromCity);
+      const toCode = routeTitleEndpointCode(toCity);
+      if (fromCode && toCode && fromCode !== toCode) {
+        return { fromCity, toCity, fromCode, toCode };
+      }
+    }
+    return null;
+  };
   return String(rawText || "")
     .split(/\r?\n/)
     .map((line, index) => ({
@@ -4562,7 +4581,10 @@ function extractDirectionalFlightRouteTitles(rawText = "") {
     .filter((item) => item.line)
     .map((item) => {
       const match = item.line.match(/^([\p{L}][\p{L}\s.'-]{1,36})\s*(?:[)>›»]+|[-–—]\s*>?)\s*([\p{L}][\p{L}\s.'-]{1,36})$/u);
-      if (!match) return null;
+      if (!match) {
+        const adjacent = inferAdjacentEndpoints(item.line);
+        return adjacent ? { ...item, ...adjacent } : null;
+      }
       const fromCode = routeTitleEndpointCode(match[1]);
       const toCode = routeTitleEndpointCode(match[2]);
       if (!fromCode || !toCode || fromCode === toCode) return null;
