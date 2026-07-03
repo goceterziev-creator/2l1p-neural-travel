@@ -240,3 +240,22 @@ Solve the highest-impact problem first.
 Measure again.
 
 Repeat.
+
+---
+
+## RULE #17 — RIGHT ORDER BEATS MORE FIXES
+
+The project wins by choosing the correct next fix, not by adding more fixes.
+
+Before implementing:
+
+- decide whether the idea is needed now
+- decide whether it is too early
+- decide whether it should be shadowed first
+- decide whether it belongs in backlog, dashboard, configuration, or parser code
+
+Do not build what sounds interesting.
+
+Build what the product needs next.
+
+Protect beta stability while making the system smarter.
