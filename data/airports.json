@@ -172,6 +172,22 @@
         "Nënë Tereza",
         "Rinas"
       ]
+    },
+    "NUE": {
+      "active": true,
+      "city": "Nuremberg",
+      "country": "Germany",
+      "airport": "Nuremberg Airport",
+      "aliases": [
+        "NUE",
+        "Nuremberg",
+        "Nurnberg",
+        "NГјrnberg",
+        "Nuremberg Airport",
+        "Nurnberg Airport",
+        "NГјrnberg Airport",
+        "РќСЋСЂРЅР±РµСЂРі"
+      ]
     }
   }
 }

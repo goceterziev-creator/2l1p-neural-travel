@@ -1787,8 +1787,17 @@ function extractFlightPriceFromText(rawText = "") {
     .map((match) => Number(match[1]))
     .filter(isPlausibleFlightMoneyValue);
 
+  const localizedTotalPriceContext =
+    "(?:price\\s+per|total|return|passengers?|travelers?|round\\s*trip|\\u0446\\u0435\\u043d\\u0430|\\u043f\\u044a\\u0442\\u043d\\u0438\\u0446\\u0438|\\u043f\\u044a\\u0442\\u043d\\u0438\\u043a|\\u0434\\u0432\\u0443\\u043f\\u043e\\u0441\\u043e\\u0447\\u043d\\u043e)";
+  const localizedRepairedPrices = [
+    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\s*(?:\\u00a9|\\u0412\\u00a9)(?=\\s|$).{0,120}${localizedTotalPriceContext}`, "gi")),
+    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,120}\\b(\\d{2,5})\\s*(?:\\u00a9|\\u0412\\u00a9)(?=\\s|$)`, "gi"))
+  ]
+    .map((match) => Number(match[1]))
+    .filter(isPlausibleFlightMoneyValue);
+
   const collapsedTotal = extractBottomCollapsedFlightTotal(rawText);
-  return Math.max(0, ...prices, ...wholeCurrencyPrices, ...repairedLabeledPrices, collapsedTotal);
+  return Math.max(0, ...prices, ...wholeCurrencyPrices, ...repairedLabeledPrices, ...localizedRepairedPrices, collapsedTotal);
 }
 
 function extractBookingFlightTotalPrice(rawText = "") {
@@ -2046,6 +2055,7 @@ const GLOBAL_AIRPORT_ALIAS_EXTENSIONS = [
   { code: "WAW", city: "Warsaw", aliases: ["waw", "warsaw", "frederic chopin", "chopin", "варшава"] },
   { code: "YYZ", city: "Toronto", aliases: ["yyz", "toronto", "pearson", "lester b pearson", "lester b. pearson", "торонто"] },
   { code: "TIA", city: "Tirana", aliases: ["tia", "tirana", "tirana international", "\u0442\u0438\u0440\u0430\u043d\u0430"] },
+  { code: "NUE", city: "Nuremberg", aliases: ["nue", "nuremberg", "nurnberg", "n\u00fcrnberg", "\u043d\u044e\u0440\u043d\u0431\u0435\u0440\u0433"] },
   { code: "HRG", city: "Hurghada", aliases: ["hrg", "hurghada", "\u0445\u0443\u0440\u0433\u0430\u0434\u0430"] },
   { code: "TLV", city: "Tel Aviv", aliases: ["tlv", "tel aviv", "ben gurion", "\u0442\u0435\u043b \u0430\u0432\u0438\u0432"] },
   { code: "AUH", city: "Abu Dhabi", aliases: ["auh", "abu dhabi", "zayed international", "\u0430\u0431\u0443 \u0434\u0430\u0431\u0438"] },

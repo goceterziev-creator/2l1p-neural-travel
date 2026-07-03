@@ -42,6 +42,8 @@ for (const code of ["SOF", "PMO", "BVA", "JFK", "YYZ", "WAW", "ZRH", "VIE", "IST
   assert.ok(airportRecords.some((record) => record.code === code), `airport seed must include ${code}`);
   assert.equal(findAirport(code)?.code, code, `shadow airport lookup must resolve ${code}`);
 }
+assert.ok(airportRecords.some((record) => record.code === "NUE"), "airport seed must include NUE");
+assert.equal(findAirport("Nuremberg")?.code, "NUE", "shadow airport lookup must resolve Nuremberg");
 assert.ok(Number.isFinite(airportResolverMetrics.totalAirportLookups), "airport resolver metrics must be available");
 
 fs.rmSync(process.env.REGRESSION_LIBRARY_DIR, { recursive: true, force: true });
@@ -143,6 +145,59 @@ cp.16cent. 0900
 SOF - Netwuie Coda
 241428€
 `;
+
+const bulgarianEskTurkishNurembergOcr = `
+Детайли за полета
+София > Нюрнберг
+Време на пътуването: 13h 25min 1 прекачване
+21:10 Летище София (SOF)
+9 юли
+Продължителност на полета: 01h 30min
+Turkish Airlines
+Номер на полета: TK 1030
+22:40 Istanbul Airport (IST)
+9 юли
+Време за престой: 09h 05min
+07:45 Istanbul Airport (IST)
+10 юли
+Продължителност на полета: 02h 50min
+Turkish Airlines
+Номер на полета: TK 1503
+09:35 Nurnberg Airport (NUE)
+10 юли
+Нюрнберг > София
+Време на пътуването: 13h 00min 1 прекачване
+18:45 Nurnberg Airport (NUE)
+16 юли
+Продължителност на полета: 02h 50min
+Turkish Airlines
+Номер на полета: TK 1506
+22:35 Istanbul Airport (IST)
+16 юли
+Време за престой: 08h 55min
+07:30 Istanbul Airport (IST)
+17 юли
+Продължителност на полета: 01h 15min
+Turkish Airlines
+Номер на полета: TK 1027
+08:45 Летище София (SOF)
+17 юли
+Малка чанта
+Ръчен багаж
+Регистриран багаж
+655 ©
+Цена за 2 пътници, двупосочно
+`;
+
+assert.equal(extractFlightPriceFromText(bulgarianEskTurkishNurembergOcr), 655, "Bulgarian passenger/return price label should repair OCR euro symbol");
+const nurembergParsed = parseConnectingFlightCheckout(bulgarianEskTurkishNurembergOcr);
+assert.equal(nurembergParsed.flight.airline, "Turkish Airlines");
+assert.equal(nurembergParsed.flight.route, "SOF -> NUE / NUE -> SOF");
+assert.equal(nurembergParsed.flight.price, 655);
+assert.match(nurembergParsed.flight.departure, /SOF -> NUE, Jul 9 21:10 - Jul 10 09:35, via IST/);
+assert.match(nurembergParsed.flight.arrival, /NUE -> SOF, Jul 16 18:45 - Jul 17 08:45, via IST/);
+assert.ok(!nurembergParsed.metadata.missingFields.includes("flight.price"));
+assert.ok(!nurembergParsed.metadata.missingFields.includes("flight.times"));
 
 const profile = buildBookingAndroidFlightProfileTrace(fuzzyFlightOcr);
 assert.equal(profile.detected, true, "fuzzy flight modal profile should be detected");
