@@ -4,9 +4,13 @@ const path = require("path");
 
 process.env.DB_FILE = process.env.DB_FILE || "storage/generated/V10_FLIGHT_OCR_TEST_DATABASE.json";
 process.env.AIRPORT_CONFIG_FILE = process.env.AIRPORT_CONFIG_FILE || "storage/generated/V10_AIRPORTS_TEST_CONFIG.json";
+process.env.OCR_PATTERN_CONFIG_FILE = process.env.OCR_PATTERN_CONFIG_FILE || "storage/generated/V10_OCR_PATTERNS_TEST_CONFIG.json";
 process.env.REGRESSION_LIBRARY_DIR = process.env.REGRESSION_LIBRARY_DIR || "storage/generated/V10_REGRESSION_LIBRARY_TEST";
 if (process.env.AIRPORT_CONFIG_FILE.includes("storage/generated/")) {
   fs.rmSync(process.env.AIRPORT_CONFIG_FILE, { force: true });
+}
+if (process.env.OCR_PATTERN_CONFIG_FILE.includes("storage/generated/")) {
+  fs.rmSync(process.env.OCR_PATTERN_CONFIG_FILE, { force: true });
 }
 
 const {
@@ -19,6 +23,7 @@ const {
   enrichFlightStopSummary,
   enrichFlightOfferLevelDateTimes,
   extractFlightPriceFromText,
+  extractPriceFromOcrPatternDatabase,
   extractGlobalFlightDateTimeCandidates,
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
@@ -33,10 +38,15 @@ const {
   summarizeRegressionLibrary,
   summarizeBetaHealth,
   parseConnectingFlightCheckout,
-  buildFlightOcrConfidence
+  buildFlightOcrConfidence,
+  ocrPricePatternMetrics
 } = require("../server");
 
 const airportSeed = require("../data/airports.json");
+const ocrPatternSeed = require("../data/ocr-patterns.json");
+assert.ok(ocrPatternSeed.price.currencySymbols.includes("\u20ac"), "OCR price pattern seed must include euro symbol");
+assert.ok(ocrPatternSeed.price.currencySymbols.includes("\u00a2"), "OCR price pattern seed must include OCR cent/euro symbol");
+assert.ok(Number.isFinite(ocrPricePatternMetrics.totalPriceLookups), "OCR price pattern shadow metrics must be available");
 const airportRecords = normalizeAirportAliases(airportSeed);
 for (const code of ["SOF", "PMO", "BVA", "JFK", "YYZ", "WAW", "ZRH", "VIE", "IST", "NRT", "HND", "MLE", "AUH", "ATH", "DXB", "FCO", "CIA", "MXP", "BGY", "BRI", "PRG", "BCN", "TIA"]) {
   assert.ok(airportRecords.some((record) => record.code === code), `airport seed must include ${code}`);
@@ -231,6 +241,7 @@ Turkish Airlines
 Цена за 2 пътници, двупосочно
 `;
 assert.equal(extractFlightPriceFromText(noisyBulgarianEskTurkishNurembergOcr), 655, "Noisy Bulgarian eSky total price should be selected from passenger/return context");
+assert.equal(extractPriceFromOcrPatternDatabase(noisyBulgarianEskTurkishNurembergOcr), 655, "OCR pattern database should shadow-detect noisy Bulgarian eSky total price");
 const noisyNurembergParsed = parseConnectingFlightCheckout(noisyBulgarianEskTurkishNurembergOcr);
 assert.equal(noisyNurembergParsed.flight.airline, "Turkish Airlines");
 assert.equal(noisyNurembergParsed.flight.route, "SOF -> NUE / NUE -> SOF");
@@ -276,6 +287,7 @@ B ueHaTa: Co Manka yaHTa % PbueH barax
 LleHa 3a 1 NbTHUK, ABYNOCOYHO
 `;
 assert.equal(extractFlightPriceFromText(noisyBulgarianEskNurembergSummaryPriceOcr), 434, "Noisy eSky summary price should repair OCR cent sign as euro in price context");
+assert.equal(extractPriceFromOcrPatternDatabase(noisyBulgarianEskNurembergSummaryPriceOcr), 434, "OCR pattern database should shadow-detect noisy eSky summary price");
 const noisySummaryNurembergParsed = parseConnectingFlightCheckout(noisyBulgarianEskNurembergSummaryPriceOcr);
 assert.equal(noisySummaryNurembergParsed.flight.airline, "Turkish Airlines");
 assert.equal(noisySummaryNurembergParsed.flight.route, "SOF -> NUE / NUE -> SOF");
@@ -537,6 +549,7 @@ assert.equal(globalConnectingFlight.route, "SOF -> JFK / JFK -> SOF");
 assert.match(globalConnectingFlight.departure, /via ZRH/i);
 assert.match(globalConnectingFlight.arrival, /via ZRH/i);
 assert.equal(extractFlightPriceFromText(globalConnectingFlightOcr), 788.83);
+assert.equal(extractPriceFromOcrPatternDatabase(globalConnectingFlightOcr), 788.83, "OCR pattern database should shadow-detect global connecting flight total");
 
 const directRoundTripTicketOcr = `
 Sofia to Bari
@@ -711,6 +724,7 @@ assert.match(multiScreenshotParsed.flight.notes, /ZRH: кацане .*06:10.*и�
 assert.ok(!/\.\.\./.test(multiScreenshotParsed.flight.notes));
 assert.equal(multiScreenshotParsed.flight.price, 762.61);
 assert.equal(extractFlightPriceFromText(multiScreenshotSummaryAndDetailsOcr), 762.61);
+assert.equal(extractPriceFromOcrPatternDatabase(multiScreenshotSummaryAndDetailsOcr), 762.61, "OCR pattern database should shadow-detect SWISS total price");
 assert.equal(multiScreenshotParsed.metadata.missingFields.length, 0);
 assert.deepEqual(
   multiScreenshotParsed.flight.outboundSegments.map((segment) => `${segment.from}->${segment.to}`),

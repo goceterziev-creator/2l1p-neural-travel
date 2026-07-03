@@ -31,6 +31,10 @@ const AIRPORT_REPOSITORY_SEED_FILE = path.join(__dirname, "data", "airports.json
 const AIRPORT_RUNTIME_FILE = process.env.AIRPORT_CONFIG_FILE
   ? path.resolve(process.env.AIRPORT_CONFIG_FILE)
   : path.join(DATA_DIR, "CONFIG", "airports.json");
+const OCR_PATTERN_REPOSITORY_SEED_FILE = path.join(__dirname, "data", "ocr-patterns.json");
+const OCR_PATTERN_RUNTIME_FILE = process.env.OCR_PATTERN_CONFIG_FILE
+  ? path.resolve(process.env.OCR_PATTERN_CONFIG_FILE)
+  : path.join(DATA_DIR, "CONFIG", "ocr-patterns.json");
 const REGRESSION_LIBRARY_DIR = process.env.REGRESSION_LIBRARY_DIR
   ? path.resolve(process.env.REGRESSION_LIBRARY_DIR)
   : (fs.existsSync("/data")
@@ -1730,6 +1734,144 @@ function isPlausibleFlightMoneyValue(value = 0) {
   return Number.isFinite(price) && price >= 10 && price <= 50000;
 }
 
+function escapeRegexLiteral(value = "") {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeOcrPatternDatabase(parsed = {}) {
+  const price = parsed && typeof parsed === "object" ? parsed.price || {} : {};
+  const uniqueStrings = (values = []) => [...new Set(safeArray(values)
+    .map((value) => String(value || "").trim())
+    .filter(Boolean))];
+  return {
+    price: {
+      currencySymbols: uniqueStrings(price.currencySymbols),
+      positiveContexts: uniqueStrings(price.positiveContexts),
+      excludeContexts: uniqueStrings(price.excludeContexts)
+    }
+  };
+}
+
+function loadOcrPatternDatabase() {
+  try {
+    const runtimeDir = path.dirname(OCR_PATTERN_RUNTIME_FILE);
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    if (!fs.existsSync(OCR_PATTERN_RUNTIME_FILE)) {
+      fs.copyFileSync(OCR_PATTERN_REPOSITORY_SEED_FILE, OCR_PATTERN_RUNTIME_FILE);
+    }
+
+    const raw = fs.readFileSync(OCR_PATTERN_RUNTIME_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeOcrPatternDatabase(parsed);
+    if (!normalized.price.currencySymbols.length || !normalized.price.positiveContexts.length) {
+      throw new Error("OCR pattern database is missing price currency symbols or contexts");
+    }
+
+    console.log("GT63 OCR PATTERN DATABASE SHADOW MODE", {
+      runtimeFile: OCR_PATTERN_RUNTIME_FILE,
+      currencySymbols: normalized.price.currencySymbols.length,
+      positiveContexts: normalized.price.positiveContexts.length
+    });
+
+    return {
+      enabled: true,
+      runtimeFile: OCR_PATTERN_RUNTIME_FILE,
+      patterns: normalized,
+      error: null
+    };
+  } catch (error) {
+    console.warn("GT63 OCR PATTERN DATABASE SHADOW MODE DISABLED", {
+      runtimeFile: OCR_PATTERN_RUNTIME_FILE,
+      error: error.message
+    });
+    return {
+      enabled: false,
+      runtimeFile: OCR_PATTERN_RUNTIME_FILE,
+      patterns: normalizeOcrPatternDatabase({}),
+      error: error.message
+    };
+  }
+}
+
+const ocrPatternDatabaseShadow = loadOcrPatternDatabase();
+
+const ocrPricePatternMetrics = {
+  totalPriceLookups: 0,
+  pricePatternMatches: 0,
+  pricePatternMismatches: 0,
+  pricePatternFallbacks: 0,
+  pricePatternOnlyHits: 0,
+  productionOnlyHits: 0
+};
+
+const ocrPricePatternRecentMismatches = [];
+
+function extractPriceFromOcrPatternDatabase(rawText = "") {
+  if (!ocrPatternDatabaseShadow.enabled) return 0;
+  const pricePatterns = ocrPatternDatabaseShadow.patterns.price;
+  const symbolAlternation = pricePatterns.currencySymbols
+    .map(escapeRegexLiteral)
+    .sort((a, b) => b.length - a.length)
+    .join("|");
+  if (!symbolAlternation) return 0;
+
+  const contextAlternation = pricePatterns.positiveContexts.map(escapeRegexLiteral).join("|");
+  const excludeAlternation = pricePatterns.excludeContexts.map(escapeRegexLiteral).join("|");
+  const positiveContextPattern = contextAlternation ? new RegExp(contextAlternation, "i") : null;
+  const excludeContextPattern = excludeAlternation ? new RegExp(excludeAlternation, "i") : null;
+  const text = ocrCompactText(rawText);
+  const moneyPattern = new RegExp(`(?:${symbolAlternation})\\s*\\d[\\d\\s,.]*|\\d[\\d\\s,.]*\\s*(?:${symbolAlternation})`, "gi");
+
+  const candidates = [];
+  for (const match of text.matchAll(moneyPattern)) {
+    const index = Number(match.index || 0);
+    const context = text.slice(Math.max(0, index - 140), index + match[0].length + 140);
+    const immediatePrefix = text.slice(Math.max(0, index - 70), index);
+    if (positiveContextPattern && !positiveContextPattern.test(context)) continue;
+    if (excludeContextPattern && excludeContextPattern.test(immediatePrefix) && !/\btotal\b|\u043e\u0431\u0449\u043e|\u043a\u0440\u0430\u0439\u043d\u0430/i.test(immediatePrefix)) continue;
+    let value = parseCollapsedFlightMoneyValue(match[0]);
+    if (!value && !/[,\.]/.test(match[0])) {
+      const whole = String(match[0] || "").replace(/\D/g, "");
+      value = /^\d{2,5}$/.test(whole) ? Number(whole) : 0;
+    }
+    if (isPlausibleFlightMoneyValue(value)) candidates.push(value);
+  }
+
+  return candidates.length ? Math.max(...candidates) : 0;
+}
+
+function observeOcrPricePatternLookup(rawText = "", productionPrice = 0) {
+  ocrPricePatternMetrics.totalPriceLookups += 1;
+  if (!ocrPatternDatabaseShadow.enabled) {
+    ocrPricePatternMetrics.pricePatternFallbacks += 1;
+    return 0;
+  }
+
+  const shadowPrice = extractPriceFromOcrPatternDatabase(rawText);
+  const normalizePrice = (value) => Number(Number(value || 0).toFixed(2));
+  const production = normalizePrice(productionPrice);
+  const shadow = normalizePrice(shadowPrice);
+  if (production === shadow) {
+    ocrPricePatternMetrics.pricePatternMatches += 1;
+    return shadowPrice;
+  }
+
+  ocrPricePatternMetrics.pricePatternMismatches += 1;
+  if (shadow > 0 && production <= 0) ocrPricePatternMetrics.pricePatternOnlyHits += 1;
+  if (production > 0 && shadow <= 0) ocrPricePatternMetrics.productionOnlyHits += 1;
+
+  const mismatch = {
+    timestamp: new Date().toISOString(),
+    productionPrice: production,
+    shadowPrice: shadow,
+    sample: ocrCompactText(rawText).slice(0, 240)
+  };
+  ocrPricePatternRecentMismatches.push(mismatch);
+  if (ocrPricePatternRecentMismatches.length > 20) ocrPricePatternRecentMismatches.shift();
+  console.warn("GT63 OCR PRICE PATTERN SHADOW MISMATCH", mismatch);
+  return shadowPrice;
+}
+
 function extractOcrMoneyValues(rawText = "") {
   const matches = ocrCompactText(rawText).match(/(?:EUR|EURO|\u20ac)(?:\s*euros?)?\s*\d[\d\s,.]*|\d[\d\s,.]*\s*(?:EUR|EURO|\u20ac)/gi) || [];
   return matches
@@ -1757,7 +1899,10 @@ function extractLabeledFlightPrice(rawText = "") {
 
 function extractFlightPriceFromText(rawText = "") {
   const labeled = extractLabeledFlightPrice(rawText);
-  if (labeled > 0) return labeled;
+  if (labeled > 0) {
+    observeOcrPricePatternLookup(rawText, labeled);
+    return labeled;
+  }
 
   const text = ocrCompactText(rawText);
   const pricePattern = /\d[\d\s,.]*\s?(?:\u20ac|eur)|(?:\u20ac|eur)(?:\s*euros?)?\s?\d[\d\s,.]*/gi;
@@ -1803,7 +1948,9 @@ function extractFlightPriceFromText(rawText = "") {
     .filter(isPlausibleFlightMoneyValue);
 
   const collapsedTotal = extractBottomCollapsedFlightTotal(rawText);
-  return Math.max(0, ...prices, ...wholeCurrencyPrices, ...repairedLabeledPrices, ...localizedRepairedPrices, ...localizedContextPrices, collapsedTotal);
+  const productionPrice = Math.max(0, ...prices, ...wholeCurrencyPrices, ...repairedLabeledPrices, ...localizedRepairedPrices, ...localizedContextPrices, collapsedTotal);
+  observeOcrPricePatternLookup(rawText, productionPrice);
+  return productionPrice;
 }
 
 function extractBookingFlightTotalPrice(rawText = "") {
@@ -6973,6 +7120,24 @@ app.get("/api/admin/airport-resolver-metrics", requireCapability("agency.view"),
   });
 });
 
+app.get("/api/admin/ocr-price-pattern-metrics", requireCapability("agency.view"), (req, res) => {
+  res.json({
+    mode: "SHADOW",
+    enabled: Boolean(ocrPatternDatabaseShadow.enabled),
+    runtimeFile: ocrPatternDatabaseShadow.runtimeFile || OCR_PATTERN_RUNTIME_FILE,
+    error: ocrPatternDatabaseShadow.error || null,
+    metrics: {
+      totalPriceLookups: Number(ocrPricePatternMetrics.totalPriceLookups || 0),
+      pricePatternMatches: Number(ocrPricePatternMetrics.pricePatternMatches || 0),
+      pricePatternMismatches: Number(ocrPricePatternMetrics.pricePatternMismatches || 0),
+      pricePatternFallbacks: Number(ocrPricePatternMetrics.pricePatternFallbacks || 0),
+      pricePatternOnlyHits: Number(ocrPricePatternMetrics.pricePatternOnlyHits || 0),
+      productionOnlyHits: Number(ocrPricePatternMetrics.productionOnlyHits || 0)
+    },
+    recentMismatches: ocrPricePatternRecentMismatches.slice().reverse()
+  });
+});
+
 app.get("/api/admin/regression-library-metrics", requireCapability("agency.view"), (req, res) => {
   res.json(summarizeRegressionLibrary());
 });
@@ -8607,9 +8772,13 @@ module.exports = {
   getFlightCoreBlockingReasons,
   inferConnectingAirline,
   airportResolverMetrics,
+  ocrPricePatternMetrics,
+  extractPriceFromOcrPatternDatabase,
   findAirport,
   loadAirportDatabase,
+  loadOcrPatternDatabase,
   normalizeAirportAliases,
+  normalizeOcrPatternDatabase,
   mergeMultiImageFlightSegments,
   parseBookingLastminuteFlightModal,
   parseConnectingFlightSegments,
