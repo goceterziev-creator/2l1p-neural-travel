@@ -1788,16 +1788,16 @@ function extractFlightPriceFromText(rawText = "") {
     .filter(isPlausibleFlightMoneyValue);
 
   const localizedTotalPriceContext =
-    "(?:price\\s+per|total|return|passengers?|travelers?|round\\s*trip|\\u0446\\u0435\\u043d\\u0430|\\u043f\\u044a\\u0442\\u043d\\u0438\\u0446\\u0438|\\u043f\\u044a\\u0442\\u043d\\u0438\\u043a|\\u0434\\u0432\\u0443\\u043f\\u043e\\u0441\\u043e\\u0447\\u043d\\u043e)";
+    "(?:price\\s+per|total|return|passengers?|travelers?|round\\s*trip|\\u0446\\u0435\\u043d\\u0430|\\u043f\\u044a\\u0442\\u043d\\u0438\\u0446\\u0438|\\u043f\\u044a\\u0442\\u043d\\u0438\\u043a|\\u0434\\u0432\\u0443\\u043f\\u043e\\u0441\\u043e\\u0447\\u043d\\u043e|ueha(?:ta)?|lleha|nbthuk|abynocoyho)";
   const localizedRepairedPrices = [
-    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\s*(?:\\u00a9|\\u0412\\u00a9)(?=\\s|$).{0,120}${localizedTotalPriceContext}`, "gi")),
-    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,120}\\b(\\d{2,5})\\s*(?:\\u00a9|\\u0412\\u00a9)(?=\\s|$)`, "gi"))
+    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\s*(?:\\u00a9|\\u0412\\u00a9|\\u00a2)(?=\\s|$).{0,120}${localizedTotalPriceContext}`, "gi")),
+    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,120}\\b(\\d{2,5})\\s*(?:\\u00a9|\\u0412\\u00a9|\\u00a2)(?=\\s|$)`, "gi"))
   ]
     .map((match) => Number(match[1]))
     .filter(isPlausibleFlightMoneyValue);
   const localizedContextPrices = [
-    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|\\u00a9|\\u0412\\u00a9|\\?).{0,140}${localizedTotalPriceContext}`, "gi")),
-    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,140}\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|\\u00a9|\\u0412\\u00a9|\\?)`, "gi"))
+    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|\\u00a9|\\u0412\\u00a9|\\u00a2|\\?).{0,140}${localizedTotalPriceContext}`, "gi")),
+    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,140}\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|\\u00a9|\\u0412\\u00a9|\\u00a2|\\?)`, "gi"))
   ]
     .map((match) => Number(match[1]))
     .filter(isPlausibleFlightMoneyValue);
@@ -2958,7 +2958,8 @@ function normalizeOcrRouteTitleLine(line = "") {
 function routeTitleEndpointCode(value = "") {
   const text = normalizeSearchText(String(value || "").trim());
   if (!text) return "";
-  const record = FLIGHT_AIRPORT_ALIASES.find((item) =>
+  const airportRecords = [...FLIGHT_AIRPORT_ALIASES, ...GLOBAL_AIRPORT_ALIAS_EXTENSIONS];
+  const record = airportRecords.find((item) =>
     item.code.toLowerCase() === text ||
     safeArray(item.aliases).some((alias) => normalizeSearchText(alias) === text)
   );
@@ -4654,16 +4655,24 @@ function extractPlainRouteTitlePairs(rawText = "") {
 
 function detectStrongIataPairConnectingFlight(rawText = "") {
   const lines = String(rawText || "").split(/\r?\n/);
-  const pairs = lines.flatMap((line, index) =>
-    [...String(line || "").matchAll(/\b([A-Z]{3})\s*(?:[-\u2013\u2014>]+\s*)?([A-Z]{3})\b/g)]
-      .map((match) => ({
+  const pairs = lines.flatMap((line, index) => {
+    const value = String(line || "");
+    const plainPairs = [...value.matchAll(/\b([A-Z]{3})\s*(?:[-\u2013\u2014>]+\s*)?([A-Z]{3})\b/g)]
+      .map((match) => ({ match, source: "plain" }));
+    const parenthesizedPairs = [...value.matchAll(/\(([A-Z]{3})\).{0,80}\(([A-Z]{3})\)/g)]
+      .map((match) => ({ match, source: "parenthesized" }));
+    const timedPairs = [...value.matchAll(/\b\d{1,2}:\d{2}\s+([A-Z]{3})\b.{0,80}\b\d{1,2}:\d{2}\s+([A-Z]{3})\b/g)]
+      .map((match) => ({ match, source: "timed_summary" }));
+    return [...plainPairs, ...parenthesizedPairs, ...timedPairs]
+      .map(({ match, source }) => ({
         fromCode: match[1],
         toCode: match[2],
         index,
+        source,
         raw: match[0],
-        line: String(line || "")
-      }))
-  )
+        line: value
+      }));
+  })
     .filter((pair) =>
       pair.fromCode !== pair.toCode &&
       isPlausibleIataCode(pair.fromCode) &&
@@ -4699,10 +4708,14 @@ function detectStrongIataPairConnectingFlight(rawText = "") {
         .slice(Math.max(0, pair.index - 4), Math.min(lines.length, reverse.index + 5))
         .join(" ");
       const contextBoost = /\b(?:selection|flight|itinerary|details|your flights?|departing|return|to)\b/i.test(labelContext) ? 10 : 0;
+      const sourceBoost =
+        pair.source === "timed_summary" ? 90 :
+        pair.source === "parenthesized" ? 70 :
+        0;
       return {
         pair,
         reverse,
-        score: titleBoost + contextBoost + Math.max(0, 20 - pair.index)
+        score: titleBoost + sourceBoost + contextBoost + Math.max(0, 20 - pair.index)
       };
     })
     .filter(Boolean)
@@ -4713,16 +4726,25 @@ function detectStrongIataPairConnectingFlight(rawText = "") {
   const dates = extractNaturalLanguageFlightDates(rawText);
   const route = `${selected.pair.fromCode} -> ${selected.pair.toCode} / ${selected.reverse.fromCode} -> ${selected.reverse.toCode}`;
   const flightNumbers = extractGlobalFlightNumbers(rawText);
+  const pairTimes = (pair) => {
+    const match = String(pair?.raw || "").match(/\b(\d{1,2}:\d{2})\b.*\b(\d{1,2}:\d{2})\b/);
+    return match ? { start: match[1], end: match[2] } : null;
+  };
+  const outboundTimes = pairTimes(selected.pair);
+  const inboundTimes = pairTimes(selected.reverse);
+  const viaCodes = uniqueAirportCodes(detectAirportCodes(rawText))
+    .filter((code) => ![selected.pair.fromCode, selected.pair.toCode].includes(code));
+  const viaText = viaCodes.length ? `, via ${viaCodes.join(" + ")}` : "";
   return {
     airline: inferConnectingAirline(rawText),
     route,
     routeCandidateSource: "strong_iata_pair",
     departure: dates[0]
-      ? `${selected.pair.fromCode} -> ${selected.pair.toCode}, ${dates[0].display}`
-      : `${selected.pair.fromCode} -> ${selected.pair.toCode}`,
+      ? `${selected.pair.fromCode} -> ${selected.pair.toCode}, ${dates[0].display}${outboundTimes ? `, ${outboundTimes.start} - ${outboundTimes.end}` : ""}${viaText}`
+      : `${selected.pair.fromCode} -> ${selected.pair.toCode}${outboundTimes ? `, ${outboundTimes.start} - ${outboundTimes.end}` : ""}${viaText}`,
     arrival: dates[1]
-      ? `${selected.reverse.fromCode} -> ${selected.reverse.toCode}, ${dates[1].display}`
-      : `${selected.reverse.fromCode} -> ${selected.reverse.toCode}`,
+      ? `${selected.reverse.fromCode} -> ${selected.reverse.toCode}, ${dates[1].display}${inboundTimes ? `, ${inboundTimes.start} - ${inboundTimes.end}` : ""}${viaText}`
+      : `${selected.reverse.fromCode} -> ${selected.reverse.toCode}${inboundTimes ? `, ${inboundTimes.start} - ${inboundTimes.end}` : ""}${viaText}`,
     baggage: extractFlightBaggageSummary(rawText),
     notes: [
       flightNumbers.length ? `\u041f\u043e\u043b\u0435\u0442\u0438: ${flightNumbers.join(", ")}.` : "",

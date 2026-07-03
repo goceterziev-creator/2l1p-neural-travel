@@ -238,6 +238,52 @@ assert.equal(noisyNurembergParsed.flight.price, 655);
 assert.match(noisyNurembergParsed.flight.departure, /SOF -> NUE, .*21:10 - .*09:35, via IST/);
 assert.match(noisyNurembergParsed.flight.arrival, /NUE -> SOF, .*18:45 - .*08:45, via IST/);
 
+const noisyBulgarianEskNurembergSummaryPriceOcr = `
+--- OCR IMAGE 1: 1000169682.jpg ---
+Codus HiopHbepr
+Bpeme Ha nbTyeaHeTo: 13h 25min 1 npekaysaHe
+21:10 JeTtvwe Codusa (SOF)
+Turkish Airlines
+Howmep Ha noneta: TK1030
+22:40 Istanbul Airport (IST)
+Bpewme 3a npecTtoi: 09h 05min
+07:45 Istanbul Airport (IST)
+Turkish Airlines
+Howmep Ha noneta: TK 1503
+09:35 Nurnberg Airport (NUE)
+HiopHb6epr Couns
+Bpeme Ha neTysadHeTo: 08h SOmin 1 npekaysane
+10:30 Nurnberg Airport (NUE)
+Turkish Airlines
+Howmep Ha noneTa: TK 1504
+14:25 Istanbul Airport (IST)
+Bpewme 3a npecToit: 04h 35min
+19:00 Istanbul Airport (IST)
+Turkish Airlines
+Howmep Ha noneta: TK 1029
+20:20 JeTtvwe Coda (SOF)
+
+--- OCR IMAGE 2: 1000169684.jpg ---
+(SOF) Codwms - (NUE) HiopH6epr
+O03 rnun-10 onn 2026 * TNbTHUK
+21:10 SOF 13h 25min 09:35 NUE
+3tonm (NT) | npeKauBaHe 4 onu (cH)
+10:30 NUE 08h 50min 20:20 SOF
+10 vonu (nT) | npekauBaHe 10 vonu (NT)
+B ueHaTa: Co Manka yaHTa % PbueH barax
+[3 Pervctpupan barax
+434 ¢
+LleHa 3a 1 NbTHUK, ABYNOCOYHO
+`;
+assert.equal(extractFlightPriceFromText(noisyBulgarianEskNurembergSummaryPriceOcr), 434, "Noisy eSky summary price should repair OCR cent sign as euro in price context");
+const noisySummaryNurembergParsed = parseConnectingFlightCheckout(noisyBulgarianEskNurembergSummaryPriceOcr);
+assert.equal(noisySummaryNurembergParsed.flight.airline, "Turkish Airlines");
+assert.equal(noisySummaryNurembergParsed.flight.route, "SOF -> NUE / NUE -> SOF");
+assert.ok(!noisySummaryNurembergParsed.flight.route.includes("PRG"), "NUE route title must not be overwritten by stale PRG fallback");
+assert.equal(noisySummaryNurembergParsed.flight.price, 434);
+assert.match(noisySummaryNurembergParsed.flight.departure, /SOF -> NUE, .*21:10 - .*09:35, via IST/);
+assert.match(noisySummaryNurembergParsed.flight.arrival, /NUE -> SOF, .*10:30 - .*20:20, via IST/);
+
 const profile = buildBookingAndroidFlightProfileTrace(fuzzyFlightOcr);
 assert.equal(profile.detected, true, "fuzzy flight modal profile should be detected");
 assert.equal(profile.profile, "booking_flight_modal");
