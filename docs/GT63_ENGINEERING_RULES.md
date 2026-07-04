@@ -259,3 +259,27 @@ Do not build what sounds interesting.
 Build what the product needs next.
 
 Protect beta stability while making the system smarter.
+
+---
+
+## RULE #18 — USE THE STRONGEST SOURCE PER FIELD
+
+When multiple screenshots describe the same offer, do not force one screenshot to answer every question.
+
+Prefer the source where the product already displays that field most clearly.
+
+For flight imports:
+
+- Card screenshots are usually strongest for price, route, dates, passenger count, and direct / connecting summary.
+- Detail screenshots are usually strongest for segments, airline, flight numbers, layovers, and baggage.
+
+This rule does not mean immediate implementation.
+
+Before changing production behavior:
+
+- archive real paired examples
+- run shadow comparison
+- measure field-level improvement
+- keep the old parser as fallback until confidence is proven
+
+Fix the information flow, not just another regex.
