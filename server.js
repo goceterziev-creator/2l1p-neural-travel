@@ -7112,12 +7112,16 @@ function readAirportConfigFile(filePath) {
 }
 
 function buildAirportRuntimeSyncPreview() {
-  const missingCodes = safeArray(airportDatabaseShadow?.seedMissingRuntimeCodes);
+  let missingCodes = safeArray(airportDatabaseShadow?.seedMissingRuntimeCodes);
   let missingAirports = [];
   let error = null;
 
   try {
     const seed = readAirportConfigFile(AIRPORT_REPOSITORY_SEED_FILE);
+    const runtime = fs.existsSync(AIRPORT_RUNTIME_FILE)
+      ? readAirportConfigFile(AIRPORT_RUNTIME_FILE)
+      : {};
+    missingCodes = compareAirportSeedToRuntime(runtime);
     const seedAirports = seed.airports && typeof seed.airports === "object" ? seed.airports : {};
     missingAirports = missingCodes
       .map((code) => ({ code, ...(seedAirports[code] || {}) }))
@@ -7190,12 +7194,14 @@ app.post("/api/admin/airport-resolver-sync-runtime", requireCapability("agency.v
       writeJsonAtomic(AIRPORT_RUNTIME_FILE, runtime);
     }
 
+    const remainingMissingCodes = compareAirportSeedToRuntime(runtime);
+
     res.json({
       ok: true,
       mode: "SHADOW",
       addedCodes,
       runtimeFile: AIRPORT_RUNTIME_FILE,
-      remainingMissingCodes: safeArray(airportDatabaseShadow?.seedMissingRuntimeCodes).filter((code) => !addedCodes.includes(code)),
+      remainingMissingCodes,
       reloadRequired: addedCodes.length > 0,
       productionBehavior: "hardcoded resolver unchanged"
     });
