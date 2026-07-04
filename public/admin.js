@@ -677,13 +677,25 @@ function renderBetaHealthMetrics(data = {}) {
     : `<div class="muted">No review groups captured yet.</div>`;
 
   const routeRows = topRoutes.length
-    ? topRoutes.map((item) => `
+    ? topRoutes.map((item) => {
+      const reasonGroups = Array.isArray(item.reasonGroups) ? item.reasonGroups : [];
+      const topReasons = Array.isArray(item.topReasons) ? item.topReasons : [];
+      const reasonGroupText = reasonGroups.length
+        ? reasonGroups.map((group) => `${escapeHtml(group.category || "OTHER")} ${Number(group.count || 0)}`).join(" · ")
+        : "No grouped reasons";
+      const topReasonText = topReasons.length
+        ? topReasons.map((reason) => `${escapeHtml(reason.reason || "Review")} (${Number(reason.count || 0)})`).join(" · ")
+        : "";
+      return `
       <div class="qa-metric">
         <span>${escapeHtml(item.route || "-")}</span>
         <strong>${Number(item.count || 0)} cases</strong>
         <small>${Number(item.reviewRate || 0).toFixed(1)}% review</small>
+        <small>${reasonGroupText}</small>
+        ${topReasonText ? `<small>${topReasonText}</small>` : ""}
       </div>
-    `).join("")
+    `;
+    }).join("")
     : `<div class="muted">No affected routes captured yet.</div>`;
 
   const recentRows = recentCases.length

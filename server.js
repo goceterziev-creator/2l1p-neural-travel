@@ -7961,7 +7961,19 @@ function summarizeBetaHealth() {
   cases
     .forEach((item) => {
       const route = String(item.route || "-").trim() || "-";
-      const current = routeStats.get(route) || { route, count: 0, reviewCount: 0 };
+      const current = routeStats.get(route) || {
+        route,
+        count: 0,
+        reviewCount: 0,
+        reasonCounts: new Map(),
+        categoryCounts: new Map([
+          ["PRICE", 0],
+          ["AIRLINE", 0],
+          ["ROUTE", 0],
+          ["DATES", 0],
+          ["OTHER", 0]
+        ])
+      };
       current.count += 1;
       if (item.decision === "REVIEW") current.reviewCount += 1;
       routeStats.set(route, current);
@@ -7979,6 +7991,17 @@ function summarizeBetaHealth() {
       categories.forEach((category) => {
         categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
       });
+
+      const route = String(item.route || "-").trim() || "-";
+      const current = routeStats.get(route);
+      if (current) {
+        reasons.forEach((reason) => {
+          current.reasonCounts.set(reason, (current.reasonCounts.get(reason) || 0) + 1);
+        });
+        categories.forEach((category) => {
+          current.categoryCounts.set(category, (current.categoryCounts.get(category) || 0) + 1);
+        });
+      }
     });
 
   const topReviewReasons = [...reasonCounts.entries()]
@@ -7999,7 +8022,18 @@ function summarizeBetaHealth() {
     .map((item) => ({
       route: item.route,
       count: item.count,
-      reviewRate: item.count ? Number(((item.reviewCount / item.count) * 100).toFixed(1)) : 0
+      reviewRate: item.count ? Number(((item.reviewCount / item.count) * 100).toFixed(1)) : 0,
+      reasonGroups: [...item.categoryCounts.entries()]
+        .map(([category, count]) => ({
+          category,
+          count,
+          reviewShare: item.reviewCount ? Number(((count / item.reviewCount) * 100).toFixed(1)) : 0
+        }))
+        .filter((entry) => entry.count > 0),
+      topReasons: [...item.reasonCounts.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 3)
+        .map(([reason, count]) => ({ reason, count }))
     }));
 
   const recentReviewCases = cases
