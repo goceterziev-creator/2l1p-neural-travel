@@ -54,6 +54,16 @@ Add a new IATA code under `airports`. Keep aliases broad but intentional:
 
 V10.25A is observe-only. V10.25B may switch production resolution only after GT63 approval and shadow validation shows zero unexpected mismatches.
 
+## Runtime Sync Helper
+
+The admin-only airport resolver metrics response includes a `runtimeSync` preview
+showing seed airports that are missing from `/data/CONFIG/airports.json`.
+
+`POST /api/admin/airport-resolver-sync-runtime` adds only those missing seed
+airport records to the runtime config. Existing runtime airport records are never
+overwritten. Production resolution remains hardcoded; the JSON database stays in
+shadow mode.
+
 ---
 
 # GT63 OCR Pattern Database

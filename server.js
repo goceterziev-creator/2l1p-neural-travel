@@ -7106,10 +7106,49 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, service: "2L1P Neural Travel", port: PORT, liveBaseUrl: LIVE_BASE_URL });
 });
 
+function readAirportConfigFile(filePath) {
+  const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  return parsed && typeof parsed === "object" ? parsed : {};
+}
+
+function buildAirportRuntimeSyncPreview() {
+  const missingCodes = safeArray(airportDatabaseShadow?.seedMissingRuntimeCodes);
+  let missingAirports = [];
+  let error = null;
+
+  try {
+    const seed = readAirportConfigFile(AIRPORT_REPOSITORY_SEED_FILE);
+    const seedAirports = seed.airports && typeof seed.airports === "object" ? seed.airports : {};
+    missingAirports = missingCodes
+      .map((code) => ({ code, ...(seedAirports[code] || {}) }))
+      .filter((airport) => airport.city || airport.airport || airport.country || safeArray(airport.aliases).length);
+  } catch (err) {
+    error = err.message;
+  }
+
+  return {
+    mode: "SHADOW",
+    runtimeFile: AIRPORT_RUNTIME_FILE,
+    seedFile: AIRPORT_REPOSITORY_SEED_FILE,
+    missingCodes,
+    missingAirports,
+    error,
+    productionBehavior: "hardcoded resolver unchanged"
+  };
+}
+
+function writeJsonAtomic(filePath, data) {
+  const tempPath = `${filePath}.tmp-${Date.now()}`;
+  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf8");
+  JSON.parse(fs.readFileSync(tempPath, "utf8"));
+  fs.renameSync(tempPath, filePath);
+}
+
 app.get("/api/admin/airport-resolver-metrics", requireCapability("agency.view"), (req, res) => {
   res.json({
     mode: "SHADOW",
     seedMissingRuntimeCodes: safeArray(airportDatabaseShadow?.seedMissingRuntimeCodes),
+    runtimeSync: buildAirportRuntimeSyncPreview(),
     metrics: {
       totalAirportLookups: Number(airportResolverMetrics.totalAirportLookups || 0),
       airportResolverMatches: Number(airportResolverMetrics.airportResolverMatches || 0),
@@ -7118,6 +7157,57 @@ app.get("/api/admin/airport-resolver-metrics", requireCapability("agency.view"),
     },
     recentMismatches: airportResolverRecentMismatches.slice().reverse()
   });
+});
+
+app.post("/api/admin/airport-resolver-sync-runtime", requireCapability("agency.view"), (req, res) => {
+  try {
+    const preview = buildAirportRuntimeSyncPreview();
+    const missingCodes = safeArray(preview.missingCodes);
+    if (!missingCodes.length) {
+      return res.json({
+        ok: true,
+        mode: "SHADOW",
+        addedCodes: [],
+        runtimeFile: AIRPORT_RUNTIME_FILE,
+        productionBehavior: "hardcoded resolver unchanged"
+      });
+    }
+
+    const seed = readAirportConfigFile(AIRPORT_REPOSITORY_SEED_FILE);
+    const runtime = readAirportConfigFile(AIRPORT_RUNTIME_FILE);
+    const seedAirports = seed.airports && typeof seed.airports === "object" ? seed.airports : {};
+    runtime.airports = runtime.airports && typeof runtime.airports === "object" ? runtime.airports : {};
+
+    const addedCodes = [];
+    for (const code of missingCodes) {
+      if (!seedAirports[code] || runtime.airports[code]) continue;
+      runtime.airports[code] = seedAirports[code];
+      addedCodes.push(code);
+    }
+
+    if (addedCodes.length) {
+      runtime._lastUpdated = new Date().toISOString();
+      writeJsonAtomic(AIRPORT_RUNTIME_FILE, runtime);
+    }
+
+    res.json({
+      ok: true,
+      mode: "SHADOW",
+      addedCodes,
+      runtimeFile: AIRPORT_RUNTIME_FILE,
+      remainingMissingCodes: safeArray(airportDatabaseShadow?.seedMissingRuntimeCodes).filter((code) => !addedCodes.includes(code)),
+      reloadRequired: addedCodes.length > 0,
+      productionBehavior: "hardcoded resolver unchanged"
+    });
+  } catch (err) {
+    console.warn("GT63 AIRPORT RUNTIME SYNC FAILED:", err);
+    res.status(500).json({
+      ok: false,
+      error: err.message,
+      mode: "SHADOW",
+      productionBehavior: "hardcoded resolver unchanged"
+    });
+  }
 });
 
 app.get("/api/admin/ocr-price-pattern-metrics", requireCapability("agency.view"), (req, res) => {
