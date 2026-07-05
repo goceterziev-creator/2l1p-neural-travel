@@ -34,6 +34,7 @@ const {
   findAirport,
   parseBookingLastminuteFlightModal,
   parseDirectRoundTripTicket,
+  parseWizzCheckout,
   readRegressionCaseDetail,
   summarizeRegressionLibrary,
   summarizeBetaHealth,
@@ -599,6 +600,35 @@ assert.equal(bookingLastminuteModal.flight.airline, "Wizz Air");
 assert.match(bookingLastminuteModal.flight.notes, /W64313, W64314/);
 assert.equal(bookingLastminuteModal.flight.price, 809);
 assert.deepEqual(bookingLastminuteModal.metadata.missingFields, []);
+
+const wizzMobileCompactDateOcr = `
+Your flight to Bari
+Flight to Bari
+Direct. 1h 25m
+QO Thu May7-2:30PM
+SOF - Sofia Airport Ww Wizz Air
+W64361 - Economy
+QO Thu May7-2:55PM Flight time 1h 25m
+BRI - Bari Karol Wojtyla Airport
+Flight to Sofia
+Direct: 1h 25m
+© Wed May 13 - 2:05 PM
+BRI - Bari Karol Wojtyla Airport WwW Wizz Air
+W6E4362 - Economy
+(© Wed May 13.430 PM Flight time 1h 25m
+SOF . Sofia Airport
+Baggage @ 2personalitems Included
+Extras you might like Carry-on Available in the next steps
+Can be added for a fee 8 From €58.99
+`;
+const wizzMobileCompactDateParsed = parseWizzCheckout(wizzMobileCompactDateOcr, { destination: "Bari" });
+assert.equal(wizzMobileCompactDateParsed.flight.airline, "Wizz Air");
+assert.equal(wizzMobileCompactDateParsed.flight.route, "SOF -> BRI / BRI -> SOF");
+assert.match(wizzMobileCompactDateParsed.flight.departure, /SOF -> BRI, Thu, May 7, 2:30 PM - 2:55 PM, W64361/);
+assert.match(wizzMobileCompactDateParsed.flight.arrival, /BRI -> SOF, Wed, May 13, 2:05 PM - 4:30 PM, W64362/);
+assert.equal(wizzMobileCompactDateParsed.flight.price, 0, "Wizz add-on price must not be selected as flight total");
+assert.ok(!wizzMobileCompactDateParsed.metadata.missingFields.includes("flight.dates"));
+assert.ok(wizzMobileCompactDateParsed.metadata.missingFields.includes("flight.price"));
 
 const turkishOpenJawConnectingOcr = `
 Flight to Tokyo

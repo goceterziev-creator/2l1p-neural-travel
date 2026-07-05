@@ -2808,10 +2808,23 @@ function extractWizzTotalPrice(rawText = "") {
     const value = parseOcrMoneyValue(preferred[1] || "");
     if (Number.isFinite(value) && value > 0) return value;
   }
-  const prices = extractOcrMoneyValues(text)
+  const pricePattern = /(?:EUR|EURO|ERR|ERJR|в‚¬)\s*\d[\d\s,.]*|\d[\d\s,.]*\s*(?:EUR|EURO|ERR|ERJR|в‚¬)/gi;
+  const prices = [...text.matchAll(pricePattern)]
+    .filter((match) => {
+      const start = Number(match.index || 0);
+      const context = text.slice(Math.max(0, start - 120), start + match[0].length + 80);
+      return !/(carry-?on|checked\s+bag|flexible\s+ticket|travel\s+protection|extras\s+you\s+might\s+like|\bfrom\s*$|\u0440\u044a\u0447\u0435\u043d\s+\u0431\u0430\u0433\u0430\u0436|\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u0430\u043d\s+\u0431\u0430\u0433\u0430\u0436|\u0435\u043a\u0441\u0442\u0440\u0438)/i.test(context);
+    })
+    .map((match) => parseCollapsedFlightMoneyValue(match[0]))
     .filter((value) => value >= 10)
     .filter((value) => ![28.35, 18].includes(Number(value.toFixed(2))));
   return prices.length ? Math.max(...prices) : 0;
+}
+
+function normalizeWizzFlightNumber(value = "") {
+  const compact = String(value || "").toUpperCase().replace(/\s+/g, "");
+  const match = compact.match(/^W6[A-Z]*(\d{3,5})$/);
+  return match ? `W6${match[1]}` : String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function extractWizzLegInfo(rawText = "") {
@@ -2822,7 +2835,7 @@ function extractWizzLegInfo(rawText = "") {
   const parseLeg = (section = "") => {
     const date = section.match(new RegExp(`(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(\\d{1,2}\\s*${month}\\s*(?:20\\d{2})?)`, "i"))?.[1] || "";
     const times = section.match(/\b\d{1,2}:\d{2}\b/g) || [];
-    const number = section.match(/\bW6\s?\d{3,5}\b/i)?.[0]?.replace(/\s+/g, " ") || "";
+    const number = normalizeWizzFlightNumber(section.match(/\bW6[A-Z]?\s?\d{3,5}\b/i)?.[0] || "");
     return {
       date: date ? translateOcrDate(date) : "",
       start: times[0] || "",
@@ -2833,6 +2846,34 @@ function extractWizzLegInfo(rawText = "") {
   return {
     outbound: parseLeg(outboundText),
     inbound: parseLeg(inboundText)
+  };
+}
+
+function formatCompactAmPmTime(hourText = "", minuteText = "", meridiem = "") {
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 1 || hour > 12 || minute < 0 || minute > 59) return "";
+  return `${hour}:${String(minute).padStart(2, "0")} ${String(meridiem || "").toUpperCase()}`;
+}
+
+function extractWizzCompactEnglishLegInfo(rawText = "") {
+  const text = ocrCompactText(rawText);
+  const month = "(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)";
+  const eventPattern = new RegExp(`\\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\.?\\s+${month}\\.?\\s*(\\d{1,2})\\s*(?:[-–.]|\\s)+\\s*(\\d{1,2})(?::?(\\d{2}))\\s*(AM|PM)\\b`, "gi");
+  const events = [...text.matchAll(eventPattern)].map((match) => ({
+    date: `${match[1].slice(0, 3)}, ${match[2].slice(0, 3)} ${Number(match[3])}`,
+    time: formatCompactAmPmTime(match[4], match[5], match[6])
+  })).filter((event) => event.date && event.time);
+  const numbers = [...text.matchAll(/\bW6[A-Z]?\s?\d{3,5}\b/gi)].map((match) => normalizeWizzFlightNumber(match[0])).filter(Boolean);
+  const buildLeg = (startIndex, numberIndex) => ({
+    date: events[startIndex]?.date || "",
+    start: events[startIndex]?.time || "",
+    end: events[startIndex + 1]?.time || "",
+    number: numbers[numberIndex] || ""
+  });
+  return {
+    outbound: buildLeg(0, 0),
+    inbound: buildLeg(2, 1)
   };
 }
 
@@ -5259,22 +5300,23 @@ function parseWizzCheckout(rawText = "", { destination = "" } = {}) {
   const destinationCode = destinationAirport?.code || "";
   const destinationCity = destinationAirport?.city || translateOcrCity(destination || "");
   const times = compact.match(/\b\d{1,2}:\d{2}\b/g) || [];
-  const flightNumbers = compact.match(/\bW6\s?\d{3,5}\b/gi) || [];
+  const flightNumbers = (compact.match(/\bW6[A-Z]?\s?\d{3,5}\b/gi) || []).map(normalizeWizzFlightNumber);
   const dateRange = extractFlightDateRange(compact);
   const wizzLegs = extractWizzLegInfo(compact);
-  const price = extractWizzTotalPrice(compact) || extractLabeledFlightPrice(compact) || extractFlightPriceFromText(compact);
+  const compactEnglishLegs = extractWizzCompactEnglishLegInfo(compact);
+  const price = extractWizzTotalPrice(compact) || extractLabeledFlightPrice(compact);
   const hasSofia = /\bSOF\b|sofia|софия/i.test(compact);
   const route = hasSofia && destinationCode
     ? `SOF -> ${destinationCode} / ${destinationCode} -> SOF`
     : "";
-  const outboundNumber = wizzLegs.outbound.number || flightNumbers[0]?.replace(/\s+/g, " ") || "";
-  const inboundNumber = wizzLegs.inbound.number || flightNumbers[1]?.replace(/\s+/g, " ") || "";
-  const outboundDate = wizzLegs.outbound.date || (dateRange?.outbound ? translateOcrDate(dateRange.outbound) : "");
-  const inboundDate = wizzLegs.inbound.date || (dateRange?.inbound ? translateOcrDate(dateRange.inbound) : "");
-  const outboundStart = wizzLegs.outbound.start || times[0] || "";
-  const outboundEnd = wizzLegs.outbound.end || times[1] || "";
-  const inboundStart = wizzLegs.inbound.start || times[2] || "";
-  const inboundEnd = wizzLegs.inbound.end || times[3] || "";
+  const outboundNumber = wizzLegs.outbound.number || compactEnglishLegs.outbound.number || flightNumbers[0] || "";
+  const inboundNumber = wizzLegs.inbound.number || compactEnglishLegs.inbound.number || flightNumbers[1] || "";
+  const outboundDate = wizzLegs.outbound.date || compactEnglishLegs.outbound.date || (dateRange?.outbound ? translateOcrDate(dateRange.outbound) : "");
+  const inboundDate = wizzLegs.inbound.date || compactEnglishLegs.inbound.date || (dateRange?.inbound ? translateOcrDate(dateRange.inbound) : "");
+  const outboundStart = wizzLegs.outbound.start || compactEnglishLegs.outbound.start || times[0] || "";
+  const outboundEnd = wizzLegs.outbound.end || compactEnglishLegs.outbound.end || times[1] || "";
+  const inboundStart = wizzLegs.inbound.start || compactEnglishLegs.inbound.start || times[2] || "";
+  const inboundEnd = wizzLegs.inbound.end || compactEnglishLegs.inbound.end || times[3] || "";
   const departure = route && (outboundDate || times[0])
     ? `SOF -> ${destinationCode}${outboundDate ? `, ${outboundDate}` : ""}${outboundStart && outboundEnd ? `, ${outboundStart} - ${outboundEnd}` : ""}${outboundNumber ? `, ${outboundNumber}` : ""}`
     : "";
@@ -5298,7 +5340,7 @@ function parseWizzCheckout(rawText = "", { destination = "" } = {}) {
   if (!flight.route) missingFields.push("flight.route");
   if (!flight.departure || !flight.arrival) missingFields.push("flight.times");
   if (!flight.price) missingFields.push("flight.price");
-  if (!dateRange && !(wizzLegs.outbound.date && wizzLegs.inbound.date)) missingFields.push("flight.dates");
+  if (!dateRange && !(outboundDate && inboundDate)) missingFields.push("flight.dates");
   return { flight, hotel: {}, metadata: buildOcrMetadata("wizz_checkout", flight, missingFields) };
 }
 
@@ -8914,6 +8956,7 @@ module.exports = {
   parseConnectingFlightSegments,
   parseConnectingFlightCheckout,
   parseDirectRoundTripTicket,
+  parseWizzCheckout,
   normalizeOffer,
   buildFlightOcrConfidence,
   archiveRegressionCaseSafe,
