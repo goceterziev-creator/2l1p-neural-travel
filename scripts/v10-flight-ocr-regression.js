@@ -49,7 +49,7 @@ assert.ok(ocrPatternSeed.price.currencySymbols.includes("\u20ac"), "OCR price pa
 assert.ok(ocrPatternSeed.price.currencySymbols.includes("\u00a2"), "OCR price pattern seed must include OCR cent/euro symbol");
 assert.ok(Number.isFinite(ocrPricePatternMetrics.totalPriceLookups), "OCR price pattern shadow metrics must be available");
 const airportRecords = normalizeAirportAliases(airportSeed);
-for (const code of ["SOF", "PMO", "BVA", "JFK", "YYZ", "WAW", "ZRH", "VIE", "IST", "NRT", "HND", "MLE", "AUH", "ATH", "DXB", "FCO", "CIA", "MXP", "BGY", "BRI", "PRG", "BCN", "TIA"]) {
+for (const code of ["SOF", "PMO", "BVA", "JFK", "YYZ", "WAW", "ZRH", "VIE", "IST", "NRT", "HND", "MLE", "AUH", "ATH", "DXB", "FCO", "CIA", "MXP", "BGY", "BRI", "PRG", "BCN", "TIA", "LPA"]) {
   assert.ok(airportRecords.some((record) => record.code === code), `airport seed must include ${code}`);
   assert.equal(findAirport(code)?.code, code, `shadow airport lookup must resolve ${code}`);
 }
@@ -296,6 +296,47 @@ assert.ok(!noisySummaryNurembergParsed.flight.route.includes("PRG"), "NUE route 
 assert.equal(noisySummaryNurembergParsed.flight.price, 434);
 assert.match(noisySummaryNurembergParsed.flight.departure, /SOF -> NUE, .*21:10 - .*09:35, via IST/);
 assert.match(noisySummaryNurembergParsed.flight.arrival, /NUE -> SOF, .*10:30 - .*20:20, via IST/);
+
+const noisyBulgarianEskLasPalmasOcr = `
+Codus Jlac NanmMac
+Bpeme Ha nbTyBaHeTO: 17h 30min 1 npekayBaHe
+05:45 Jletuwe Codusa (SOF)
+9 onu Cound, bbnrapus
+Ryanair
+HomMmep Ha noneta: FR 1731
+07:00 CrTaHcTen (STN)
+9 onu J'loHpoH, BenukobputaHus
+Bpeme 3a npecton: 09h 45min
+16:45 CTaHcten (STN)
+9 onu IloHpoH, BenukobputaHus
+Jet2.com
+HomMep Ha noneta: LS 1507
+21:15 Gran Canaria (LPA)
+9 onu Nac Manmac, VicnaHna
+Jlac NanMac Codus
+Bpeme Ha nbTyBaHeTo: 10h 10min 1 npekayBaHe
+13:25 Gran Canaria (LPA)
+16 ronu Nac NanmMac, icnaHus
+Vueling
+HomMmep Ha noneta: VY 3011
+17:40 EnnMpaT (BCN)
+16 tonu bapcenoHa, VicnaHug
+Bpewme 3a npecton: 03h 55min
+21:35 EnnMpaT (BCN)
+16 tonm BapcenoHa, VicnaHusa
+Wizz Air
+Homep Ha noneta: W6 4406
+01:35 Jetuwe Coodusa (SOF)
+17 ronu Codwus, bbnrapusa
+390 В« В©
+LleHa 3a 2 NbTHWLW, ABYNOCOYHO
+`;
+const noisyLasPalmasParsed = parseConnectingFlightCheckout(noisyBulgarianEskLasPalmasOcr);
+assert.equal(noisyLasPalmasParsed.flight.route, "SOF -> LPA / LPA -> SOF");
+assert.ok(!noisyLasPalmasParsed.flight.route.includes("BCN"), "LPA endpoint must not be overwritten by BCN stopover");
+assert.match(noisyLasPalmasParsed.flight.departure, /SOF -> LPA, .*05:45 - .*21:15, via STN/);
+assert.match(noisyLasPalmasParsed.flight.arrival, /LPA -> SOF, .*13:25 - .*01:35, via BCN/);
+assert.equal(noisyLasPalmasParsed.flight.price, 390);
 
 const profile = buildBookingAndroidFlightProfileTrace(fuzzyFlightOcr);
 assert.equal(profile.detected, true, "fuzzy flight modal profile should be detected");

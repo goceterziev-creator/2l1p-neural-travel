@@ -1935,14 +1935,14 @@ function extractFlightPriceFromText(rawText = "") {
   const localizedTotalPriceContext =
     "(?:price\\s+per|total|return|passengers?|travelers?|round\\s*trip|\\u0446\\u0435\\u043d\\u0430|\\u043f\\u044a\\u0442\\u043d\\u0438\\u0446\\u0438|\\u043f\\u044a\\u0442\\u043d\\u0438\\u043a|\\u0434\\u0432\\u0443\\u043f\\u043e\\u0441\\u043e\\u0447\\u043d\\u043e|ueha(?:ta)?|lleha|nbthuk|abynocoyho)";
   const localizedRepairedPrices = [
-    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\s*(?:\\u00a9|\\u0412\\u00a9|\\u00a2)(?=\\s|$).{0,120}${localizedTotalPriceContext}`, "gi")),
-    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,120}\\b(\\d{2,5})\\s*(?:\\u00a9|\\u0412\\u00a9|\\u00a2)(?=\\s|$)`, "gi"))
+    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\s*(?:\\u00ab|\\u0412\\u00ab)?\\s*(?:\\u00a9|\\u0412\\u00a9|\\u00a2)(?=\\s|$).{0,120}${localizedTotalPriceContext}`, "gi")),
+    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,120}\\b(\\d{2,5})\\s*(?:\\u00ab|\\u0412\\u00ab)?\\s*(?:\\u00a9|\\u0412\\u00a9|\\u00a2)(?=\\s|$)`, "gi"))
   ]
     .map((match) => Number(match[1]))
     .filter(isPlausibleFlightMoneyValue);
   const localizedContextPrices = [
-    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|\\u00a9|\\u0412\\u00a9|\\u00a2|\\?).{0,140}${localizedTotalPriceContext}`, "gi")),
-    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,140}\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|\\u00a9|\\u0412\\u00a9|\\u00a2|\\?)`, "gi"))
+    ...text.matchAll(new RegExp(`\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|(?:\\u00ab|\\u0412\\u00ab)?\\s*(?:\\u00a9|\\u0412\\u00a9|\\u00a2)|\\?).{0,140}${localizedTotalPriceContext}`, "gi")),
+    ...text.matchAll(new RegExp(`${localizedTotalPriceContext}.{0,140}\\b(\\d{2,5})\\b\\s*(?:\\u20ac|eur|euro|(?:\\u00ab|\\u0412\\u00ab)?\\s*(?:\\u00a9|\\u0412\\u00a9|\\u00a2)|\\?)`, "gi"))
   ]
     .map((match) => Number(match[1]))
     .filter(isPlausibleFlightMoneyValue);
@@ -2209,6 +2209,7 @@ const GLOBAL_AIRPORT_ALIAS_EXTENSIONS = [
   { code: "YYZ", city: "Toronto", aliases: ["yyz", "toronto", "pearson", "lester b pearson", "lester b. pearson", "торонто"] },
   { code: "TIA", city: "Tirana", aliases: ["tia", "tirana", "tirana international", "\u0442\u0438\u0440\u0430\u043d\u0430"] },
   { code: "NUE", city: "Nuremberg", aliases: ["nue", "nuremberg", "nurnberg", "n\u00fcrnberg", "\u043d\u044e\u0440\u043d\u0431\u0435\u0440\u0433", "hiophbepr", "hioph6epr", "hioohbepr", "hopnbepr"] },
+  { code: "LPA", city: "Las Palmas", aliases: ["lpa", "las palmas", "gran canaria", "\u043b\u0430\u0441 \u043f\u0430\u043b\u043c\u0430\u0441", "\u0433\u0440\u0430\u043d \u043a\u0430\u043d\u0430\u0440\u0438\u044f", "jlac manmac", "jlac nanmac", "jlac nanmmac", "jlac [nanmac", "jlac [nanmmac", "nac manmac", "nac nanmac", "nac nanmmac", "nac [nanmac", "nac [nanmmac"] },
   { code: "HRG", city: "Hurghada", aliases: ["hrg", "hurghada", "\u0445\u0443\u0440\u0433\u0430\u0434\u0430"] },
   { code: "TLV", city: "Tel Aviv", aliases: ["tlv", "tel aviv", "ben gurion", "\u0442\u0435\u043b \u0430\u0432\u0438\u0432"] },
   { code: "AUH", city: "Abu Dhabi", aliases: ["auh", "abu dhabi", "zayed international", "\u0430\u0431\u0443 \u0434\u0430\u0431\u0438"] },

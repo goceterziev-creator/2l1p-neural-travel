@@ -192,6 +192,29 @@
         "HiooHbepr",
         "HopHbepr"
       ]
+    },
+    "LPA": {
+      "active": true,
+      "city": "Las Palmas",
+      "country": "Spain",
+      "airport": "Gran Canaria Airport",
+      "aliases": [
+        "LPA",
+        "Las Palmas",
+        "Gran Canaria",
+        "Las Palmas de Gran Canaria",
+        "Gran Canaria Airport",
+        "Лас Палмас",
+        "Гран Канария",
+        "Jlac Manmac",
+        "Jlac NanMac",
+        "Jlac NanmMac",
+        "Jlac [NanMac",
+        "Jlac [NanmMac",
+        "Nac Manmac",
+        "Nac NanMac",
+        "Nac NanmMac"
+      ]
     }
   }
 }
