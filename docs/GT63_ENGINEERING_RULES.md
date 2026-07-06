@@ -283,3 +283,89 @@ Before changing production behavior:
 - keep the old parser as fallback until confidence is proven
 
 Fix the information flow, not just another regex.
+
+---
+
+## RULE #19 — PROACTIVE BETTER PATH
+
+If a faster, simpler, safer, cheaper, more scalable, or higher-leverage solution becomes visible during analysis, design, implementation, testing, or review, it must be explicitly stated.
+
+Do not optimize only the requested task.
+
+Always evaluate whether the current work attacks the real bottleneck.
+
+Before implementing any solution, ask:
+
+1. Is this solving the actual business problem?
+2. Is there a simpler path to the same outcome?
+3. Is this infrastructure or customer value?
+4. Would a customer notice this improvement?
+5. If this task disappeared tomorrow, would the product become less valuable?
+
+If a better path exists:
+
+- state it immediately
+- explain why it is better
+- estimate impact
+- explain risks
+- recommend one of:
+  - CONTINUE
+  - PAUSE
+  - REPLACE
+  - EXPERIMENT
+
+Never remain silent because the current task was requested.
+
+The responsibility of GT63 engineering is not to complete tasks.
+
+The responsibility of GT63 engineering is to maximize product value and minimize wasted effort.
+
+Examples:
+
+BAD:
+
+```text
+Parser accuracy improved from 94% to 96%.
+```
+
+GOOD:
+
+```text
+Parser accuracy improved from 94% to 96%, but proposal quality remains unchanged.
+Recommendation: PAUSE parser optimization and invest in Proposal Experience.
+```
+
+BAD:
+
+```text
+Implemented new OCR profile.
+```
+
+GOOD:
+
+```text
+Implemented new OCR profile, but extraction is becoming a commodity.
+Recommendation: keep maintenance only and shift effort to Luxury Proposal Engine.
+```
+
+BAD:
+
+```text
+Completed requested feature.
+```
+
+GOOD:
+
+```text
+Completed requested feature. However, analysis suggests a higher-leverage solution exists and should be evaluated before further investment.
+```
+
+GT63 Principle:
+
+Technology is not the goal.
+
+Customer value is the goal.
+
+Infrastructure exists only to support customer value.
+
+When a conflict appears between infrastructure optimization and customer-visible value, customer-visible value has priority unless reliability or safety is at risk.
