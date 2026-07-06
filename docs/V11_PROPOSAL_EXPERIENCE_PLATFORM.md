@@ -31,8 +31,68 @@ Travel agents do not buy OCR. They do not buy parser accuracy by itself. They bu
 The product should continue to accept screenshots, PDFs, manual input, OCR, Vision JSON, or future extraction engines. Those are input modules. The core platform should own the higher-value layer:
 
 ```text
-Travel Offer JSON -> Luxury Client Proposal
+Travel Offer JSON -> Proposal Experience Engine -> Client Conversion Assets
 ```
+
+## Customer Value Definition
+
+The end customer never sees:
+
+- OCR
+- parser
+- extraction
+- confidence scores
+- airport resolution
+- travel JSON
+
+The end customer sees:
+
+- the proposal
+- the story
+- the visuals
+- the destination
+- the perceived value of the trip
+
+Therefore, GT63 should optimize first for:
+
+```text
+Client Perceived Value
+```
+
+and only second for:
+
+```text
+Extraction Accuracy
+```
+
+A proposal that creates desire but requires one manual correction is more valuable than a perfectly extracted proposal that feels generic.
+
+The primary KPI of the platform is not extraction accuracy.
+
+The primary KPI is:
+
+```text
+Proposal Conversion Potential
+```
+
+Future platform evolution should move toward:
+
+```text
+Travel Offer JSON
+-> Luxury Proposal
+-> Client Engagement
+-> Client Conversion
+```
+
+This means "proposal" should be treated as an experience ecosystem, not a single PDF artifact. The platform should be able to create:
+
+- HTML proposal
+- PDF proposal
+- WhatsApp version
+- email version
+- landing page
+- QR access
+- follow-up assets
 
 ## Strategic Principle
 
