@@ -369,3 +369,19 @@ Customer value is the goal.
 Infrastructure exists only to support customer value.
 
 When a conflict appears between infrastructure optimization and customer-visible value, customer-visible value has priority unless reliability or safety is at risk.
+
+### Corollary #19.1 — Move One Layer Higher
+
+When a component becomes a commodity, GT63 must move one layer higher in the value chain.
+
+Examples:
+
+```text
+OCR -> Proposal Engine
+Proposal Engine -> Agency Workflow
+Agency Workflow -> Client Conversion
+```
+
+Do not compete where the market is commoditizing.
+
+Move to the layer where differentiation remains.

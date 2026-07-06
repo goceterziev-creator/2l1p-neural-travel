@@ -40,6 +40,22 @@ Extraction is the staircase. The proposal experience is the house.
 
 OCR, Vision JSON, Lift, NuExtract, DeepSeek OCR, Gemini, Docling, Marker, and similar tools should be treated as replaceable input modules. If extraction becomes easier or commoditized, GT63 should become stronger because it can use any extractor while preserving the same proposal engine and agency workflow.
 
+## Why This Pivot Is Now Required
+
+This pivot follows `RULE #19 — PROACTIVE BETTER PATH` and `Corollary #19.1 — Move One Layer Higher` from [GT63_ENGINEERING_RULES.md](GT63_ENGINEERING_RULES.md).
+
+The better path is now visible:
+
+```text
+OCR -> Proposal Engine -> Agency Workflow -> Client Conversion
+```
+
+V10 proved that screenshots can become offers. V11 should prove that offers can become premium, client-ready travel proposals that help agencies close more business.
+
+If OCR, Vision JSON, or another extraction method becomes commoditized, GT63 should not compete at that layer. It should use that layer and move upward to the proposal, workflow, and conversion layers where differentiation remains.
+
+Therefore, parser and OCR improvements should continue only as maintenance, research, or reliability work unless they directly unblock customer-visible proposal value.
+
 ## Architecture Layers
 
 ### 1. Input Layer
