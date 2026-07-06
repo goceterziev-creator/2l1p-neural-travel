@@ -11,6 +11,7 @@ const puppeteer = require("puppeteer");
 const multer = require("multer");
 const QRCode = require("qrcode");
 const sharp = require("sharp");
+const zlib = require("zlib");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -7300,6 +7301,23 @@ app.get("/api/admin/regression-cases/:id", requireCapability("agency.view"), (re
   res.json(detail);
 });
 
+app.get("/api/admin/regression-cases-export", requireCapability("agency.view"), (req, res) => {
+  try {
+    const type = req.query.type === "hotel" ? "hotel" : "flight";
+    const limit = Math.max(1, Math.min(50, Number(req.query.limit || 30)));
+    const cases = listRegressionCases(type).slice(0, limit);
+    const archive = createRegressionCasesTarGz(cases);
+    const timestamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    res.setHeader("Content-Type", "application/gzip");
+    res.setHeader("Content-Disposition", `attachment; filename="gt63-regression-${type}-${timestamp}.tar.gz"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(archive);
+  } catch (error) {
+    console.warn("GT63 REGRESSION EXPORT FAILED:", error.message);
+    res.status(500).json({ error: "Regression export failed" });
+  }
+});
+
 app.get("/api/admin/beta-health", requireCapability("agency.view"), (req, res) => {
   res.json(summarizeBetaHealth());
 });
@@ -7981,6 +7999,98 @@ function readRegressionCaseDetail(id = "") {
     console.warn("GT63 REGRESSION CASE INSPECTOR FAILED:", cleanId, error.message);
     return null;
   }
+}
+
+function tarOctal(value, length) {
+  const text = Math.max(0, Number(value || 0)).toString(8);
+  return text.padStart(length - 1, "0").slice(-(length - 1)) + "\0";
+}
+
+function splitTarPath(name = "") {
+  const normalized = String(name || "file").replace(/\\/g, "/").replace(/^\/+/, "");
+  const nameBytes = Buffer.byteLength(normalized);
+  if (nameBytes <= 100) return { name: normalized, prefix: "" };
+
+  const parts = normalized.split("/");
+  const fileName = parts.pop() || "file";
+  const prefix = parts.join("/");
+  if (Buffer.byteLength(fileName) <= 100 && Buffer.byteLength(prefix) <= 155) {
+    return { name: fileName, prefix };
+  }
+
+  const digest = crypto.createHash("sha1").update(normalized).digest("hex").slice(0, 10);
+  const ext = path.extname(fileName).slice(0, 20);
+  return { name: `${digest}${ext}`.slice(0, 100), prefix: "long-paths" };
+}
+
+function createTarHeader(entryName, size, mtime = new Date()) {
+  const header = Buffer.alloc(512, 0);
+  const { name, prefix } = splitTarPath(entryName);
+  const write = (value, offset, length) => {
+    header.write(String(value || "").slice(0, length), offset, length, "utf8");
+  };
+
+  write(name, 0, 100);
+  write("0000644\0", 100, 8);
+  write("0000000\0", 108, 8);
+  write("0000000\0", 116, 8);
+  write(tarOctal(size, 12), 124, 12);
+  write(tarOctal(Math.floor(new Date(mtime).getTime() / 1000), 12), 136, 12);
+  header.fill(0x20, 148, 156);
+  write("0", 156, 1);
+  write("ustar\0", 257, 6);
+  write("00", 263, 2);
+  write(prefix, 345, 155);
+
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
+  write(checksum.toString(8).padStart(6, "0") + "\0 ", 148, 8);
+  return header;
+}
+
+function createTarEntry(entryName, content, mtime = new Date()) {
+  const data = Buffer.isBuffer(content) ? content : Buffer.from(String(content || ""), "utf8");
+  const padding = Buffer.alloc((512 - (data.length % 512)) % 512, 0);
+  return Buffer.concat([createTarHeader(entryName, data.length, mtime), data, padding]);
+}
+
+function createRegressionCasesTarGz(cases = []) {
+  const entries = [];
+  const manifest = {
+    exportedAt: new Date().toISOString(),
+    count: cases.length,
+    root: REGRESSION_LIBRARY_DIR,
+    cases: cases.map((item) => ({
+      id: item.id,
+      type: item.type,
+      decision: item.decision,
+      route: item.route,
+      airline: item.airline,
+      timestamp: item.timestamp,
+      reviewReasons: item.reviewReasons
+    }))
+  };
+
+  entries.push(createTarEntry("manifest.json", JSON.stringify(manifest, null, 2)));
+
+  for (const item of cases) {
+    const caseDir = item.path;
+    if (!caseDir || !fs.existsSync(caseDir)) continue;
+    const base = `${item.type === "hotel" ? "hotels" : "flights"}/${sanitizeRegressionPathPart(item.id, "case")}`;
+    const files = fs.readdirSync(caseDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b));
+
+    for (const fileName of files) {
+      const filePath = path.join(caseDir, fileName);
+      const stat = fs.statSync(filePath);
+      entries.push(createTarEntry(`${base}/${fileName}`, fs.readFileSync(filePath), stat.mtime));
+    }
+  }
+
+  entries.push(Buffer.alloc(1024, 0));
+  return zlib.gzipSync(Buffer.concat(entries));
 }
 
 function summarizeBetaHealth() {
