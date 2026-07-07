@@ -75,6 +75,10 @@
 
     .hero-inner {
       padding: 34px 0 72px;
+      min-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
     }
 
     .brand-row {
@@ -238,6 +242,33 @@
       font-size: 22px;
       line-height: 1.18;
       letter-spacing: 0;
+    }
+
+    .heading-serif {
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    .section-title {
+      width: min(1180px, calc(100% - 40px));
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .section-title small {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .section > div[style*="display: flex"],
+    .section > div[style*="display: grid"] {
+      width: min(1180px, calc(100% - 40px));
+      margin-left: auto;
+      margin-right: auto;
     }
 
     p {
@@ -567,6 +598,14 @@
       .section {
         padding-top: 58px;
       }
+
+      .section > div[style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+      }
+
+      .price-block {
+        align-items: flex-start !important;
+      }
     }
 
     @media (max-width: 560px) {
@@ -577,12 +616,19 @@
         width: min(100% - 28px, 1180px);
       }
 
+      .brand-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 72px;
+      }
+
       .hero-inner {
         padding-bottom: 54px;
       }
 
       .quick-facts {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
       }
 
       .fact {
@@ -601,6 +647,14 @@
       .journey-panel,
       .price-box {
         padding: 22px;
+      }
+
+      .price-block > div:last-child {
+        width: 100%;
+        margin-top: 18px;
+        border-left: 0 !important;
+        padding-left: 0 !important;
+        text-align: left !important;
       }
     }
   </style>
@@ -726,24 +780,44 @@
           <div class="fact"><span>From</span><strong>${money.format(data.price.amount)}</strong></div>
         </section>
 
+        <!-- ==========================================================
+        WHY RANGALI — конкретни причини, не общи клишета
+        ========================================================== -->
         <section class="section">
-          <div class="section-inner intro-grid">
-            <div>
-              <p class="eyebrow">Why this trip</p>
-              <h2>Island privacy with a polished, client-ready story.</h2>
-              <p class="lead">${data.hotel.description}</p>
+          <h2 class="section-title heading-serif" style="margin-bottom: 12px;">
+            Why Rangali
+            <small>Four reasons this escape was chosen for you</small>
+          </h2>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+
+            <div style="background: #f7f5f0; padding: 24px 24px 20px; border-radius: 16px; border-left: 4px solid #b8a99a;">
+              <div style="font-weight: 600; font-size: 18px; font-family: 'Playfair Display', serif; color: #1a2a2b;">The House Reef</div>
+              <p style="font-size: 14px; color: #3f4a4b; margin-top: 6px; line-height: 1.5;">
+                South Ari Atoll is a protected marine area, home to whale sharks, manta rays, and some of the most vibrant coral gardens in the Maldives. Snorkelling here feels less like an activity and more like a meditation.
+              </p>
             </div>
-            <div class="trip-highlights">
-              ${highlightItems.map(item => `
-                <div class="highlight">
-                  <div class="highlight-icon">${item.icon}</div>
-                  <div>
-                    <h3>${item.title}</h3>
-                    <p>${item.text}</p>
-                  </div>
-                </div>
-              `).join("")}
+
+            <div style="background: #f7f5f0; padding: 24px 24px 20px; border-radius: 16px; border-left: 4px solid #b8a99a;">
+              <div style="font-weight: 600; font-size: 18px; font-family: 'Playfair Display', serif; color: #1a2a2b;">Ithaa Undersea Restaurant</div>
+              <p style="font-size: 14px; color: #3f4a4b; margin-top: 6px; line-height: 1.5;">
+                Five metres below the surface, surrounded by the lagoon’s silent theatre — dining at Ithaa is not a meal. It is a memory that will outlast any photograph.
+              </p>
             </div>
+
+            <div style="background: #f7f5f0; padding: 24px 24px 20px; border-radius: 16px; border-left: 4px solid #b8a99a;">
+              <div style="font-weight: 600; font-size: 18px; font-family: 'Playfair Display', serif; color: #1a2a2b;">The Retreat Spa</div>
+              <p style="font-size: 14px; color: #3f4a4b; margin-top: 6px; line-height: 1.5;">
+                Suspended over the ocean, The Retreat offers treatments that draw from ancient Maldivian healing traditions — a sanctuary within a sanctuary.
+              </p>
+            </div>
+
+            <div style="background: #f7f5f0; padding: 24px 24px 20px; border-radius: 16px; border-left: 4px solid #b8a99a;">
+              <div style="font-weight: 600; font-size: 18px; font-family: 'Playfair Display', serif; color: #1a2a2b;">The Arrival</div>
+              <p style="font-size: 14px; color: #3f4a4b; margin-top: 6px; line-height: 1.5;">
+                The seaplane descent into the atoll is not a transfer — it is the first chapter of the journey. Turquoise shallows, scattered sandbanks, and the sudden stillness of arrival.
+              </p>
+            </div>
+
           </div>
         </section>
 
@@ -761,18 +835,35 @@
           </div>
         </section>
 
-        <section class="hotel-band" id="hotel">
-          <div class="section-inner hotel-grid">
-            <div>
-              <p class="eyebrow">Selected stay</p>
-              <h2>${data.hotel.name}</h2>
-              <p>${data.hotel.description}</p>
-              <p><strong>${data.hotel.room}</strong><br>${data.hotel.board}</p>
-              <div class="amenities">
-                ${data.hotel.amenities.map(item => `<span class="amenity">${item}</span>`).join("")}
+        <!-- ==========================================================
+        THE RESIDENCE – Conrad Maldives Rangali Island
+        ========================================================== -->
+        <section class="section" style="padding-top: 32px;" id="hotel">
+          <div style="display: flex; flex-direction: column; gap: 24px;">
+
+            <div style="position: relative; border-radius: 20px; overflow: hidden; background: #0b1a1f;">
+              <img class="img-cover" src="https://images.unsplash.com/photo-1573843981267-be1999ff37cd?w=1400&q=80" alt="Conrad Maldives Rangali Island" style="height: 420px; width: 100%; object-fit: cover; opacity: 0.9;">
+              <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 40px 32px 32px; background: linear-gradient(0deg, rgba(0,0,0,0.6) 0%, transparent 100%); color: white;">
+                <div style="font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 600; letter-spacing: -0.5px;">Conrad Maldives Rangali Island</div>
+                <div style="font-size: 15px; opacity: 0.85; margin-top: 4px;">South Ari Atoll · Maldives</div>
               </div>
             </div>
-            <img class="hotel-image" src="${data.images.hotel}" alt="Private overwater villa with ocean view">
+
+            <div style="max-width: 720px;">
+              <p style="font-size: 18px; line-height: 1.6; font-family: 'Playfair Display', serif; font-style: italic; color: #1e2b2c; margin-bottom: 8px;">
+                “Two islands. One lagoon. And a spirit of place that feels both timeless and utterly private.”
+              </p>
+              <p style="font-size: 15px; color: #3f4a4b; line-height: 1.6;">
+                Rangali is not simply a resort. It is a rare constellation of experiences — from the world’s first underwater restaurant to a spa suspended over the Indian Ocean.
+                Here, the journey begins the moment you step off the seaplane, and every detail is calibrated to the rhythm of the tide.
+              </p>
+              <div style="display: flex; flex-wrap: wrap; gap: 12px 24px; margin-top: 16px; font-size: 14px; color: #2f3a3b; border-top: 1px solid #e3e0d8; padding-top: 16px;">
+                <span style="display: flex; align-items: center; gap: 6px;">🏝️ <strong>Two islands</strong> · one resort</span>
+                <span style="display: flex; align-items: center; gap: 6px;">🍽️ <strong>Underwater dining</strong> · Ithaa</span>
+                <span style="display: flex; align-items: center; gap: 6px;">🧖 <strong>Overwater spa</strong> · The Retreat</span>
+                <span style="display: flex; align-items: center; gap: 6px;">✈️ <strong>Seaplane arrival</strong> · 30 min from Male</span>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -804,18 +895,17 @@
                 `).join("")}
               </div>
             </div>
-            <aside class="price-box">
-              <span>Proposal price</span>
-              <p class="price">${money.format(data.price.amount)}</p>
-              <p class="price-note">${data.price.note}</p>
-              <div class="signature">
-                <div>
-                  <strong>${data.agency.agent}</strong>
-                  <small>${data.agency.name}</small>
-                </div>
-                <a class="button whatsapp" href="#">WhatsApp</a>
+            <div class="price-block" style="background: #1a1a24; border-radius: 20px; padding: 32px 36px; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; margin-top: 8px;">
+              <div>
+                <div style="font-size: 15px; font-weight: 300; letter-spacing: 1.5px; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-bottom: 4px;">Investment</div>
+                <div style="font-size: 48px; font-weight: 500; font-family: 'Playfair Display', serif; letter-spacing: -0.02em; line-height: 1;">€12,490</div>
+                <div style="font-size: 14px; color: rgba(255,255,255,0.5); margin-top: 4px;">For 2 adults · 7 nights · Beach Villa</div>
               </div>
-            </aside>
+              <div style="font-size: 13px; color: rgba(255,255,255,0.35); border-left: 1px solid rgba(255,255,255,0.08); padding-left: 24px; text-align: right; line-height: 1.5;">
+                Seaplane transfer included<br>
+                Flights and taxes included
+              </div>
+            </div>
           </div>
         </section>
 
