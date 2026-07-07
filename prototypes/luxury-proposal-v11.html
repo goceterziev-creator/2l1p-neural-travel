@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>V11 Luxury Proposal Prototype</title>
+  <style>
+    :root {
+      --ink: #101923;
+      --muted: #66727f;
+      --paper: #f7f8f6;
+      --surface: #ffffff;
+      --line: #dce3e8;
+      --teal: #007f7a;
+      --teal-dark: #075a58;
+      --coral: #d95f43;
+      --gold: #b98d3f;
+      --mist: #eef5f4;
+      --shadow: 0 18px 55px rgba(16, 25, 35, 0.14);
+      --radius: 8px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      letter-spacing: 0;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    .proposal {
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(247, 248, 246, 0) 0, var(--paper) 650px),
+        var(--paper);
+    }
+
+    .hero {
+      min-height: 88vh;
+      display: grid;
+      align-items: end;
+      position: relative;
+      overflow: hidden;
+      color: #fff;
+      background:
+        linear-gradient(180deg, rgba(10, 24, 34, 0.2) 0%, rgba(10, 24, 34, 0.54) 42%, rgba(10, 24, 34, 0.86) 100%),
+        url("https://images.unsplash.com/photo-1514282401047-d79a71a590e8?auto=format&fit=crop&w=2200&q=82") center / cover;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 22vh;
+      background: linear-gradient(180deg, rgba(247, 248, 246, 0), var(--paper));
+      pointer-events: none;
+    }
+
+    .hero-inner,
+    .section-inner {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-inner {
+      padding: 34px 0 72px;
+    }
+
+    .brand-row {
+      position: absolute;
+      top: 28px;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: rgba(255, 255, 255, 0.84);
+    }
+
+    .agency-mark {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+    }
+
+    .agency-symbol {
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.7);
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .hero-label {
+      margin: 0 0 18px;
+      font-size: 13px;
+      line-height: 1.4;
+      text-transform: uppercase;
+      letter-spacing: 0.17em;
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    .hero h1 {
+      max-width: 820px;
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(52px, 10vw, 126px);
+      line-height: 0.88;
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+
+    .hero-subtitle {
+      max-width: 660px;
+      margin: 24px 0 0;
+      font-size: clamp(18px, 2.4vw, 28px);
+      line-height: 1.35;
+      color: rgba(255, 255, 255, 0.88);
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 34px;
+    }
+
+    .button {
+      border: 0;
+      border-radius: 999px;
+      min-height: 46px;
+      padding: 0 22px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      font: inherit;
+      font-weight: 800;
+      text-decoration: none;
+      color: var(--ink);
+      background: #fff;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+    }
+
+    .button.secondary {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.48);
+      box-shadow: none;
+      backdrop-filter: blur(10px);
+    }
+
+    .quick-facts {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      width: min(1180px, calc(100% - 40px));
+      margin: -42px auto 0;
+      position: relative;
+      z-index: 3;
+      overflow: hidden;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      background: var(--line);
+    }
+
+    .fact {
+      min-height: 112px;
+      padding: 24px;
+      background: var(--surface);
+    }
+
+    .fact span {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 800;
+    }
+
+    .fact strong {
+      display: block;
+      font-size: clamp(20px, 2.2vw, 30px);
+      line-height: 1.12;
+      font-weight: 850;
+    }
+
+    .section {
+      padding: 76px 0 0;
+    }
+
+    .section.compact {
+      padding-top: 44px;
+    }
+
+    .eyebrow {
+      margin: 0 0 14px;
+      color: var(--teal);
+      font-size: 12px;
+      line-height: 1.4;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(34px, 5vw, 64px);
+      line-height: 1.02;
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    p {
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.65;
+    }
+
+    .intro-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 54px;
+      align-items: start;
+    }
+
+    .lead {
+      margin: 24px 0 0;
+      max-width: 620px;
+      color: #40505c;
+      font-size: clamp(19px, 2.1vw, 25px);
+      line-height: 1.52;
+    }
+
+    .trip-highlights {
+      display: grid;
+      gap: 14px;
+      padding-top: 8px;
+    }
+
+    .highlight {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .highlight-icon {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--teal);
+      font-weight: 900;
+    }
+
+    .highlight p {
+      margin: 6px 0 0;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .media-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+      margin-top: 34px;
+    }
+
+    .media-grid img {
+      width: 100%;
+      height: 100%;
+      min-height: 260px;
+      object-fit: cover;
+      border-radius: var(--radius);
+    }
+
+    .stacked-media {
+      display: grid;
+      gap: 18px;
+    }
+
+    .stacked-media img {
+      min-height: 190px;
+    }
+
+    .hotel-band {
+      background: var(--ink);
+      color: #fff;
+      margin-top: 84px;
+      padding: 78px 0;
+    }
+
+    .hotel-band .eyebrow {
+      color: #7ad2cf;
+    }
+
+    .hotel-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+      gap: 52px;
+      align-items: center;
+    }
+
+    .hotel-band p {
+      color: rgba(255, 255, 255, 0.76);
+    }
+
+    .hotel-image {
+      min-height: 440px;
+      border-radius: var(--radius);
+      object-fit: cover;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+    }
+
+    .amenities {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    .amenity {
+      padding: 9px 12px;
+      border-radius: 999px;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .journey-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+      margin-top: 34px;
+    }
+
+    .journey-panel {
+      padding: 28px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+    }
+
+    .journey-panel h3 {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .journey-panel h3 span {
+      color: var(--teal);
+      font-size: 14px;
+      line-height: 1.5;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+    }
+
+    .segment {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+      gap: 16px;
+      padding: 16px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .segment-time {
+      color: var(--ink);
+      font-weight: 900;
+      font-size: 18px;
+    }
+
+    .segment p {
+      margin: 3px 0 0;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .price-section {
+      padding-bottom: 86px;
+    }
+
+    .price-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(320px, 0.75fr);
+      gap: 34px;
+      align-items: stretch;
+    }
+
+    .inclusions {
+      display: grid;
+      gap: 14px;
+      margin-top: 26px;
+    }
+
+    .inclusion {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      color: #334450;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    .check {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--teal);
+      font-weight: 900;
+      font-size: 14px;
+    }
+
+    .price-box {
+      padding: 32px;
+      color: #fff;
+      background: linear-gradient(145deg, var(--teal-dark), #123845);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .price-box span {
+      display: block;
+      margin-bottom: 10px;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .price {
+      margin: 0;
+      color: #fff;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(46px, 6vw, 78px);
+      line-height: 0.95;
+    }
+
+    .price-note {
+      margin: 18px 0 26px;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    .signature {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding-top: 22px;
+      border-top: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .signature strong,
+    .signature small {
+      display: block;
+    }
+
+    .signature small {
+      margin-top: 4px;
+      color: rgba(255, 255, 255, 0.68);
+    }
+
+    .whatsapp {
+      min-width: 122px;
+      color: #fff;
+      background: var(--coral);
+      box-shadow: none;
+    }
+
+    .json-drawer {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto 42px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+
+    .json-drawer summary {
+      cursor: pointer;
+      padding: 18px 22px;
+      color: var(--teal-dark);
+      font-weight: 900;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 0;
+      padding: 0 22px 22px;
+      color: #26333e;
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 860px) {
+      .brand-row {
+        position: static;
+        margin-bottom: 90px;
+      }
+
+      .hero {
+        min-height: 92vh;
+      }
+
+      .quick-facts,
+      .intro-grid,
+      .media-grid,
+      .hotel-grid,
+      .journey-grid,
+      .price-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .quick-facts {
+        margin-top: -28px;
+      }
+
+      .hotel-image {
+        min-height: 320px;
+      }
+
+      .section {
+        padding-top: 58px;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .hero-inner,
+      .section-inner,
+      .quick-facts,
+      .json-drawer {
+        width: min(100% - 28px, 1180px);
+      }
+
+      .hero-inner {
+        padding-bottom: 54px;
+      }
+
+      .quick-facts {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .fact {
+        min-height: 96px;
+        padding: 18px;
+      }
+
+      .hero-actions {
+        display: grid;
+      }
+
+      .button {
+        width: 100%;
+      }
+
+      .journey-panel,
+      .price-box {
+        padding: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="proposal" id="proposal"></main>
+
+  <script>
+    const travelOffer = {
+      client: {
+        name: "Private Client",
+        travelers: 2
+      },
+      destination: {
+        name: "Maldives",
+        mood: "A private island escape built around ocean villas, quiet rituals, and warm water days.",
+        bestFor: ["slow luxury", "reef snorkeling", "anniversary travel"]
+      },
+      dates: "15-22 March 2027",
+      duration: "7 nights",
+      hotel: {
+        name: "Conrad Maldives Rangali Island",
+        room: "Sunset Water Villa with Pool",
+        board: "Daily breakfast and private arrival assistance",
+        description: "A refined two-island resort with overwater villas, cinematic sandbanks, a glass-walled underwater restaurant, and the kind of service that makes the trip feel effortless before the client has even arrived.",
+        amenities: ["Water villa", "Private pool", "House reef", "Underwater dining", "Spa island", "Sunset cruise"]
+      },
+      flights: {
+        outbound: [
+          { time: "18:20", route: "Sofia to Doha", detail: "Qatar Airways, Business Class" },
+          { time: "08:45", route: "Doha to Male", detail: "Morning arrival with private speedboat connection" }
+        ],
+        inbound: [
+          { time: "20:15", route: "Male to Doha", detail: "Evening departure after a full final island day" },
+          { time: "07:10", route: "Doha to Sofia", detail: "Arrival home the following morning" }
+        ]
+      },
+      inclusions: [
+        "International flights in business class",
+        "7 nights in a Sunset Water Villa with Pool",
+        "Daily breakfast for two guests",
+        "Return seaplane transfers in the Maldives",
+        "Priority reservation request for Ithaa Undersea Restaurant",
+        "Concierge support before departure"
+      ],
+      price: {
+        amount: 12490,
+        currency: "EUR",
+        note: "Indicative package price for two travelers. Final availability and fare rules are confirmed before booking."
+      },
+      agency: {
+        name: "2L1P Signature Travel",
+        agent: "G. Terziev",
+        phone: "+359 888 000 000"
+      },
+      images: {
+        gallery1: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1500&q=82",
+        gallery2: "https://images.unsplash.com/photo-1573843981267-be1999ff37cd?auto=format&fit=crop&w=1000&q=82",
+        gallery3: "https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=1000&q=82",
+        hotel: "https://images.unsplash.com/photo-1590523278191-995cbcda646b?auto=format&fit=crop&w=1200&q=82"
+      }
+    };
+
+    const money = new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: travelOffer.price.currency,
+      maximumFractionDigits: 0
+    });
+
+    const highlightItems = [
+      {
+        icon: "01",
+        title: "A proposal designed to sell the feeling",
+        text: "The offer leads with the client dream first, then supports it with precise travel facts."
+      },
+      {
+        icon: "02",
+        title: "One JSON, many client-ready formats",
+        text: "The same structured trip can become HTML, PDF, WhatsApp, email, or a landing page."
+      },
+      {
+        icon: "03",
+        title: "Operator correction stays possible",
+        text: "Extraction can be imperfect, while the final proposal remains premium and reviewable."
+      }
+    ];
+
+    function renderSegments(segments) {
+      return segments.map(segment => `
+        <div class="segment">
+          <div class="segment-time">${segment.time}</div>
+          <div>
+            <strong>${segment.route}</strong>
+            <p>${segment.detail}</p>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderProposal(data) {
+      document.getElementById("proposal").innerHTML = `
+        <section class="hero">
+          <div class="hero-inner">
+            <div class="brand-row">
+              <div class="agency-mark"><span class="agency-symbol">2</span>${data.agency.name}</div>
+              <div>Private proposal | ${data.dates}</div>
+            </div>
+
+            <p class="hero-label">${data.duration} | ${data.client.travelers} travelers | ${data.hotel.room}</p>
+            <h1>${data.destination.name}</h1>
+            <p class="hero-subtitle">${data.destination.mood}</p>
+            <div class="hero-actions">
+              <a class="button" href="#price">Review proposal</a>
+              <a class="button secondary" href="#hotel">Explore the stay</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="quick-facts" aria-label="Trip overview">
+          <div class="fact"><span>Destination</span><strong>${data.destination.name}</strong></div>
+          <div class="fact"><span>Dates</span><strong>${data.dates}</strong></div>
+          <div class="fact"><span>Travelers</span><strong>${data.client.travelers} guests</strong></div>
+          <div class="fact"><span>From</span><strong>${money.format(data.price.amount)}</strong></div>
+        </section>
+
+        <section class="section">
+          <div class="section-inner intro-grid">
+            <div>
+              <p class="eyebrow">Why this trip</p>
+              <h2>Island privacy with a polished, client-ready story.</h2>
+              <p class="lead">${data.hotel.description}</p>
+            </div>
+            <div class="trip-highlights">
+              ${highlightItems.map(item => `
+                <div class="highlight">
+                  <div class="highlight-icon">${item.icon}</div>
+                  <div>
+                    <h3>${item.title}</h3>
+                    <p>${item.text}</p>
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        </section>
+
+        <section class="section compact">
+          <div class="section-inner">
+            <p class="eyebrow">Visual mood</p>
+            <h2>Blue water, soft mornings, private-space luxury.</h2>
+            <div class="media-grid">
+              <img src="${data.images.gallery1}" alt="Maldives turquoise lagoon and white sand">
+              <div class="stacked-media">
+                <img src="${data.images.gallery2}" alt="Overwater villas at sunset">
+                <img src="${data.images.gallery3}" alt="Luxury resort pool and palm trees">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="hotel-band" id="hotel">
+          <div class="section-inner hotel-grid">
+            <div>
+              <p class="eyebrow">Selected stay</p>
+              <h2>${data.hotel.name}</h2>
+              <p>${data.hotel.description}</p>
+              <p><strong>${data.hotel.room}</strong><br>${data.hotel.board}</p>
+              <div class="amenities">
+                ${data.hotel.amenities.map(item => `<span class="amenity">${item}</span>`).join("")}
+              </div>
+            </div>
+            <img class="hotel-image" src="${data.images.hotel}" alt="Private overwater villa with ocean view">
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-inner">
+            <p class="eyebrow">Journey summary</p>
+            <h2>Clean flight detail without turning the proposal into a timetable.</h2>
+            <div class="journey-grid">
+              <div class="journey-panel">
+                <h3>Outbound <span>To paradise</span></h3>
+                ${renderSegments(data.flights.outbound)}
+              </div>
+              <div class="journey-panel">
+                <h3>Return <span>Back home</span></h3>
+                ${renderSegments(data.flights.inbound)}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section price-section" id="price">
+          <div class="section-inner price-layout">
+            <div>
+              <p class="eyebrow">Included</p>
+              <h2>Everything the client needs to say yes with confidence.</h2>
+              <div class="inclusions">
+                ${data.inclusions.map(item => `
+                  <div class="inclusion"><span class="check">&#10003;</span><span>${item}</span></div>
+                `).join("")}
+              </div>
+            </div>
+            <aside class="price-box">
+              <span>Proposal price</span>
+              <p class="price">${money.format(data.price.amount)}</p>
+              <p class="price-note">${data.price.note}</p>
+              <div class="signature">
+                <div>
+                  <strong>${data.agency.agent}</strong>
+                  <small>${data.agency.name}</small>
+                </div>
+                <a class="button whatsapp" href="#">WhatsApp</a>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <details class="json-drawer">
+          <summary>Travel JSON used by this prototype</summary>
+          <pre>${JSON.stringify(data, null, 2)}</pre>
+        </details>
+      `;
+    }
+
+    renderProposal(travelOffer);
+  </script>
+</body>
+</html>
