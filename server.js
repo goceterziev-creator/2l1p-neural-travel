@@ -41,6 +41,11 @@ const REGRESSION_LIBRARY_DIR = process.env.REGRESSION_LIBRARY_DIR
   : (fs.existsSync("/data")
     ? path.join("/data", "REGRESSION_LIBRARY")
     : path.join(__dirname, "storage", "regression-library"));
+const GEMINI_INTAKE_TEST_DIR = process.env.GEMINI_INTAKE_TEST_DIR
+  ? path.resolve(process.env.GEMINI_INTAKE_TEST_DIR)
+  : (fs.existsSync("/data")
+    ? path.join("/data", "GEMINI_INTAKE_TEST")
+    : path.join(__dirname, "storage", "gemini-intake-test"));
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
 console.log("SERVING FROM:", PUBLIC_DIR);
@@ -7781,6 +7786,360 @@ function getUploadedImageFiles(req) {
   return req.file ? [req.file] : [];
 }
 
+const GEMINI_FLIGHT_SCHEMA = {
+  type: "object",
+  properties: {
+    outbound: {
+      type: "object",
+      properties: {
+        segments: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              from: { type: "string" },
+              to: { type: "string" },
+              departure: { type: "string" },
+              arrival: { type: "string" },
+              airline: { type: "string" },
+              flightNumber: { type: "string" },
+              duration: { type: "string" }
+            }
+          }
+        },
+        totalDuration: { type: "string" },
+        stops: { type: "number" }
+      }
+    },
+    inbound: {
+      type: "object",
+      properties: {
+        segments: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              from: { type: "string" },
+              to: { type: "string" },
+              departure: { type: "string" },
+              arrival: { type: "string" },
+              airline: { type: "string" },
+              flightNumber: { type: "string" },
+              duration: { type: "string" }
+            }
+          }
+        },
+        totalDuration: { type: "string" },
+        stops: { type: "number" }
+      }
+    },
+    price: { type: "number" },
+    currency: { type: "string" },
+    baggage: { type: "string" },
+    passengers: { type: "number" },
+    dates: { type: "array", items: { type: "string" } }
+  }
+};
+
+function normalizeGeminiIata(value = "") {
+  const match = String(value || "").toUpperCase().match(/\b[A-Z]{3}\b/);
+  return match ? match[0] : "";
+}
+
+function safeGeminiSegments(group = {}) {
+  return safeArray(group?.segments).map((segment) => ({
+    from: normalizeGeminiIata(segment.from),
+    to: normalizeGeminiIata(segment.to),
+    departure: String(segment.departure || "").trim(),
+    arrival: String(segment.arrival || "").trim(),
+    airline: String(segment.airline || "").trim(),
+    flightNumber: String(segment.flightNumber || "").replace(/\s+/g, " ").trim(),
+    duration: String(segment.duration || "").trim(),
+    transferBefore: String(segment.transferBefore || "").trim()
+  })).filter((segment) => segment.from || segment.to || segment.departure || segment.arrival);
+}
+
+function validateGeminiFlightJson(value = {}) {
+  const outboundSegments = safeGeminiSegments(value.outbound);
+  const inboundSegments = safeGeminiSegments(value.inbound);
+  const price = Number(String(value.price ?? 0).replace(/[^\d.,-]/g, "").replace(",", ".")) || 0;
+  const dates = safeArray(value.dates).map((item) => String(item || "").trim()).filter(Boolean);
+  return {
+    outbound: {
+      segments: outboundSegments,
+      totalDuration: String(value.outbound?.totalDuration || "").trim(),
+      stops: Number(value.outbound?.stops ?? Math.max(outboundSegments.length - 1, 0)) || 0
+    },
+    inbound: {
+      segments: inboundSegments,
+      totalDuration: String(value.inbound?.totalDuration || "").trim(),
+      stops: Number(value.inbound?.stops ?? Math.max(inboundSegments.length - 1, 0)) || 0
+    },
+    price,
+    currency: String(value.currency || "EUR").trim().toUpperCase() || "EUR",
+    baggage: String(value.baggage || "").replace(/\s+/g, " ").trim(),
+    passengers: Number(value.passengers || 0) || 0,
+    dates
+  };
+}
+
+function formatGeminiSegmentSummary(segments = [], fallback = "") {
+  const first = safeArray(segments)[0];
+  const last = safeArray(segments)[safeArray(segments).length - 1];
+  if (!first || !last) return fallback;
+  const via = safeArray(segments).slice(1)
+    .map((segment) => segment.from)
+    .filter((code, index, list) => code && code !== first.from && code !== last.to && list.indexOf(code) === index);
+  const route = `${first.from || "-"} -> ${last.to || "-"}`;
+  const times = [first.departure, last.arrival].filter(Boolean).join(" - ");
+  return [route, times, via.length ? `via ${via.join(" + ")}` : ""].filter(Boolean).join(", ");
+}
+
+function geminiCanonicalToFlight(gemini = {}) {
+  const outboundSegments = safeGeminiSegments(gemini.outbound);
+  const inboundSegments = safeGeminiSegments(gemini.inbound);
+  const firstOutbound = outboundSegments[0] || {};
+  const lastOutbound = outboundSegments[outboundSegments.length - 1] || {};
+  const firstInbound = inboundSegments[0] || {};
+  const lastInbound = inboundSegments[inboundSegments.length - 1] || {};
+  const route = firstOutbound.from && lastOutbound.to && firstInbound.from && lastInbound.to
+    ? `${firstOutbound.from} -> ${lastOutbound.to} / ${firstInbound.from} -> ${lastInbound.to}`
+    : "";
+  const airline = [...new Set([
+    ...outboundSegments.map((segment) => segment.airline),
+    ...inboundSegments.map((segment) => segment.airline)
+  ].filter(Boolean))].join(" + ");
+  const flightNumbers = [...new Set([
+    ...outboundSegments.map((segment) => segment.flightNumber),
+    ...inboundSegments.map((segment) => segment.flightNumber)
+  ].filter(Boolean))];
+  const stopovers = [...new Set([
+    ...outboundSegments.slice(1).map((segment) => segment.from),
+    ...inboundSegments.slice(1).map((segment) => segment.from)
+  ].filter(Boolean))];
+  const transferTimes = [...new Set([
+    ...outboundSegments.map((segment) => segment.transferBefore),
+    ...inboundSegments.map((segment) => segment.transferBefore)
+  ].filter(Boolean))];
+
+  return {
+    airline,
+    route,
+    departure: formatGeminiSegmentSummary(outboundSegments),
+    arrival: formatGeminiSegmentSummary(inboundSegments),
+    baggage: gemini.baggage || "Не е посочено",
+    notes: [
+      flightNumbers.length ? `Полети: ${flightNumbers.join(", ")}.` : "",
+      "Gemini Vision Test result. Проверете финално часовете, багажа и условията преди резервация."
+    ].filter(Boolean).join(" "),
+    price: Number(gemini.price || 0) || 0,
+    currency: gemini.currency || "EUR",
+    outboundSegments: normalizeStoredFlightSegments(outboundSegments),
+    inboundSegments: normalizeStoredFlightSegments(inboundSegments),
+    stopoverAirports: stopovers,
+    transferTimes,
+    segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments])
+  };
+}
+
+function extractJsonFromGeminiResponse(payload = {}) {
+  const parts = safeArray(payload?.candidates?.[0]?.content?.parts);
+  const text = parts.map((part) => part.text || "").join("\n").trim();
+  if (!text) throw new Error("Gemini returned an empty response.");
+  try {
+    return JSON.parse(text);
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("Gemini response was not valid JSON.");
+    return JSON.parse(match[0]);
+  }
+}
+
+async function extractFlightWithGeminiVision(files = [], { destination = "" } = {}) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    const error = new Error("Missing GEMINI_API_KEY. Add it in Railway Variables to enable Gemini Vision Test.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const model = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const prompt = [
+    "You are extracting flight itinerary data from travel screenshots for GT63.",
+    "Return JSON only. Do not add markdown. Do not guess invisible fields.",
+    "Use IATA airport codes when visible. Use ISO-like YYYY-MM-DDTHH:MM when dates are visible enough; otherwise keep the visible text.",
+    "Extract outbound and inbound segments, price, currency, baggage, passengers, and visible dates.",
+    destination ? `Expected destination context: ${destination}` : "",
+    "Schema keys: outbound.segments[], inbound.segments[], price, currency, baggage, passengers, dates."
+  ].filter(Boolean).join("\n");
+
+  const imageParts = safeArray(files).slice(0, 4).map((file) => ({
+    inlineData: {
+      mimeType: file.mimetype || "image/png",
+      data: Buffer.from(file.buffer).toString("base64")
+    }
+  }));
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        role: "user",
+        parts: [
+          { text: prompt },
+          ...imageParts
+        ]
+      }],
+      generationConfig: {
+        temperature: 0,
+        responseMimeType: "application/json",
+        responseSchema: GEMINI_FLIGHT_SCHEMA
+      }
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `Gemini request failed with HTTP ${response.status}`);
+  }
+
+  const canonical = validateGeminiFlightJson(extractJsonFromGeminiResponse(payload));
+  return {
+    model,
+    canonical,
+    flight: geminiCanonicalToFlight(canonical),
+    rawResponse: payload
+  };
+}
+
+function compareFlightResults(parserFlight = {}, geminiFlight = {}) {
+  const parserPrice = Number(parserFlight.price || 0) || 0;
+  const geminiPrice = Number(geminiFlight.price || 0) || 0;
+  return {
+    route: {
+      parser: parserFlight.route || "",
+      gemini: geminiFlight.route || "",
+      match: Boolean(parserFlight.route && geminiFlight.route && parserFlight.route === geminiFlight.route)
+    },
+    price: {
+      parser: parserPrice,
+      gemini: geminiPrice,
+      match: parserPrice > 0 && geminiPrice > 0 && Math.abs(parserPrice - geminiPrice) < 0.01
+    },
+    dates: {
+      parser: [parserFlight.departure, parserFlight.arrival].filter(Boolean),
+      gemini: [geminiFlight.departure, geminiFlight.arrival].filter(Boolean),
+      match: Boolean(parserFlight.departure && parserFlight.arrival && geminiFlight.departure && geminiFlight.arrival)
+    },
+    segments: {
+      parser: safeArray(parserFlight.segments).length,
+      gemini: safeArray(geminiFlight.segments).length,
+      match: safeArray(parserFlight.segments).length === safeArray(geminiFlight.segments).length
+    },
+    airline: {
+      parser: parserFlight.airline || "",
+      gemini: geminiFlight.airline || "",
+      match: Boolean(parserFlight.airline && geminiFlight.airline && parserFlight.airline === geminiFlight.airline)
+    }
+  };
+}
+
+function archiveGeminiVisionIntakeSafe({
+  files = [],
+  parserFlight = {},
+  geminiFlight = {},
+  geminiCanonical = {},
+  comparison = {},
+  rawOcrText = "",
+  rawGeminiResponse = {},
+  destination = "",
+  model = ""
+} = {}) {
+  try {
+    const { folder, iso } = regressionTimestampParts();
+    const label = sanitizeRegressionPathPart(geminiFlight.route || parserFlight.route || destination || "gemini-flight");
+    const caseDir = path.join(GEMINI_INTAKE_TEST_DIR, `${folder}_${label}`);
+    fs.mkdirSync(caseDir, { recursive: true });
+
+    safeArray(files).slice(0, 4).forEach((file, index) => {
+      if (!Buffer.isBuffer(file?.buffer)) return;
+      const ext = path.extname(file.originalname || "") || ".png";
+      fs.writeFileSync(path.join(caseDir, `screenshot_${index + 1}${ext}`), file.buffer);
+    });
+    if (rawOcrText) fs.writeFileSync(path.join(caseDir, "parser_ocr.txt"), rawOcrText, "utf8");
+    writeJsonFile(path.join(caseDir, "gemini_json.json"), geminiCanonical);
+    writeJsonFile(path.join(caseDir, "gemini_flight.json"), geminiFlight);
+    writeJsonFile(path.join(caseDir, "parser_json.json"), parserFlight);
+    writeJsonFile(path.join(caseDir, "comparison.json"), comparison);
+    writeJsonFile(path.join(caseDir, "gemini_raw_response.json"), rawGeminiResponse);
+    writeJsonFile(path.join(caseDir, "metadata.json"), {
+      timestamp: iso,
+      mode: "GEMINI_VISION_TEST",
+      destination,
+      model,
+      screenshotCount: safeArray(files).length,
+      parserRoute: parserFlight.route || "",
+      geminiRoute: geminiFlight.route || "",
+      parserPrice: Number(parserFlight.price || 0) || 0,
+      geminiPrice: Number(geminiFlight.price || 0) || 0
+    });
+
+    return { archived: true, path: caseDir };
+  } catch (error) {
+    console.warn("GT63 GEMINI VISION INTAKE ARCHIVE FAILED:", error.message);
+    return { archived: false, error: error.message };
+  }
+}
+
+async function runParserFlightImportForTest(imageFiles = [], { destination = "" } = {}) {
+  const textParts = [];
+  const ocrImageTexts = [];
+  for (let index = 0; index < imageFiles.length; index += 1) {
+    const file = imageFiles[index];
+    const ocrText = await recognizeFlightScreenshot(file.buffer);
+    ocrImageTexts.push(ocrText);
+    textParts.push(`--- OCR IMAGE ${index + 1}: ${file.originalname || "flight"} ---\n${ocrText}`);
+  }
+
+  const text = textParts.join("\n\n");
+  let profileImport = parseOcrByProfile(text, { kind: "flight", destination });
+  let flight = profileImport?.flight || {};
+  let metadata = profileImport?.metadata || {};
+
+  if (flight && Object.keys(flight).length) {
+    profileImport = {
+      ...profileImport,
+      ...enrichFlightOfferLevelDateTimes(text, flight, metadata)
+    };
+    metadata = profileImport.metadata || metadata;
+    flight = validateFlightAgainstDestination(profileImport.flight || flight, text, destination);
+    flight = enrichFlightStopSummary(text, flight, destination);
+    flight = parseConnectingFlightSegments(text, flight);
+    flight = mergeMultiImageFlightSegments(ocrImageTexts, flight);
+    flight.segments = normalizeStoredFlightSegments(
+      safeArray(flight.segments).length
+        ? flight.segments
+        : [
+            ...safeArray(flight.outboundSegments),
+            ...safeArray(flight.inboundSegments)
+          ]
+    );
+    flight.price = Number(flight.price || 0) || 0;
+  }
+
+  const flightConfidence = buildFlightOcrConfidence(text, flight, metadata);
+  return {
+    rawText: text,
+    ocrImageTexts,
+    flight,
+    metadata,
+    flightConfidence,
+    operatorWarnings: flightConfidence.risk?.warnings || []
+  };
+}
+
 const regressionLibraryMetrics = {
   lastArchivedCase: null,
   lastArchiveError: null
@@ -8328,6 +8687,56 @@ function mergeImportedHotelRecords(records = []) {
     images
   };
 }
+
+app.post("/api/import-image-gemini-test", requireCapability("imports.run"), upload.array("image", 4), async (req, res) => {
+  try {
+    const imageFiles = getUploadedImageFiles(req);
+    if (!imageFiles.length) {
+      return res.status(400).json({ error: "No image uploaded" });
+    }
+
+    const destination = req.body?.destination || "";
+    const parserResult = await runParserFlightImportForTest(imageFiles, { destination });
+    const geminiResult = await extractFlightWithGeminiVision(imageFiles, { destination });
+    const comparison = compareFlightResults(parserResult.flight, geminiResult.flight);
+    const archive = archiveGeminiVisionIntakeSafe({
+      files: imageFiles,
+      parserFlight: parserResult.flight,
+      geminiFlight: geminiResult.flight,
+      geminiCanonical: geminiResult.canonical,
+      comparison,
+      rawOcrText: parserResult.rawText,
+      rawGeminiResponse: geminiResult.rawResponse,
+      destination,
+      model: geminiResult.model
+    });
+
+    return res.json({
+      success: true,
+      mode: "GEMINI_VISION_TEST",
+      parser: {
+        flight: parserResult.flight,
+        metadata: parserResult.metadata,
+        flightConfidence: parserResult.flightConfidence,
+        operatorWarnings: parserResult.operatorWarnings
+      },
+      gemini: {
+        canonical: geminiResult.canonical,
+        flight: geminiResult.flight,
+        model: geminiResult.model
+      },
+      comparison,
+      archive,
+      rawText: parserResult.rawText
+    });
+  } catch (error) {
+    console.error("Gemini Vision intake test failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: "Gemini Vision intake test failed",
+      message: error.message
+    });
+  }
+});
 
 app.post("/api/import-image", requireCapability("imports.run"), upload.array("image", 4), async (req, res) => {
   try {

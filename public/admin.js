@@ -2555,6 +2555,52 @@ async function importData() {
   }
 }
 
+function applyFlightImportResult(data = {}, successMessage = "Flight screenshot imported successfully.") {
+    const f = normalizeFlightFields(data.flight || {});
+    const flightPrice = getImportedFlightPrice(data, f);
+    const importWarnings = getFlightImportWarnings(data);
+    const blockingWarnings = getBlockingFlightImportWarnings(f, flightPrice);
+    if (blockingWarnings.length) {
+      alert(formatBlockedFlightImportMessage(blockingWarnings, importWarnings));
+      return false;
+    }
+    mergeCurrentValidationWarnings(importWarnings);
+    console.log("FLIGHT IMPORT RESPONSE:", {
+      flightAirline: f.airline,
+      flightRoute: f.route,
+      flightPrice
+    });
+    const selectedDestination = getDestinationValue();
+
+    if (!destinationMatchesFlight(selectedDestination, f)) {
+      alert(
+        `Flight screenshot does not match the selected destination.\n\n` +
+        `Destination: ${selectedDestination || "-"}\n` +
+        `Flight: ${f?.route || "-"}\n\n` +
+        `Import stopped. Select the matching flight screenshot or change Destination.`
+      );
+      return false;
+    }
+
+    if ($("flightAirline")) $("flightAirline").value = f.airline || "";
+    if ($("flightRoute")) $("flightRoute").value = f.route || "";
+    if ($("mainFlightRoute")) $("mainFlightRoute").value = f.route || "";
+    if ($("flightDeparture")) $("flightDeparture").value = f.departure || "";
+    if ($("flightArrival")) $("flightArrival").value = f.arrival || "";
+    if ($("flightBaggage")) $("flightBaggage").value = f.baggage || "";
+    if ($("flightNotes")) $("flightNotes").value = f.notes || "";
+    setValue("flightPrice", flightPrice.toFixed(2));
+    addFlight({ ...f, price: flightPrice });
+
+    calculatePricing();
+    if (shouldReviewFlightImport(data) && importWarnings.length) {
+      alert(`Flight screenshot imported, but needs operator review:\n\n${importWarnings.join("\n")}`);
+    } else {
+      alert(successMessage);
+    }
+    return true;
+}
+
 async function uploadFlightImage() {
   if (!hasCapability("imports.run")) {
     alert("Your role cannot run imports.");
@@ -2580,52 +2626,88 @@ async function uploadFlightImage() {
     });
 
     console.log("FLIGHT OCR DATA:", data);
-
-    const f = normalizeFlightFields(data.flight || {});
-    const flightPrice = getImportedFlightPrice(data, f);
-    const importWarnings = getFlightImportWarnings(data);
-    const blockingWarnings = getBlockingFlightImportWarnings(f, flightPrice);
-    if (blockingWarnings.length) {
-      alert(formatBlockedFlightImportMessage(blockingWarnings, importWarnings));
-      return;
-    }
-    mergeCurrentValidationWarnings(importWarnings);
-    console.log("FLIGHT IMPORT RESPONSE:", {
-      flightAirline: f.airline,
-      flightRoute: f.route,
-      flightPrice
-    });
-    const selectedDestination = getDestinationValue();
-
-    if (!destinationMatchesFlight(selectedDestination, f)) {
-      alert(
-        `Flight screenshot does not match the selected destination.\n\n` +
-        `Destination: ${selectedDestination || "-"}\n` +
-        `Flight: ${f?.route || "-"}\n\n` +
-        `Import stopped. Select the matching flight screenshot or change Destination.`
-      );
-      return;
-    }
-
-    if ($("flightAirline")) $("flightAirline").value = f.airline || "";
-    if ($("flightRoute")) $("flightRoute").value = f.route || "";
-    if ($("mainFlightRoute")) $("mainFlightRoute").value = f.route || "";
-    if ($("flightDeparture")) $("flightDeparture").value = f.departure || "";
-    if ($("flightArrival")) $("flightArrival").value = f.arrival || "";
-    if ($("flightBaggage")) $("flightBaggage").value = f.baggage || "";
-    if ($("flightNotes")) $("flightNotes").value = f.notes || "";
-    setValue("flightPrice", flightPrice.toFixed(2));
-    addFlight({ ...f, price: flightPrice });
-
-    calculatePricing();
-    if (shouldReviewFlightImport(data) && importWarnings.length) {
-      alert(`Flight screenshot imported, but needs operator review:\n\n${importWarnings.join("\n")}`);
-    } else {
-      alert("Flight screenshot imported successfully.");
-    }
+    applyFlightImportResult(data, "Flight screenshot imported successfully.");
   } catch (error) {
     console.error("Flight image import failed:", error);
     alert(`Error: ${error.message}`);
+  }
+}
+
+function formatGeminiComparisonLine(label, item = {}) {
+  return `${label}: parser=${item.parser || item.parser === 0 ? item.parser : "-"} | gemini=${item.gemini || item.gemini === 0 ? item.gemini : "-"} | ${item.match ? "match" : "diff"}`;
+}
+
+async function uploadFlightImageGeminiTest() {
+  if (!hasCapability("imports.run")) {
+    alert("Your role cannot run imports.");
+    return;
+  }
+
+  const input = $("flightImage");
+  const files = Array.from(input?.files || []);
+
+  if (!files.length) {
+    alert("Select at least one flight screenshot first.");
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    files.slice(0, 4).forEach((file) => formData.append("image", file));
+    formData.append("destination", $("destination")?.value || "");
+
+    const data = await fetchJson("/api/import-image-gemini-test", {
+      method: "POST",
+      body: formData
+    });
+
+    console.log("GEMINI VISION TEST DATA:", data);
+    const comparison = data.comparison || {};
+    const message = [
+      "Gemini Vision Test complete.",
+      "",
+      formatGeminiComparisonLine("Route", comparison.route),
+      formatGeminiComparisonLine("Price", comparison.price),
+      `Dates: parser=${(comparison.dates?.parser || []).join(" / ") || "-"} | gemini=${(comparison.dates?.gemini || []).join(" / ") || "-"} | ${comparison.dates?.match ? "present" : "missing"}`,
+      formatGeminiComparisonLine("Segments", comparison.segments),
+      formatGeminiComparisonLine("Airline", comparison.airline),
+      "",
+      "Type GEMINI to use Gemini result.",
+      "Type PARSER to use parser result.",
+      "Cancel = do not apply anything."
+    ].join("\n");
+
+    const choice = window.prompt(message, "GEMINI");
+    if (choice === null) return;
+    const normalizedChoice = String(choice || "").trim().toLowerCase();
+    if (!["gemini", "parser"].includes(normalizedChoice)) {
+      alert("Gemini Vision Test cancelled. Type GEMINI or PARSER next time.");
+      return;
+    }
+
+    const selected = normalizedChoice === "gemini"
+      ? {
+          flight: data.gemini?.flight || {},
+          flightPrice: Number(data.gemini?.flight?.price || data.gemini?.canonical?.price || 0) || 0,
+          operatorWarnings: [],
+          risk: { requiresOperatorReview: false, warnings: [] }
+        }
+      : {
+          flight: data.parser?.flight || {},
+          flightPrice: Number(data.parser?.flight?.price || 0) || 0,
+          flightConfidence: data.parser?.flightConfidence,
+          operatorWarnings: data.parser?.operatorWarnings || []
+        };
+
+    applyFlightImportResult(
+      selected,
+      normalizedChoice === "gemini"
+        ? "Gemini Vision result applied to the offer."
+        : "Parser result applied to the offer."
+    );
+  } catch (error) {
+    console.error("Gemini Vision Test failed:", error);
+    alert(`Gemini Vision Test failed: ${error.message}`);
   }
 }
 
@@ -3860,6 +3942,7 @@ if (validationWarnings.length) {
 
 window.importData = importData;
 window.uploadFlightImage = uploadFlightImage;
+window.uploadFlightImageGeminiTest = uploadFlightImageGeminiTest;
 window.uploadHotelImage = uploadHotelImage;
 window.autoBuildOffer = autoBuildOffer;
 window.saveOffer = saveOffer;
