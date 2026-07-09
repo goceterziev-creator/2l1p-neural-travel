@@ -12,6 +12,7 @@ const multer = require("multer");
 const QRCode = require("qrcode");
 const sharp = require("sharp");
 const zlib = require("zlib");
+const { formatFlightItineraryBg } = require("./server/flight-display-bg");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -1496,7 +1497,8 @@ function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
     outboundSegments,
     inboundSegments,
     stopoverAirports: safeArray(f.stopoverAirports).map((code) => String(code || "").trim().toUpperCase()).filter(Boolean),
-    transferTimes: safeArray(f.transferTimes).map((time) => String(time || "").replace(/\s+/g, " ").trim()).filter(Boolean)
+    transferTimes: safeArray(f.transferTimes).map((time) => String(time || "").replace(/\s+/g, " ").trim()).filter(Boolean),
+    displayBg: f.displayBg && typeof f.displayBg === "object" ? f.displayBg : null
   };
 }
 
@@ -7922,7 +7924,7 @@ function geminiCanonicalToFlight(gemini = {}) {
     ...inboundSegments.map((segment) => segment.transferBefore)
   ].filter(Boolean))];
 
-  return {
+  const flight = {
     airline,
     route,
     departure: formatGeminiSegmentSummary(outboundSegments),
@@ -7940,6 +7942,10 @@ function geminiCanonicalToFlight(gemini = {}) {
     transferTimes,
     segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments])
   };
+  flight.displayBg = {
+    itineraryText: formatFlightItineraryBg(flight)
+  };
+  return flight;
 }
 
 function extractJsonFromGeminiResponse(payload = {}) {

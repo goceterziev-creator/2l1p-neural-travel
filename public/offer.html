@@ -996,6 +996,10 @@ function getDestinationImage(destination = "") {
             </div>
           </div>
 
+          ${flight.displayBg?.itineraryText ? `
+            <pre class="detail-box" style="white-space: pre-wrap; line-height: 1.55; grid-column: 1 / -1;">${escapeHtml(flight.displayBg.itineraryText)}</pre>
+          ` : ""}
+
           <div class="detail-grid">
             <div class="detail-box">
               <b>Излитане</b>

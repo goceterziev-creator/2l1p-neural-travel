@@ -61,7 +61,8 @@ function addFlight(flight = {}) {
     outboundSegments: Array.isArray(cleanFlight.outboundSegments) ? cleanFlight.outboundSegments : [],
     inboundSegments: Array.isArray(cleanFlight.inboundSegments) ? cleanFlight.inboundSegments : [],
     stopoverAirports: Array.isArray(cleanFlight.stopoverAirports) ? cleanFlight.stopoverAirports : [],
-    transferTimes: Array.isArray(cleanFlight.transferTimes) ? cleanFlight.transferTimes : []
+    transferTimes: Array.isArray(cleanFlight.transferTimes) ? cleanFlight.transferTimes : [],
+    displayBg: cleanFlight.displayBg && typeof cleanFlight.displayBg === "object" ? cleanFlight.displayBg : null
   };
   const nextRoundTripRoute = roundTripRouteKey(nextFlight);
   const existingIndex = flights.findIndex((item) =>
@@ -3046,6 +3047,16 @@ function formatOperatorFlightSegment(segment = {}) {
 }
 
 function renderOperatorFlightSegments(flight = {}) {
+  const bgItinerary = String(flight?.displayBg?.itineraryText || "").trim();
+  if (bgItinerary) {
+    return `
+      <div class="flight-segment-review">
+        <div class="flight-segment-review-title">Segment review</div>
+        <pre class="flight-segment-summary" style="white-space: pre-wrap; line-height: 1.45;">${escapeHtml(bgItinerary)}</pre>
+      </div>
+    `;
+  }
+
   const renderDirection = (label, segments = []) => {
     if (!Array.isArray(segments) || !segments.length) return "";
 
