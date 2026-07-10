@@ -12,7 +12,9 @@ const multer = require("multer");
 const QRCode = require("qrcode");
 const sharp = require("sharp");
 const zlib = require("zlib");
-const { formatFlightItineraryBg } = require("./server/flight-display-bg");
+const {
+  renderClientFlightItineraryBg
+} = require("./server/flight-display-bg");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -981,6 +983,21 @@ function getFlights(offer) {
   return safeArray(offer.flights).length ? safeArray(offer.flights) : safeArray(offer.flightOptions);
 }
 
+function withBulgarianOfferFlightDisplay(offer = {}) {
+  const enriched = { ...offer };
+  const flights = getFlights(offer).map((flight) => withBulgarianFlightDisplay(flight));
+  if (flights.length) {
+    enriched.flights = flights;
+    enriched.flightOptions = flights;
+  }
+  const hotels = getHotels(offer);
+  if (hotels.length) {
+    enriched.hotels = hotels;
+    enriched.hotelOptions = hotels;
+  }
+  return enriched;
+}
+
 function getHotels(offer) {
   return safeArray(offer.hotels).length ? safeArray(offer.hotels) : safeArray(offer.hotelOptions);
 }
@@ -1481,6 +1498,26 @@ function normalizeStoredFlightSegments(segments = []) {
     .filter((segment) => segment.from && segment.to && (segment.departure || segment.arrival || segment.flightNumber));
 }
 
+function withBulgarianFlightDisplay(flight = {}) {
+  const normalized = flight && typeof flight === "object" ? { ...flight } : {};
+  const hasStructuredSegments =
+    safeArray(normalized.outboundSegments).length > 0 ||
+    safeArray(normalized.inboundSegments).length > 0 ||
+    safeArray(normalized.outbound?.segments).length > 0 ||
+    safeArray(normalized.inbound?.segments).length > 0;
+
+  if (!hasStructuredSegments) return normalized;
+
+  const itineraryText = renderClientFlightItineraryBg(normalized);
+  if (!itineraryText) return normalized;
+
+  normalized.displayBg = {
+    ...(normalized.displayBg && typeof normalized.displayBg === "object" ? normalized.displayBg : {}),
+    itineraryText
+  };
+  return normalized;
+}
+
 function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
   const outboundSegments = normalizeStoredFlightSegments(f.outboundSegments);
   const inboundSegments = normalizeStoredFlightSegments(f.inboundSegments);
@@ -1488,7 +1525,7 @@ function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
     safeArray(f.segments).length ? f.segments : [...outboundSegments, ...inboundSegments]
   );
 
-  return {
+  return withBulgarianFlightDisplay({
     airline: f.airline || "",
     route: f.route || "",
     departure: cleanFlightDisplayField(f.departure || ""),
@@ -1502,7 +1539,7 @@ function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
     stopoverAirports: safeArray(f.stopoverAirports).map((code) => String(code || "").trim().toUpperCase()).filter(Boolean),
     transferTimes: safeArray(f.transferTimes).map((time) => String(time || "").replace(/\s+/g, " ").trim()).filter(Boolean),
     displayBg: f.displayBg && typeof f.displayBg === "object" ? f.displayBg : null
-  };
+  });
 }
 
 function normalizeOffer(body = {}) {
@@ -5646,7 +5683,7 @@ function enrichHotelImportFallbacks(hotel = {}, parsed = {}, destination = "") {
 
 async function renderOfferHtml(offer, options = {}) {
   const { forPdf = false, showWarnings = true, qaMode = false } = options;
-  const flights = getFlights(offer);
+  const flights = getFlights(offer).map((flight) => withBulgarianFlightDisplay(flight));
   const hotels = getHotels(offer);
   const validationWarnings = safeArray(offer.validationWarnings);
   const hasWarnings = showWarnings && validationWarnings.length > 0 && (qaMode || !offer.warningsDismissed);
@@ -6131,12 +6168,16 @@ async function renderOfferHtml(offer, options = {}) {
 
   const flightCards = flights.map((flight) => {
     const displayFlight = fillFlightDisplayFallbacks(flight, offer);
+    const itineraryText = displayFlight.displayBg?.itineraryText || "";
     const segments = routeSegments(flight.route || offer.flightRoute);
     return `
       <article class="card flight-card">
         <div class="card-kicker">Авиокомпания</div>
         <h3>${escapeHtml(airlineName(flight.airline))}</h3>
 
+        ${itineraryText ? `
+          <pre class="flight-itinerary-bg">${escapeHtml(itineraryText)}</pre>
+        ` : `
         <div class="route-timeline">
           ${segments.map((segment, index) => `
             <div class="route-row">
@@ -6148,10 +6189,13 @@ async function renderOfferHtml(offer, options = {}) {
             </div>
           `).join("")}
         </div>
+        `}
 
         <div class="detail-grid">
+          ${itineraryText ? "" : `
           <div><strong>Отиване</strong><br>${escapeHtml(clientSafeFlightText(displayFlight.departure, "-"))}</div>
           <div><strong>Връщане</strong><br>${escapeHtml(clientSafeFlightText(displayFlight.arrival, "-"))}</div>
+          `}
           <div><strong>Багаж</strong><br>${escapeHtml(clientSafeBaggageSummary(flight.baggage))}</div>
           <div><strong>Препоръка</strong><br>Бъдете на летището поне 2 часа преди излитане.</div>
         </div>
@@ -6484,6 +6528,17 @@ h1 {
   display: block;
   color: #667085;
   margin-top: 3px;
+}
+.flight-itinerary-bg {
+  white-space: pre-wrap;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 16px;
+  margin: 0 0 18px;
+  font: inherit;
+  line-height: 1.55;
+  color: #111827;
 }
 .detail-grid {
   display: grid;
@@ -7458,7 +7513,7 @@ app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).json({ error: "Offer not found" });
   if (!canAccessOffer(req, offer)) return res.status(403).json({ error: "Forbidden" });
-  res.json({ offer });
+  res.json({ success: true, offer: withBulgarianOfferFlightDisplay(offer) });
 });
 
 app.post("/api/offers", requireCapability("offers.create"), async (req, res) => {
@@ -7946,7 +8001,7 @@ function geminiCanonicalToFlight(gemini = {}) {
     segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments])
   };
   flight.displayBg = {
-    itineraryText: formatFlightItineraryBg(flight)
+    itineraryText: renderClientFlightItineraryBg(flight)
   };
   return flight;
 }
@@ -8300,7 +8355,7 @@ function universalFlightToOfferFlight(universalFlight = {}) {
     inboundSegments: normalizeStoredFlightSegments(inboundSegments),
     segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments])
   };
-  flight.displayBg = { itineraryText: formatFlightItineraryBg(flight) };
+  flight.displayBg = { itineraryText: renderClientFlightItineraryBg(flight) };
   return flight;
 }
 

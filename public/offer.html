@@ -350,6 +350,19 @@
       font-weight: 600;
     }
 
+    .flight-itinerary-bg {
+      white-space: pre-wrap;
+      background: #f8fafc;
+      border: 1px solid #edf2f7;
+      border-radius: 14px;
+      padding: 14px;
+      margin: 16px 0 0;
+      font: inherit;
+      line-height: 1.55;
+      color: #111827;
+      grid-column: 1 / -1;
+    }
+
     .price-side {
       text-align: right;
       align-self: stretch;
@@ -975,16 +988,17 @@ function getDestinationImage(destination = "") {
   }
 
   return "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80";
-}
+    }
 
     function renderFlightCard(flight, index, currency) {
+      const itineraryText = flight.displayBg?.itineraryText || "";
       return `
         <article class="lux-card flight-card">
           <div class="flight-top">
             <div>
               <div class="small-kicker">Полетен вариант ${index + 1}</div>
               <div class="flight-airline">${escapeHtml(flight.airline || "Airline")}</div>
-              <div class="flight-route">${escapeHtml(translate(flight.route || "Маршрут при запитване"))}</div>
+              ${itineraryText ? "" : `<div class="flight-route">${escapeHtml(translate(flight.route || "Маршрут при запитване"))}</div>`}
             </div>
 
             <div class="price-side">
@@ -996,11 +1010,12 @@ function getDestinationImage(destination = "") {
             </div>
           </div>
 
-          ${flight.displayBg?.itineraryText ? `
-            <pre class="detail-box" style="white-space: pre-wrap; line-height: 1.55; grid-column: 1 / -1;">${escapeHtml(flight.displayBg.itineraryText)}</pre>
+          ${itineraryText ? `
+            <pre class="flight-itinerary-bg">${escapeHtml(itineraryText)}</pre>
           ` : ""}
 
           <div class="detail-grid">
+            ${itineraryText ? "" : `
             <div class="detail-box">
               <b>Излитане</b>
               ${escapeHtml(flight.departure || "-")}
@@ -1009,6 +1024,7 @@ function getDestinationImage(destination = "") {
               <b>Кацане</b>
               ${escapeHtml(flight.arrival || "-")}
             </div>
+            `}
             <div class="detail-box">
               <b>Багаж</b>
               ${escapeHtml(translate(flight.baggage || "Не е уточнен"))}
