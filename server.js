@@ -47,6 +47,9 @@ const GEMINI_INTAKE_TEST_DIR = process.env.GEMINI_INTAKE_TEST_DIR
   : (fs.existsSync("/data")
     ? path.join("/data", "GEMINI_INTAKE_TEST")
     : path.join(__dirname, "storage", "gemini-intake-test"));
+const SOURCE_EVIDENCE_DIR = process.env.SOURCE_EVIDENCE_DIR
+  ? path.resolve(process.env.SOURCE_EVIDENCE_DIR)
+  : path.join(__dirname, "storage", "source-evidence");
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
 console.log("SERVING FROM:", PUBLIC_DIR);
@@ -8020,6 +8023,397 @@ async function extractFlightWithGeminiVision(files = [], { destination = "" } = 
   };
 }
 
+const GEMINI_UNIVERSAL_TRAVEL_SCHEMA = {
+  type: "object",
+  properties: {
+    sources: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          sourceId: { type: "string" },
+          sourceType: { type: "string", enum: ["flight", "hotel", "mixed", "unknown"] },
+          originalFilename: { type: "string" }
+        }
+      }
+    },
+    flight: {
+      type: "object",
+      properties: {
+        tripType: { type: "string" },
+        outbound: {
+          type: "object",
+          properties: {
+            segments: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  airline: { type: "string" },
+                  flightNumber: { type: "string" },
+                  departureAirport: { type: "string" },
+                  departureCity: { type: "string" },
+                  departureDate: { type: "string" },
+                  departureTime: { type: "string" },
+                  arrivalAirport: { type: "string" },
+                  arrivalCity: { type: "string" },
+                  arrivalDate: { type: "string" },
+                  arrivalTime: { type: "string" },
+                  duration: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        inbound: {
+          type: "object",
+          properties: {
+            segments: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  airline: { type: "string" },
+                  flightNumber: { type: "string" },
+                  departureAirport: { type: "string" },
+                  departureCity: { type: "string" },
+                  departureDate: { type: "string" },
+                  departureTime: { type: "string" },
+                  arrivalAirport: { type: "string" },
+                  arrivalCity: { type: "string" },
+                  arrivalDate: { type: "string" },
+                  arrivalTime: { type: "string" },
+                  duration: { type: "string" }
+                }
+              }
+            }
+          }
+        },
+        travellers: {
+          type: "object",
+          properties: {
+            adults: { type: "string" },
+            children: { type: "string" },
+            infants: { type: "string" }
+          }
+        },
+        baggage: { type: "array", items: { type: "string" } },
+        price: {
+          type: "object",
+          properties: {
+            amount: { type: "string" },
+            currency: { type: "string" }
+          }
+        }
+      }
+    },
+    hotel: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        city: { type: "string" },
+        country: { type: "string" },
+        checkIn: { type: "string" },
+        checkOut: { type: "string" },
+        nights: { type: "string" },
+        rooms: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              roomType: { type: "string" },
+              board: { type: "string" },
+              adults: { type: "string" },
+              children: { type: "string" }
+            }
+          }
+        },
+        price: {
+          type: "object",
+          properties: {
+            amount: { type: "string" },
+            currency: { type: "string" },
+            taxesIncluded: { type: "string" }
+          }
+        },
+        cancellationPolicy: { type: "string" },
+        supplier: { type: "string" }
+      }
+    },
+    warnings: { type: "array", items: { type: "string" } },
+    confidence: {
+      type: "object",
+      properties: {
+        flight: { type: "string" },
+        hotel: { type: "string" },
+        overall: { type: "string" }
+      }
+    }
+  }
+};
+
+function parseUniversalAmount(value = "") {
+  return Number(String(value ?? "")
+    .replace(/[^\d.,-]/g, "")
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+    .replace(",", ".")) || 0;
+}
+
+function normalizeUniversalSegment(segment = {}) {
+  const departureAirport = normalizeGeminiIata(segment.departureAirport || segment.from || "");
+  const arrivalAirport = normalizeGeminiIata(segment.arrivalAirport || segment.to || "");
+  const departureDate = String(segment.departureDate || "").trim();
+  const arrivalDate = String(segment.arrivalDate || "").trim();
+  const departureTime = String(segment.departureTime || "").trim();
+  const arrivalTime = String(segment.arrivalTime || "").trim();
+  return {
+    airline: String(segment.airline || "").replace(/\s+/g, " ").trim(),
+    flightNumber: String(segment.flightNumber || "").replace(/\s+/g, " ").trim(),
+    departureAirport,
+    departureCity: String(segment.departureCity || "").trim(),
+    departureDate,
+    departureTime,
+    arrivalAirport,
+    arrivalCity: String(segment.arrivalCity || "").trim(),
+    arrivalDate,
+    arrivalTime,
+    duration: String(segment.duration || "").trim(),
+    from: departureAirport,
+    to: arrivalAirport,
+    departure: [departureDate, departureTime].filter(Boolean).join(" ").trim(),
+    arrival: [arrivalDate, arrivalTime].filter(Boolean).join(" ").trim()
+  };
+}
+
+function normalizeUniversalTravelJson(value = {}, files = [], intakeId = "") {
+  const sourceCandidates = safeArray(value.sources);
+  const sources = files.map((file, index) => {
+    const candidate = sourceCandidates[index] || {};
+    const sourceType = ["flight", "hotel", "mixed", "unknown"].includes(candidate.sourceType)
+      ? candidate.sourceType
+      : "unknown";
+    return {
+      sourceId: candidate.sourceId || `SRC-${index + 1}`,
+      sourceType,
+      originalFilename: file.originalname || candidate.originalFilename || `screenshot_${index + 1}`,
+      storedPath: "",
+      mimeType: file.mimetype || "image/png",
+      uploadedAt: new Date().toISOString()
+    };
+  });
+
+  const flight = value.flight && typeof value.flight === "object" ? value.flight : {};
+  const hotel = value.hotel && typeof value.hotel === "object" ? value.hotel : {};
+  const normalizedFlight = {
+    tripType: String(flight.tripType || "").trim(),
+    outbound: { segments: safeArray(flight.outbound?.segments).map(normalizeUniversalSegment) },
+    inbound: { segments: safeArray(flight.inbound?.segments).map(normalizeUniversalSegment) },
+    travellers: {
+      adults: String(flight.travellers?.adults || "").trim(),
+      children: String(flight.travellers?.children || "").trim(),
+      infants: String(flight.travellers?.infants || "").trim()
+    },
+    baggage: safeArray(flight.baggage).map((item) => String(item || "").trim()).filter(Boolean),
+    price: {
+      amount: parseUniversalAmount(flight.price?.amount),
+      currency: String(flight.price?.currency || "EUR").trim().toUpperCase() || "EUR"
+    }
+  };
+  const normalizedHotel = {
+    name: String(hotel.name || "").trim(),
+    city: String(hotel.city || "").trim(),
+    country: String(hotel.country || "").trim(),
+    checkIn: String(hotel.checkIn || "").trim(),
+    checkOut: String(hotel.checkOut || "").trim(),
+    nights: String(hotel.nights || "").trim(),
+    rooms: safeArray(hotel.rooms).map((room) => ({
+      roomType: String(room.roomType || "").trim(),
+      board: String(room.board || "").trim(),
+      adults: String(room.adults || "").trim(),
+      children: String(room.children || "").trim()
+    })),
+    price: {
+      amount: parseUniversalAmount(hotel.price?.amount),
+      currency: String(hotel.price?.currency || "EUR").trim().toUpperCase() || "EUR",
+      taxesIncluded: String(hotel.price?.taxesIncluded || "").trim()
+    },
+    cancellationPolicy: String(hotel.cancellationPolicy || "").trim(),
+    supplier: String(hotel.supplier || "").trim()
+  };
+
+  return {
+    intakeId,
+    offerId: "",
+    sources,
+    flight: normalizedFlight,
+    hotel: normalizedHotel,
+    warnings: safeArray(value.warnings).map((item) => String(item || "").trim()).filter(Boolean),
+    confidence: {
+      flight: String(value.confidence?.flight || "").trim(),
+      hotel: String(value.confidence?.hotel || "").trim(),
+      overall: String(value.confidence?.overall || "").trim()
+    }
+  };
+}
+
+function universalFlightToOfferFlight(universalFlight = {}) {
+  const outboundSegments = safeArray(universalFlight.outbound?.segments).map((segment) => ({
+    from: segment.departureAirport || segment.from || "",
+    to: segment.arrivalAirport || segment.to || "",
+    departure: segment.departure || [segment.departureDate, segment.departureTime].filter(Boolean).join(" ").trim(),
+    arrival: segment.arrival || [segment.arrivalDate, segment.arrivalTime].filter(Boolean).join(" ").trim(),
+    airline: segment.airline || "",
+    flightNumber: segment.flightNumber || "",
+    duration: segment.duration || ""
+  }));
+  const inboundSegments = safeArray(universalFlight.inbound?.segments).map((segment) => ({
+    from: segment.departureAirport || segment.from || "",
+    to: segment.arrivalAirport || segment.to || "",
+    departure: segment.departure || [segment.departureDate, segment.departureTime].filter(Boolean).join(" ").trim(),
+    arrival: segment.arrival || [segment.arrivalDate, segment.arrivalTime].filter(Boolean).join(" ").trim(),
+    airline: segment.airline || "",
+    flightNumber: segment.flightNumber || "",
+    duration: segment.duration || ""
+  }));
+  const firstOutbound = outboundSegments[0] || {};
+  const lastOutbound = outboundSegments[outboundSegments.length - 1] || {};
+  const firstInbound = inboundSegments[0] || {};
+  const lastInbound = inboundSegments[inboundSegments.length - 1] || {};
+  const route = firstOutbound.from && lastOutbound.to && firstInbound.from && lastInbound.to
+    ? `${firstOutbound.from} -> ${lastOutbound.to} / ${firstInbound.from} -> ${lastInbound.to}`
+    : "";
+  const airline = [...new Set([...outboundSegments, ...inboundSegments].map((segment) => segment.airline).filter(Boolean))].join(" + ");
+  const flightNumbers = [...new Set([...outboundSegments, ...inboundSegments].map((segment) => segment.flightNumber).filter(Boolean))];
+  const flight = {
+    airline,
+    route,
+    departure: formatGeminiSegmentSummary(outboundSegments),
+    arrival: formatGeminiSegmentSummary(inboundSegments),
+    baggage: safeArray(universalFlight.baggage).join("; ") || "Не е посочено",
+    notes: [
+      flightNumbers.length ? `Полети: ${flightNumbers.join(", ")}.` : "",
+      "Gemini Universal Travel Intake Test result. Проверете финално часовете, багажа и условията преди резервация."
+    ].filter(Boolean).join(" "),
+    price: Number(universalFlight.price?.amount || 0) || 0,
+    currency: universalFlight.price?.currency || "EUR",
+    outboundSegments: normalizeStoredFlightSegments(outboundSegments),
+    inboundSegments: normalizeStoredFlightSegments(inboundSegments),
+    segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments])
+  };
+  flight.displayBg = { itineraryText: formatFlightItineraryBg(flight) };
+  return flight;
+}
+
+function universalHotelToOfferHotel(hotel = {}) {
+  const firstRoom = safeArray(hotel.rooms)[0] || {};
+  const area = [hotel.city, hotel.country].filter(Boolean).join(", ");
+  return {
+    name: hotel.name || "",
+    stars: "",
+    area,
+    distance: "",
+    room: firstRoom.roomType || "",
+    meal: firstRoom.board || "",
+    price: Number(hotel.price?.amount || 0) || 0,
+    currency: hotel.price?.currency || "EUR",
+    roomsLeft: "",
+    description: [
+      hotel.name ? `${hotel.name}.` : "",
+      area ? `Локация: ${area}.` : "",
+      hotel.checkIn || hotel.checkOut ? `Период: ${[hotel.checkIn, hotel.checkOut].filter(Boolean).join(" - ")}.` : "",
+      hotel.cancellationPolicy ? `Условия: ${hotel.cancellationPolicy}.` : ""
+    ].filter(Boolean).join(" "),
+    supplier: hotel.supplier || "",
+    images: []
+  };
+}
+
+function archiveUniversalSourceEvidenceSafe({ files = [], intakeId = "", sources = [] } = {}) {
+  try {
+    const baseDir = path.join(SOURCE_EVIDENCE_DIR, "offers", sanitizeRegressionPathPart(intakeId, "intake"), "original");
+    fs.mkdirSync(baseDir, { recursive: true });
+    const nextSources = safeArray(sources).map((source, index) => {
+      const file = files[index];
+      if (!Buffer.isBuffer(file?.buffer)) return source;
+      const ext = path.extname(file.originalname || "") || ".png";
+      const filename = `source_${index + 1}${ext}`;
+      const storedPath = path.join(baseDir, filename);
+      fs.writeFileSync(storedPath, file.buffer);
+      return { ...source, storedPath };
+    });
+    return { archived: true, root: baseDir, sources: nextSources };
+  } catch (error) {
+    console.warn("GT63 UNIVERSAL SOURCE EVIDENCE ARCHIVE FAILED:", error.message);
+    return { archived: false, error: error.message, sources };
+  }
+}
+
+async function extractUniversalTravelWithGemini(files = [], { destination = "" } = {}) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    const error = new Error("Missing GEMINI_API_KEY. Add it in Railway Variables to enable Universal Travel Intake.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const intakeId = `INTAKE-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+  const model = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const prompt = [
+    "You are GT63 Universal Travel Intake.",
+    "Analyze all provided travel screenshots together.",
+    "Classify each source as flight, hotel, mixed, or unknown.",
+    "Return valid JSON only. Do not add markdown.",
+    "Extract only information visible in screenshots. Do not invent missing values.",
+    "Keep flight and hotel data separate even when one screenshot contains both.",
+    "Preserve multi-segment and multi-airline itineraries.",
+    "Use empty strings or empty arrays for missing values.",
+    "Add warnings for missing or uncertain critical fields.",
+    destination ? `Operator destination context: ${destination}` : ""
+  ].filter(Boolean).join("\n");
+  const imageParts = safeArray(files).slice(0, 8).map((file, index) => ({
+    inlineData: {
+      mimeType: file.mimetype || "image/png",
+      data: Buffer.from(file.buffer).toString("base64")
+    },
+    _index: index
+  })).map(({ inlineData }) => ({ inlineData }));
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        role: "user",
+        parts: [
+          { text: prompt },
+          ...imageParts
+        ]
+      }],
+      generationConfig: {
+        temperature: 0,
+        responseMimeType: "application/json",
+        responseSchema: GEMINI_UNIVERSAL_TRAVEL_SCHEMA
+      }
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `Gemini request failed with HTTP ${response.status}`);
+  }
+  const canonical = normalizeUniversalTravelJson(extractJsonFromGeminiResponse(payload), files, intakeId);
+  const evidence = archiveUniversalSourceEvidenceSafe({ files, intakeId, sources: canonical.sources });
+  canonical.sources = evidence.sources || canonical.sources;
+  return {
+    intakeId,
+    model,
+    canonical,
+    offerFlight: universalFlightToOfferFlight(canonical.flight),
+    offerHotel: universalHotelToOfferHotel(canonical.hotel),
+    evidence,
+    rawResponse: payload
+  };
+}
+
 function compareFlightResults(parserFlight = {}, geminiFlight = {}) {
   const parserPrice = Number(parserFlight.price || 0) || 0;
   const geminiPrice = Number(geminiFlight.price || 0) || 0;
@@ -8739,6 +9133,71 @@ app.post("/api/import-image-gemini-test", requireCapability("imports.run"), uplo
     console.error("Gemini Vision intake test failed:", error);
     return res.status(error.statusCode || 500).json({
       error: "Gemini Vision intake test failed",
+      message: error.message
+    });
+  }
+});
+
+app.post("/api/universal-travel-intake-gemini-test", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {
+  try {
+    const imageFiles = getUploadedImageFiles(req);
+    if (!imageFiles.length) {
+      return res.status(400).json({ error: "No image uploaded" });
+    }
+
+    const destination = req.body?.destination || "";
+    const geminiResult = await extractUniversalTravelWithGemini(imageFiles, { destination });
+    let parserResult = null;
+    let parserError = "";
+
+    try {
+      parserResult = await runParserFlightImportForTest(imageFiles, { destination });
+    } catch (error) {
+      parserError = error.message;
+      console.warn("GT63 UNIVERSAL INTAKE LEGACY PARSER COMPARE FAILED:", error.message);
+    }
+
+    if (geminiResult.evidence?.root) {
+      const evidenceRoot = path.dirname(geminiResult.evidence.root);
+      try {
+        writeJsonFile(path.join(evidenceRoot, "gemini_json.json"), geminiResult.canonical);
+        writeJsonFile(path.join(evidenceRoot, "gemini_offer_flight.json"), geminiResult.offerFlight);
+        writeJsonFile(path.join(evidenceRoot, "gemini_offer_hotel.json"), geminiResult.offerHotel);
+        writeJsonFile(path.join(evidenceRoot, "parser_json.json"), parserResult || { error: parserError });
+        writeJsonFile(path.join(evidenceRoot, "gemini_raw_response.json"), geminiResult.rawResponse);
+      } catch (error) {
+        console.warn("GT63 UNIVERSAL INTAKE JSON EVIDENCE WRITE FAILED:", error.message);
+      }
+    }
+
+    return res.json({
+      success: true,
+      mode: "GEMINI_UNIVERSAL_TRAVEL_INTAKE_TEST",
+      intakeId: geminiResult.intakeId,
+      model: geminiResult.model,
+      sources: geminiResult.canonical.sources,
+      flight: geminiResult.canonical.flight,
+      hotel: geminiResult.canonical.hotel,
+      offerFlight: geminiResult.offerFlight,
+      offerHotel: geminiResult.offerHotel,
+      warnings: geminiResult.canonical.warnings,
+      confidence: geminiResult.canonical.confidence,
+      parser: parserResult ? {
+        flight: parserResult.flight,
+        metadata: parserResult.metadata,
+        flightConfidence: parserResult.flightConfidence,
+        operatorWarnings: parserResult.operatorWarnings
+      } : { error: parserError },
+      evidence: geminiResult.evidence,
+      debug: {
+        gemini: geminiResult.canonical,
+        rawResponse: geminiResult.rawResponse
+      }
+    });
+  } catch (error) {
+    console.error("Universal Gemini travel intake test failed:", error);
+    return res.status(error.statusCode || 500).json({
+      error: "Universal Gemini travel intake test failed",
       message: error.message
     });
   }

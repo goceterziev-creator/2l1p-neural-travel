@@ -2608,6 +2608,19 @@
 
           <div class="divider"></div>
 
+          <h3>Universal Travel Intake</h3>
+          <div class="upload-box">
+            <label>Travel Screenshots</label>
+            <input id="universalTravelImage" type="file" accept="image/*" multiple />
+            <div class="actions">
+              <button type="button" class="secondary" data-capability="imports.run" data-capability-label="Your role cannot run OCR imports" onclick="uploadUniversalTravelIntake()">Gemini Universal Test</button>
+            </div>
+            <div class="muted">Test mode: extracts visible flight and hotel details into one review before using the result.</div>
+          </div>
+          <div id="universalTravelReview"></div>
+
+          <div class="divider"></div>
+
           <h3>AI Flight Screenshot Import</h3>
           <div class="upload-box">
             <label>Flight Screenshots</label>

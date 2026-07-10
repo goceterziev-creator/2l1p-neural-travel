@@ -16,6 +16,8 @@ let createSurfaceOpen = false;
 let opsPanelState = {};
 let currentCapabilities = [];
 let regressionCaseCache = [];
+let latestUniversalTravelIntake = null;
+let latestUniversalTravelObjectUrls = [];
 const NAV_STATE_KEY = "gt63_navigation_state_v1";
 const WORKSPACE_LAZY_FLAGS = {
   activity: "lazy",
@@ -2712,6 +2714,186 @@ async function uploadFlightImageGeminiTest() {
   }
 }
 
+function universalWarningText(warning = "") {
+  const text = String(warning || "").trim();
+  if (!text) return "";
+  if (/price|fare|amount|currency/i.test(text)) return "Проверете цената.";
+  if (/date|time|departure|arrival/i.test(text)) return "Проверете датите и часовете.";
+  if (/hotel|room|check/i.test(text)) return "Проверете данните за хотела.";
+  if (/flight|segment|airport|route/i.test(text)) return "Проверете данните за полета.";
+  return text;
+}
+
+function renderUniversalTravelReview(data = {}, files = []) {
+  latestUniversalTravelIntake = data;
+  latestUniversalTravelObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  latestUniversalTravelObjectUrls = files.map((file) => URL.createObjectURL(file));
+
+  const box = $("universalTravelReview");
+  if (!box) return;
+
+  const flight = data.offerFlight || {};
+  const hotel = data.offerHotel || {};
+  const warnings = Array.from(new Set((data.warnings || []).map(universalWarningText).filter(Boolean)));
+  const sources = Array.isArray(data.sources) ? data.sources : [];
+  const hasFlight = Boolean(flight.route || flight.airline || (flight.outboundSegments || []).length || (flight.inboundSegments || []).length);
+  const hasHotel = Boolean(hotel.name || hotel.area || hotel.room || hotel.price);
+
+  box.innerHTML = `
+    <div class="upload-box" style="margin-top: 12px;">
+      <h3>Universal Intake Review</h3>
+      <div class="muted">Test mode. Review and edit before using the result.</div>
+
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 12px 0;">
+        ${latestUniversalTravelObjectUrls.map((url, index) => `
+          <div>
+            <img src="${url}" alt="Original screenshot ${index + 1}" style="width:100%; max-height:220px; object-fit:contain; border:1px solid rgba(148,163,184,.35); border-radius:8px; background:#020617;" />
+            <div class="muted">${escapeHtml(sources[index]?.sourceType || "unknown")} · ${escapeHtml(sources[index]?.originalFilename || files[index]?.name || `Screenshot ${index + 1}`)}</div>
+          </div>
+        `).join("")}
+      </div>
+
+      ${warnings.length ? `
+        <div class="warning" style="margin: 10px 0;">
+          ${warnings.map((warning) => `<div>• ${escapeHtml(warning)}</div>`).join("")}
+        </div>
+      ` : `<div class="muted">Няма критични предупреждения от Gemini.</div>`}
+
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px;">
+        <section>
+          <h3>Flight Details</h3>
+          ${hasFlight ? `
+            <label>Airline</label>
+            <input id="universalFlightAirline" value="${escapeHtml(flight.airline || "")}" />
+            <label>Route</label>
+            <input id="universalFlightRoute" value="${escapeHtml(flight.route || "")}" />
+            <label>Outbound</label>
+            <input id="universalFlightDeparture" value="${escapeHtml(flight.departure || "")}" />
+            <label>Inbound</label>
+            <input id="universalFlightArrival" value="${escapeHtml(flight.arrival || "")}" />
+            <label>Baggage</label>
+            <input id="universalFlightBaggage" value="${escapeHtml(flight.baggage || "")}" />
+            <label>Flight Price</label>
+            <input id="universalFlightPrice" type="number" step="0.01" value="${Number(flight.price || 0)}" />
+            ${flight.displayBg?.itineraryText ? `<pre class="flight-segment-summary" style="white-space:pre-wrap; line-height:1.45;">${escapeHtml(flight.displayBg.itineraryText)}</pre>` : ""}
+          ` : `<div class="muted">Не е открит видим полет.</div>`}
+        </section>
+
+        <section>
+          <h3>Hotel Details</h3>
+          ${hasHotel ? `
+            <label>Hotel Name</label>
+            <input id="universalHotelName" value="${escapeHtml(hotel.name || "")}" />
+            <label>Area</label>
+            <input id="universalHotelArea" value="${escapeHtml(hotel.area || "")}" />
+            <label>Room</label>
+            <input id="universalHotelRoom" value="${escapeHtml(hotel.room || "")}" />
+            <label>Meal</label>
+            <input id="universalHotelMeal" value="${escapeHtml(hotel.meal || "")}" />
+            <label>Hotel Price</label>
+            <input id="universalHotelPrice" type="number" step="0.01" value="${Number(hotel.price || 0)}" />
+            <label>Description</label>
+            <textarea id="universalHotelDescription" rows="4">${escapeHtml(hotel.description || "")}</textarea>
+          ` : `<div class="muted">Не е открит видим хотел.</div>`}
+        </section>
+      </div>
+
+      <div class="actions" style="margin-top: 12px;">
+        <button type="button" onclick="applyUniversalTravelIntakeResult()">Use Result</button>
+        <button type="button" class="secondary" onclick="$('universalTravelReview').innerHTML=''">Cancel</button>
+      </div>
+
+      <details style="margin-top: 12px;">
+        <summary>Admin/debug JSON</summary>
+        <pre style="white-space:pre-wrap; max-height:360px; overflow:auto;">${escapeHtml(JSON.stringify({
+          intakeId: data.intakeId,
+          confidence: data.confidence,
+          sources: data.sources,
+          flight: data.flight,
+          hotel: data.hotel,
+          parser: data.parser,
+          evidence: data.evidence
+        }, null, 2))}</pre>
+      </details>
+    </div>
+  `;
+}
+
+async function uploadUniversalTravelIntake() {
+  if (!hasCapability("imports.run")) {
+    alert("Your role cannot run imports.");
+    return;
+  }
+
+  const input = $("universalTravelImage");
+  const files = Array.from(input?.files || []);
+  if (!files.length) {
+    alert("Select at least one travel screenshot first.");
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    files.slice(0, 8).forEach((file) => formData.append("image", file));
+    formData.append("destination", $("destination")?.value || "");
+
+    const data = await fetchJson("/api/universal-travel-intake-gemini-test", {
+      method: "POST",
+      body: formData
+    });
+
+    console.log("UNIVERSAL GEMINI INTAKE DATA:", data);
+    renderUniversalTravelReview(data, files.slice(0, 8));
+  } catch (error) {
+    console.error("Universal Travel Intake failed:", error);
+    alert(`Universal Travel Intake failed: ${error.message}`);
+  }
+}
+
+function applyUniversalTravelIntakeResult() {
+  const data = latestUniversalTravelIntake || {};
+  const flight = { ...(data.offerFlight || {}) };
+  const hotel = { ...(data.offerHotel || {}) };
+
+  if ($("universalFlightAirline")) flight.airline = $("universalFlightAirline").value.trim();
+  if ($("universalFlightRoute")) flight.route = $("universalFlightRoute").value.trim();
+  if ($("universalFlightDeparture")) flight.departure = $("universalFlightDeparture").value.trim();
+  if ($("universalFlightArrival")) flight.arrival = $("universalFlightArrival").value.trim();
+  if ($("universalFlightBaggage")) flight.baggage = $("universalFlightBaggage").value.trim();
+  if ($("universalFlightPrice")) flight.price = Number($("universalFlightPrice").value || 0);
+
+  if ($("universalHotelName")) hotel.name = $("universalHotelName").value.trim();
+  if ($("universalHotelArea")) hotel.area = $("universalHotelArea").value.trim();
+  if ($("universalHotelRoom")) hotel.room = $("universalHotelRoom").value.trim();
+  if ($("universalHotelMeal")) hotel.meal = $("universalHotelMeal").value.trim();
+  if ($("universalHotelPrice")) hotel.price = Number($("universalHotelPrice").value || 0);
+  if ($("universalHotelDescription")) hotel.description = $("universalHotelDescription").value.trim();
+
+  if (flight.route || flight.airline || Number(flight.price || 0) > 0) {
+    addFlight(flight);
+    if ($("flightAirline")) $("flightAirline").value = flight.airline || "";
+    if ($("flightRoute")) $("flightRoute").value = flight.route || "";
+    if ($("flightDeparture")) $("flightDeparture").value = flight.departure || "";
+    if ($("flightArrival")) $("flightArrival").value = flight.arrival || "";
+    if ($("flightBaggage")) $("flightBaggage").value = flight.baggage || "";
+    if ($("flightNotes")) $("flightNotes").value = flight.notes || "";
+    if ($("flightPrice")) $("flightPrice").value = Number(flight.price || 0).toFixed(2);
+  }
+
+  if (hotel.name || hotel.area || Number(hotel.price || 0) > 0) {
+    addHotel(hotel);
+    if ($("hotelName")) $("hotelName").value = hotel.name || "";
+    if ($("hotelArea")) $("hotelArea").value = hotel.area || "";
+    if ($("hotelRoom")) $("hotelRoom").value = hotel.room || "";
+    if ($("hotelMeal")) $("hotelMeal").value = hotel.meal || "";
+    if ($("hotelDescription")) $("hotelDescription").value = hotel.description || "";
+    if ($("hotelPrice")) $("hotelPrice").value = Number(hotel.price || 0).toFixed(2);
+  }
+
+  calculatePricing();
+  alert("Universal Travel Intake result applied. Review and save the offer.");
+}
+
 function getImportedFlightPrice(data = {}, flight = {}) {
   return Number(
     data.flightPrice ??
@@ -3954,6 +4136,8 @@ if (validationWarnings.length) {
 window.importData = importData;
 window.uploadFlightImage = uploadFlightImage;
 window.uploadFlightImageGeminiTest = uploadFlightImageGeminiTest;
+window.uploadUniversalTravelIntake = uploadUniversalTravelIntake;
+window.applyUniversalTravelIntakeResult = applyUniversalTravelIntakeResult;
 window.uploadHotelImage = uploadHotelImage;
 window.autoBuildOffer = autoBuildOffer;
 window.saveOffer = saveOffer;
