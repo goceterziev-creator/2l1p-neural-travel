@@ -55,6 +55,7 @@ function formatAirportBg(airport = {}) {
   const reference = code ? airportReference[code] : null;
 
   if (reference?.airportBg) return reference.airportBg;
+  if (reference?.cityBg) return reference.cityBg;
   return fallbackText(original, code);
 }
 
@@ -116,6 +117,10 @@ function formatDurationBg(duration = "") {
   return parts.length ? parts.join(" ") : value;
 }
 
+function isCompactTimeLine(value = "") {
+  return /^\d{1,2}:\d{2}(?:\s*\/\s*\d{1,2}:\d{2})?$/.test(clean(value));
+}
+
 function formatFlightSegmentBg(segment = {}) {
   const airline = fallbackText(segment.airline, "");
   const flightNumber = clean(segment.flightNumber);
@@ -125,6 +130,7 @@ function formatFlightSegmentBg(segment = {}) {
   const departureDate = formatDateBg(segment.departureDate || segment.date || segment.departure);
   const arrivalDate = formatDateBg(segment.arrivalDate || segment.arrival || segment.departureDate || segment.date || segment.departure);
   const dateLine = departureDate === arrivalDate ? departureDate : `${departureDate} / ${arrivalDate}`;
+  const visibleDateLine = isCompactTimeLine(dateLine) ? "" : dateLine;
   const departureTime = formatTime(segment.departureTime || segment.departure);
   const arrivalTime = formatTime(segment.arrivalTime || segment.arrival);
   const duration = formatDurationBg(segment.duration);
@@ -132,10 +138,10 @@ function formatFlightSegmentBg(segment = {}) {
   return [
     header,
     `${from} → ${to}`,
-    dateLine,
+    visibleDateLine,
     `${departureTime} → ${arrivalTime}`,
     `Продължителност: ${duration}`
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 function formatDirectionBg(label, segments = []) {

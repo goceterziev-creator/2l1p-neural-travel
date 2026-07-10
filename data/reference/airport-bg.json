@@ -67,6 +67,18 @@
     "cityBg": "Милано",
     "airportBg": "Летище Милано Бергамо"
   },
+  "ZRH": {
+    "cityBg": "Цюрих",
+    "airportBg": "Летище Цюрих"
+  },
+  "JFK": {
+    "cityBg": "Ню Йорк",
+    "airportBg": "Летище Ню Йорк JFK"
+  },
+  "VIE": {
+    "cityBg": "Виена",
+    "airportBg": "Летище Виена"
+  },
   "IST": {
     "cityBg": "Истанбул",
     "airportBg": "Летище Истанбул"
