@@ -36,10 +36,11 @@ function clean(value = "") {
 
 function normalizeYear(value) {
   if (value === null || value === undefined || value === "") return null;
-  const year = Number(value);
+  const raw = String(value).trim();
+  if (!/^\d{4}$/.test(raw)) return null;
+  const year = Number(raw);
   if (!Number.isFinite(year)) return null;
-  if (year >= 1000 && year <= 9999) return year;
-  if (year >= 0 && year <= 99) return year >= 70 ? 1900 + year : 2000 + year;
+  if (year >= 2024 && year <= 2100) return year;
   return null;
 }
 
@@ -107,12 +108,13 @@ function normalizeTravelDate(value = "", options = {}) {
       day = match[2];
       month = match[1];
     }
+    const explicitYear = normalizeYear(match[3]);
     const result = makeDate({
       day,
       month,
-      year: match[3] || manualYear || deterministicYear || null,
+      year: explicitYear || manualYear || deterministicYear || null,
       reviewed: Boolean(manualYear),
-      source: match[3] ? "explicit" : manualYear ? "manual" : deterministicYear ? "offer-period" : "partial"
+      source: explicitYear ? "explicit" : manualYear ? "manual" : deterministicYear ? "offer-period" : "partial"
     });
     result.raw = raw;
     return result;
@@ -121,12 +123,13 @@ function normalizeTravelDate(value = "", options = {}) {
   match = raw.match(/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\s*(\d{1,2})\s+([A-Za-z]+|януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември)(?:\s+(\d{2,4})(?:\s*г\.?)?)?/i);
   if (match) {
     const month = MONTH_ALIASES.get(String(match[2]).toLowerCase());
+    const explicitYear = normalizeYear(match[3]);
     const result = makeDate({
       day: match[1],
       month,
-      year: match[3] || manualYear || deterministicYear || null,
+      year: explicitYear || manualYear || deterministicYear || null,
       reviewed: Boolean(manualYear),
-      source: match[3] ? "explicit" : manualYear ? "manual" : deterministicYear ? "offer-period" : "partial"
+      source: explicitYear ? "explicit" : manualYear ? "manual" : deterministicYear ? "offer-period" : "partial"
     });
     result.raw = raw;
     return result;

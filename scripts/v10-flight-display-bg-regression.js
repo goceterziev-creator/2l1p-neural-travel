@@ -35,6 +35,27 @@ assert.strictEqual(partial.year, null);
 assert.strictEqual(partial.yearMissing, true);
 assert.strictEqual(formatDateBg("16 July"), "16 юли");
 
+[
+  "15 September 01",
+  "15 September 07",
+  "15 September 13",
+  "16 September 00",
+  "15 September 2001",
+  "15 September 2007",
+  "15 September 2013",
+  "16 September 2000",
+  "15 \u0441\u0435\u043f\u0442\u0435\u043c\u0432\u0440\u0438 01",
+  "15 \u0441\u0435\u043f\u0442\u0435\u043c\u0432\u0440\u0438 2001",
+  "15 September EK 2001"
+].forEach((input) => {
+  const date = normalizeTravelDate(input);
+  assert.strictEqual(date.year, null, `${input} must not invent a year`);
+  assert.strictEqual(date.yearMissing, true, `${input} should remain year-missing`);
+  assert.ok(!/\b(?:19|20)\d{2}\b/.test(formatDateBg(input)), `${input} should render without an invented year`);
+});
+
+assert.strictEqual(formatDateBg("15 September 2026"), "15 септември 2026 г.");
+
 const manual = normalizeTravelDate("16 July", { reviewedYear: 2026 });
 assert.strictEqual(manual.year, 2026);
 assert.strictEqual(manual.reviewed, true);
