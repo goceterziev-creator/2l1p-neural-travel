@@ -1,0 +1,184 @@
+{
+  "SOF": {
+    "iata": "SOF",
+    "cityBg": "София",
+    "airportBg": "Летище София",
+    "countryBg": "България",
+    "aliases": ["SOF", "Sofia", "Sofia Airport", "София", "Летище София"]
+  },
+  "PMO": {
+    "iata": "PMO",
+    "cityBg": "Палермо",
+    "airportBg": "Летище Палермо „Фалконе и Борселино“",
+    "countryBg": "Италия",
+    "aliases": ["PMO", "Palermo", "Palermo Airport", "Falcone Borsellino", "Палермо"]
+  },
+  "PRG": {
+    "iata": "PRG",
+    "cityBg": "Прага",
+    "airportBg": "Летище Прага Вацлав Хавел",
+    "countryBg": "Чехия",
+    "aliases": ["PRG", "Prague", "Praha", "Prague Airport", "Прага"]
+  },
+  "BGY": {
+    "iata": "BGY",
+    "cityBg": "Милано",
+    "airportBg": "Летище Милано Бергамо",
+    "countryBg": "Италия",
+    "aliases": ["BGY", "Bergamo", "Milan Bergamo", "Milano Bergamo", "Бергамо", "Милано Бергамо"]
+  },
+  "MXP": {
+    "iata": "MXP",
+    "cityBg": "Милано",
+    "airportBg": "Летище Милано Малпенса",
+    "countryBg": "Италия",
+    "aliases": ["MXP", "Malpensa", "Milan Malpensa", "Milano Malpensa", "Малпенса"]
+  },
+  "FCO": {
+    "iata": "FCO",
+    "cityBg": "Рим",
+    "airportBg": "Летище Рим Фиумичино",
+    "countryBg": "Италия",
+    "aliases": ["FCO", "Rome Fiumicino", "Fiumicino", "Roma Fiumicino", "Рим Фиумичино"]
+  },
+  "CIA": {
+    "iata": "CIA",
+    "cityBg": "Рим",
+    "airportBg": "Летище Рим Чампино",
+    "countryBg": "Италия",
+    "aliases": ["CIA", "Rome Ciampino", "Ciampino", "Roma Ciampino", "Рим Чампино"]
+  },
+  "TIA": {
+    "iata": "TIA",
+    "cityBg": "Тирана",
+    "airportBg": "Летище Тирана",
+    "countryBg": "Албания",
+    "aliases": ["TIA", "Tirana", "Tirana International Airport", "Nene Tereza", "Nënë Tereza", "Rinas", "Тирана"]
+  },
+  "SSH": {
+    "iata": "SSH",
+    "cityBg": "Шарм ел-Шейх",
+    "airportBg": "Летище Шарм ел-Шейх",
+    "countryBg": "Египет",
+    "aliases": ["SSH", "Sharm El Sheikh", "Sharm el-Sheikh", "Шарм ел-Шейх"]
+  },
+  "HRG": {
+    "iata": "HRG",
+    "cityBg": "Хургада",
+    "airportBg": "Летище Хургада",
+    "countryBg": "Египет",
+    "aliases": ["HRG", "Hurghada", "Хургада"]
+  },
+  "IST": {
+    "iata": "IST",
+    "cityBg": "Истанбул",
+    "airportBg": "Летище Истанбул",
+    "countryBg": "Турция",
+    "aliases": ["IST", "Istanbul", "Istanbul Airport", "Истанбул", "Летище Истанбул"]
+  },
+  "DXB": {
+    "iata": "DXB",
+    "cityBg": "Дубай",
+    "airportBg": "Международно летище Дубай",
+    "countryBg": "ОАЕ",
+    "aliases": ["DXB", "Dubai", "Dubai International", "Dubai Airport", "Дубай"]
+  },
+  "AUH": {
+    "iata": "AUH",
+    "cityBg": "Абу Даби",
+    "airportBg": "Международно летище Абу Даби",
+    "countryBg": "ОАЕ",
+    "aliases": ["AUH", "Abu Dhabi", "Abu Dhabi International", "Абу Даби"]
+  },
+  "MLE": {
+    "iata": "MLE",
+    "cityBg": "Мале",
+    "airportBg": "Международно летище Велана, Мале",
+    "countryBg": "Малдиви",
+    "aliases": ["MLE", "Male", "Malé", "Velana", "Velana International Airport", "Мале", "Велана"]
+  },
+  "ATH": {
+    "iata": "ATH",
+    "cityBg": "Атина",
+    "airportBg": "Международно летище Атина",
+    "countryBg": "Гърция",
+    "aliases": ["ATH", "Athens", "Athens International", "Атина"]
+  },
+  "NRT": {
+    "iata": "NRT",
+    "cityBg": "Токио",
+    "airportBg": "Летище Токио Нарита",
+    "countryBg": "Япония",
+    "aliases": ["NRT", "Narita", "Tokyo Narita", "Токио Нарита"]
+  },
+  "HND": {
+    "iata": "HND",
+    "cityBg": "Токио",
+    "airportBg": "Летище Токио Ханеда",
+    "countryBg": "Япония",
+    "aliases": ["HND", "Haneda", "Tokyo Haneda", "Токио Ханеда"]
+  },
+  "JFK": {
+    "iata": "JFK",
+    "cityBg": "Ню Йорк",
+    "airportBg": "Международно летище „Джон Ф. Кенеди“, Ню Йорк",
+    "countryBg": "САЩ",
+    "aliases": ["JFK", "John F. Kennedy", "John F Kennedy", "Kennedy Airport", "New York JFK", "Ню Йорк JFK"]
+  },
+  "ZRH": {
+    "iata": "ZRH",
+    "cityBg": "Цюрих",
+    "airportBg": "Летище Цюрих",
+    "countryBg": "Швейцария",
+    "aliases": ["ZRH", "Zurich", "Zurich Airport", "Zürich", "Цюрих"]
+  },
+  "VIE": {
+    "iata": "VIE",
+    "cityBg": "Виена",
+    "airportBg": "Международно летище Виена",
+    "countryBg": "Австрия",
+    "aliases": ["VIE", "Vienna", "Vienna Airport", "Wien", "Виена"]
+  },
+  "STN": {
+    "iata": "STN",
+    "cityBg": "Лондон",
+    "airportBg": "Летище Лондон Станстед",
+    "countryBg": "Великобритания",
+    "aliases": ["STN", "Stansted", "London Stansted", "Лондон Станстед"]
+  },
+  "LTN": {
+    "iata": "LTN",
+    "cityBg": "Лондон",
+    "airportBg": "Летище Лондон Лутън",
+    "countryBg": "Великобритания",
+    "aliases": ["LTN", "Luton", "London Luton", "Лондон Лутън"]
+  },
+  "BCN": {
+    "iata": "BCN",
+    "cityBg": "Барселона",
+    "airportBg": "Летище Барселона Ел Прат",
+    "countryBg": "Испания",
+    "aliases": ["BCN", "Barcelona", "El Prat", "Barcelona El Prat", "Барселона"]
+  },
+  "LPA": {
+    "iata": "LPA",
+    "cityBg": "Лас Палмас",
+    "airportBg": "Летище Гран Канария",
+    "countryBg": "Испания",
+    "aliases": ["LPA", "Las Palmas", "Gran Canaria", "Grand Canaria", "Лас Палмас", "Гран Канария"]
+  },
+  "NUE": {
+    "iata": "NUE",
+    "cityBg": "Нюрнберг",
+    "airportBg": "Летище Нюрнберг",
+    "countryBg": "Германия",
+    "aliases": ["NUE", "Nuremberg", "Nurnberg", "Nürnberg", "Nurnberg Airport", "Нюрнберг"]
+  },
+  "BRI": {
+    "iata": "BRI",
+    "cityBg": "Бари",
+    "airportBg": "Летище Бари Карол Войтила",
+    "countryBg": "Италия",
+    "aliases": ["BRI", "Bari", "Bari Karol Wojtyla", "Bari Airport", "Бари"]
+  }
+}
