@@ -8403,12 +8403,46 @@ function archiveUniversalSourceEvidenceSafe({ files = [], intakeId = "", sources
   }
 }
 
+function universalIntakeError(stage, reason, details = "", options = {}) {
+  const error = new Error(reason || "Universal Intake failed");
+  error.stage = stage || "unknown";
+  error.reason = reason || "Universal Intake failed";
+  error.details = details || options.cause?.message || "";
+  error.statusCode = options.statusCode || options.cause?.statusCode || 500;
+  return error;
+}
+
+function normalizeUniversalIntakeError(error = {}) {
+  return {
+    success: false,
+    stage: error.stage || "unknown",
+    reason: error.reason || error.message || "Universal Intake failed",
+    details: error.details || error.message || ""
+  };
+}
+
+function logUniversalIntakeError(error = {}) {
+  const payload = normalizeUniversalIntakeError(error);
+  console.error(
+    `[Universal Intake] stage=${payload.stage} reason=${payload.reason} details=${payload.details}`
+  );
+}
+
+function sendUniversalIntakeError(res, error = {}) {
+  const payload = normalizeUniversalIntakeError(error);
+  logUniversalIntakeError(error);
+  return res.status(error.statusCode || 500).json(payload);
+}
+
 async function extractUniversalTravelWithGemini(files = [], { destination = "" } = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    const error = new Error("Missing GEMINI_API_KEY. Add it in Railway Variables to enable Universal Travel Intake.");
-    error.statusCode = 400;
-    throw error;
+    throw universalIntakeError(
+      "gemini-request",
+      "Missing GEMINI_API_KEY",
+      "Add GEMINI_API_KEY in Railway Variables to enable Universal Travel Intake.",
+      { statusCode: 400 }
+    );
   }
   const intakeId = `INTAKE-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   const model = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash";
@@ -8433,37 +8467,86 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "" }
     _index: index
   })).map(({ inlineData }) => ({ inlineData }));
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{
-        role: "user",
-        parts: [
-          { text: prompt },
-          ...imageParts
-        ]
-      }],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: "application/json",
-        responseSchema: GEMINI_UNIVERSAL_TRAVEL_SCHEMA
-      }
-    })
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || `Gemini request failed with HTTP ${response.status}`);
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          role: "user",
+          parts: [
+            { text: prompt },
+            ...imageParts
+          ]
+        }],
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: "application/json",
+          responseSchema: GEMINI_UNIVERSAL_TRAVEL_SCHEMA
+        }
+      })
+    });
+  } catch (error) {
+    throw universalIntakeError("gemini-request", "Gemini request failed", error.message, { cause: error });
   }
-  const canonical = normalizeUniversalTravelJson(extractJsonFromGeminiResponse(payload), files, intakeId);
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    throw universalIntakeError("gemini-response", "Gemini response was not JSON", error.message, {
+      cause: error,
+      statusCode: response.status || 500
+    });
+  }
+
+  if (!response.ok) {
+    throw universalIntakeError(
+      "gemini-response",
+      "Gemini returned an error",
+      payload?.error?.message || `HTTP ${response.status}`,
+      { statusCode: response.status || 500 }
+    );
+  }
+
+  let geminiJson;
+  try {
+    geminiJson = extractJsonFromGeminiResponse(payload);
+  } catch (error) {
+    throw universalIntakeError("json-parse", "Gemini JSON parse failed", error.message, { cause: error });
+  }
+
+  let canonical;
+  try {
+    canonical = normalizeUniversalTravelJson(geminiJson, files, intakeId);
+  } catch (error) {
+    throw universalIntakeError("flight-normalization", "Universal travel JSON normalization failed", error.message, { cause: error });
+  }
+
   const evidence = archiveUniversalSourceEvidenceSafe({ files, intakeId, sources: canonical.sources });
   canonical.sources = evidence.sources || canonical.sources;
+
+  let offerFlight;
+  try {
+    offerFlight = universalFlightToOfferFlight(canonical.flight);
+  } catch (error) {
+    throw universalIntakeError("flight-normalization", "Flight normalization failed", error.message, { cause: error });
+  }
+
+  let offerHotel;
+  try {
+    offerHotel = universalHotelToOfferHotel(canonical.hotel);
+  } catch (error) {
+    throw universalIntakeError("hotel-normalization", "Hotel normalization failed", error.message, { cause: error });
+  }
+
   return {
     intakeId,
     model,
     canonical,
-    offerFlight: universalFlightToOfferFlight(canonical.flight),
-    offerHotel: universalHotelToOfferHotel(canonical.hotel),
+    offerFlight,
+    offerHotel,
     evidence,
     rawResponse: payload
   };
@@ -9195,9 +9278,20 @@ app.post("/api/import-image-gemini-test", requireCapability("imports.run"), uplo
 
 app.post("/api/universal-travel-intake-gemini-test", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {
   try {
-    const imageFiles = getUploadedImageFiles(req);
+    let imageFiles;
+    try {
+      imageFiles = getUploadedImageFiles(req);
+    } catch (error) {
+      return sendUniversalIntakeError(
+        res,
+        universalIntakeError("image-processing", "Uploaded image processing failed", error.message, { cause: error })
+      );
+    }
     if (!imageFiles.length) {
-      return res.status(400).json({ error: "No image uploaded" });
+      return sendUniversalIntakeError(
+        res,
+        universalIntakeError("upload", "No image uploaded", "Select at least one travel screenshot.", { statusCode: 400 })
+      );
     }
 
     const destination = req.body?.destination || "";
@@ -9225,36 +9319,39 @@ app.post("/api/universal-travel-intake-gemini-test", requireCapability("imports.
       }
     }
 
-    return res.json({
-      success: true,
-      mode: "GEMINI_UNIVERSAL_TRAVEL_INTAKE_TEST",
-      intakeId: geminiResult.intakeId,
-      model: geminiResult.model,
-      sources: geminiResult.canonical.sources,
-      flight: geminiResult.canonical.flight,
-      hotel: geminiResult.canonical.hotel,
-      offerFlight: geminiResult.offerFlight,
-      offerHotel: geminiResult.offerHotel,
-      warnings: geminiResult.canonical.warnings,
-      confidence: geminiResult.canonical.confidence,
-      parser: parserResult ? {
-        flight: parserResult.flight,
-        metadata: parserResult.metadata,
-        flightConfidence: parserResult.flightConfidence,
-        operatorWarnings: parserResult.operatorWarnings
-      } : { error: parserError },
-      evidence: geminiResult.evidence,
-      debug: {
-        gemini: geminiResult.canonical,
-        rawResponse: geminiResult.rawResponse
-      }
-    });
+    let responsePayload;
+    try {
+      responsePayload = {
+        success: true,
+        mode: "GEMINI_UNIVERSAL_TRAVEL_INTAKE_TEST",
+        intakeId: geminiResult.intakeId,
+        model: geminiResult.model,
+        sources: geminiResult.canonical.sources,
+        flight: geminiResult.canonical.flight,
+        hotel: geminiResult.canonical.hotel,
+        offerFlight: geminiResult.offerFlight,
+        offerHotel: geminiResult.offerHotel,
+        warnings: geminiResult.canonical.warnings,
+        confidence: geminiResult.canonical.confidence,
+        parser: parserResult ? {
+          flight: parserResult.flight,
+          metadata: parserResult.metadata,
+          flightConfidence: parserResult.flightConfidence,
+          operatorWarnings: parserResult.operatorWarnings
+        } : { error: parserError },
+        evidence: geminiResult.evidence,
+        debug: {
+          gemini: geminiResult.canonical,
+          rawResponse: geminiResult.rawResponse
+        }
+      };
+    } catch (error) {
+      throw universalIntakeError("offer-build", "Universal Intake response build failed", error.message, { cause: error });
+    }
+
+    return res.json(responsePayload);
   } catch (error) {
-    console.error("Universal Gemini travel intake test failed:", error);
-    return res.status(error.statusCode || 500).json({
-      error: "Universal Gemini travel intake test failed",
-      message: error.message
-    });
+    return sendUniversalIntakeError(res, error);
   }
 });
 

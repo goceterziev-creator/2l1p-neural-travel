@@ -164,7 +164,14 @@ async function fetchJson(url, options = {}) {
       data?.message ||
       `HTTP ${res.status}`;
 
-    throw new Error(message);
+    const error = new Error(message);
+    if (data && typeof data === "object") {
+      error.stage = data.stage || "";
+      error.reason = data.reason || "";
+      error.details = data.details || "";
+      error.response = data;
+    }
+    throw error;
   }
 
   return data;
@@ -2819,6 +2826,22 @@ function renderUniversalTravelReview(data = {}, files = []) {
   `;
 }
 
+function renderUniversalTravelError(error = {}) {
+  const box = $("universalTravelReview");
+  if (!box) return;
+  const stage = error.stage || error.response?.stage || "unknown";
+  const reason = error.reason || error.response?.reason || error.message || "Universal Intake failed";
+  const details = error.details || error.response?.details || error.message || "-";
+  box.innerHTML = `
+    <div class="upload-box warning" style="margin-top: 12px;">
+      <h3>Universal Intake Error</h3>
+      <p><strong>Stage:</strong><br>${escapeHtml(stage)}</p>
+      <p><strong>Reason:</strong><br>${escapeHtml(reason)}</p>
+      <p><strong>Details:</strong><br>${escapeHtml(details)}</p>
+    </div>
+  `;
+}
+
 async function uploadUniversalTravelIntake() {
   if (!hasCapability("imports.run")) {
     alert("Your role cannot run imports.");
@@ -2846,7 +2869,11 @@ async function uploadUniversalTravelIntake() {
     renderUniversalTravelReview(data, files.slice(0, 8));
   } catch (error) {
     console.error("Universal Travel Intake failed:", error);
-    alert(`Universal Travel Intake failed: ${error.message}`);
+    renderUniversalTravelError(error);
+    const stage = error.stage || error.response?.stage || "unknown";
+    const reason = error.reason || error.response?.reason || error.message || "Universal Intake failed";
+    const details = error.details || error.response?.details || error.message || "-";
+    alert(`Universal Travel Intake failed\n\nStage: ${stage}\nReason: ${reason}\nDetails: ${details}`);
   }
 }
 
