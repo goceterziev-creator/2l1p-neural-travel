@@ -12,7 +12,7 @@ const {
   renderClientFlightItineraryBg
 } = require("../server/renderers/flight-display-bg");
 
-["SOF", "PMO", "JFK", "ZRH", "VIE", "MLE", "HND", "NRT", "PTY", "SCL"].forEach((code) => {
+["SOF", "PMO", "JFK", "ZRH", "VIE", "MLE", "HND", "NRT", "PTY", "SCL", "MUC", "KIX", "ITM"].forEach((code) => {
   const airport = resolveAirport(code);
   assert.strictEqual(airport.iata, code, `${code} should resolve by IATA`);
   assert.ok(formatAirportBg(code).includes("Летище") || formatAirportBg(code).includes("летище"), `${code} should format as airport`);
@@ -234,5 +234,50 @@ const santiagoRendered = renderClientFlightItineraryBg({
 assert.ok(santiagoRendered.includes("Международно летище Токумен"), "client renderer should render PTY as Bulgarian airport name");
 assert.ok(santiagoRendered.includes("Международно летище Артуро Мерино Бенитес"), "client renderer should render SCL as Bulgarian airport name");
 assert.ok(!santiagoRendered.includes("PTY → SCL"), "client renderer should not show raw PTY/SCL route row");
+
+const tokyoRendered = renderClientFlightItineraryBg({
+  outboundSegments: [
+    {
+      airline: "All Nippon Airways",
+      flightNumber: "NH 7881",
+      from: "SOF",
+      to: "MUC",
+      departureDate: "28 March",
+      departureTime: "12:35",
+      arrivalDate: "28 March",
+      arrivalTime: "14:05",
+      duration: "2h 30min"
+    },
+    {
+      airline: "All Nippon Airways",
+      flightNumber: "NH 24",
+      from: "ITM",
+      to: "HND",
+      departureDate: "29 March",
+      departureTime: "12:00",
+      arrivalDate: "29 March",
+      arrivalTime: "13:15",
+      duration: "1h 15min"
+    }
+  ],
+  inboundSegments: [
+    {
+      airline: "All Nippon Airways",
+      flightNumber: "NH 217",
+      from: "HND",
+      to: "MUC",
+      departureDate: "8 April",
+      departureTime: "11:15",
+      arrivalDate: "8 April",
+      arrivalTime: "22:55",
+      duration: "14h 45min"
+    }
+  ]
+});
+
+assert.ok(tokyoRendered.includes("Летище Мюнхен"), "client renderer should render MUC as Bulgarian airport name");
+assert.ok(tokyoRendered.includes("Летище Осака Итами"), "client renderer should render ITM as Bulgarian airport name");
+assert.ok(!tokyoRendered.includes("SOF → MUC"), "client renderer should not show raw MUC route row");
+assert.ok(!tokyoRendered.includes("ITM → HND"), "client renderer should not show raw ITM route row");
 
 console.log("V10 Bulgarian flight display regression PASS");

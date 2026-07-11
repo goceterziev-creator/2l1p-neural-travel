@@ -886,7 +886,11 @@ function cleanClientText(value = "") {
 }
 
 function formatMoney(value, currency = "EUR") {
-  return `${toNumber(value, 0).toFixed(2)} ${currency || "EUR"}`;
+  const amount = new Intl.NumberFormat("bg-BG", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(toNumber(value, 0));
+  return `${amount} ${currency || "EUR"}`;
 }
 
 function formatDateTime(input) {

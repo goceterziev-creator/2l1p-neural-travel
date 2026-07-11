@@ -118,6 +118,27 @@
     "countryBg": "Япония",
     "aliases": ["HND", "Haneda", "Tokyo Haneda", "Токио Ханеда"]
   },
+  "MUC": {
+    "iata": "MUC",
+    "cityBg": "Мюнхен",
+    "airportBg": "Летище Мюнхен",
+    "countryBg": "Германия",
+    "aliases": ["MUC", "Munich", "Munich Airport", "München", "Muenchen", "Мюнхен"]
+  },
+  "KIX": {
+    "iata": "KIX",
+    "cityBg": "Осака",
+    "airportBg": "Международно летище Кансай",
+    "countryBg": "Япония",
+    "aliases": ["KIX", "Kansai", "Kansai International Airport", "Osaka Kansai", "Осака Кансай"]
+  },
+  "ITM": {
+    "iata": "ITM",
+    "cityBg": "Осака",
+    "airportBg": "Летище Осака Итами",
+    "countryBg": "Япония",
+    "aliases": ["ITM", "Itami", "Osaka Itami", "Osaka International Airport", "Осака Итами"]
+  },
   "JFK": {
     "iata": "JFK",
     "cityBg": "Ню Йорк",
