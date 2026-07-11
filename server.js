@@ -5827,6 +5827,31 @@ async function renderOfferHtml(offer, options = {}) {
     };
   }
 
+  function ensureSentenceEnd(value = "") {
+    const text = cleanText(value).replace(/\s*(?:\.{3}|…)\s*$/u, "").trim();
+    if (!text) return "";
+    return /[.!?。]$/u.test(text) ? text : `${text}.`;
+  }
+
+  function limitClientDescription(value = "", maxLength = 260) {
+    const text = cleanText(value);
+    if (!text || text.length <= maxLength) return ensureSentenceEnd(text);
+
+    const cut = text.slice(0, maxLength).trim();
+    const lastSentenceEnd = Math.max(
+      cut.lastIndexOf("."),
+      cut.lastIndexOf("!"),
+      cut.lastIndexOf("?"),
+      cut.lastIndexOf("。")
+    );
+
+    if (lastSentenceEnd >= 80) {
+      return ensureSentenceEnd(cut.slice(0, lastSentenceEnd + 1));
+    }
+
+    return ensureSentenceEnd(cut.replace(/\s+\S*$/u, ""));
+  }
+
   function cleanClientHotelDescription(value = "", hotel = {}) {
     const hotelName = cleanText(hotel.name || "Хотелът");
     const text = cleanText(value)
@@ -5874,7 +5899,7 @@ async function renderOfferHtml(offer, options = {}) {
       .trim();
 
     if (!summary) summary = text;
-    return summary.length > 260 ? `${summary.slice(0, 257).trim()}...` : summary;
+    return limitClientDescription(summary, 260);
   }
 
   function clientSafeFlightText(value = "", fallback = "-") {
@@ -5942,7 +5967,12 @@ async function renderOfferHtml(offer, options = {}) {
       maldives: "Малдиви",
       maldive: "Малдиви",
       "малдиви": "Малдиви",
-      "малдивски": "Малдиви"
+      "малдивски": "Малдиви",
+      santiago: "Сантяго, Чили",
+      "santiago aeropuerto": "Сантяго, Чили",
+      "santiago airport": "Сантяго, Чили",
+      "santiago de chile": "Сантяго, Чили",
+      scl: "Сантяго, Чили"
     };
     const fallback = raw && raw === raw.toLowerCase()
       ? raw.replace(/(^|[\s-])([\p{L}])/gu, (_, separator, letter) => `${separator}${letter.toUpperCase()}`)

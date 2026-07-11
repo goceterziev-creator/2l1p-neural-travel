@@ -12,7 +12,7 @@ const {
   renderClientFlightItineraryBg
 } = require("../server/renderers/flight-display-bg");
 
-["SOF", "PMO", "JFK", "ZRH", "VIE", "MLE", "HND", "NRT"].forEach((code) => {
+["SOF", "PMO", "JFK", "ZRH", "VIE", "MLE", "HND", "NRT", "PTY", "SCL"].forEach((code) => {
   const airport = resolveAirport(code);
   assert.strictEqual(airport.iata, code, `${code} should resolve by IATA`);
   assert.ok(formatAirportBg(code).includes("Летище") || formatAirportBg(code).includes("летище"), `${code} should format as airport`);
@@ -203,5 +203,36 @@ assert.ok(maldivesRendered.includes("21:25 → 00:25"), "overnight arrival shoul
 assert.ok(!maldivesRendered.includes("SOF -> MLE"), "client renderer should not output compact raw route summaries");
 assert.ok(!maldivesRendered.includes("YYYY"), "client renderer should not output placeholders");
 assert.ok(!/\b20(?:00|01|07|13)\b/.test(maldivesRendered), "client renderer must not output invented years");
+
+const santiagoRendered = renderClientFlightItineraryBg({
+  outboundSegments: [
+    {
+      airline: "Turkish Airlines",
+      flightNumber: "TK 801",
+      from: "IST",
+      to: "PTY",
+      departureDate: "29 March",
+      departureTime: "09:40",
+      arrivalDate: "29 March",
+      arrivalTime: "18:30",
+      duration: "16h 50min"
+    },
+    {
+      airline: "Turkish Airlines",
+      flightNumber: "TK 9608",
+      from: "PTY",
+      to: "SCL",
+      departureDate: "29 March",
+      departureTime: "21:24",
+      arrivalDate: "30 March",
+      arrivalTime: "05:56",
+      duration: "6h 32min"
+    }
+  ]
+});
+
+assert.ok(santiagoRendered.includes("Международно летище Токумен"), "client renderer should render PTY as Bulgarian airport name");
+assert.ok(santiagoRendered.includes("Международно летище Артуро Мерино Бенитес"), "client renderer should render SCL as Bulgarian airport name");
+assert.ok(!santiagoRendered.includes("PTY → SCL"), "client renderer should not show raw PTY/SCL route row");
 
 console.log("V10 Bulgarian flight display regression PASS");
