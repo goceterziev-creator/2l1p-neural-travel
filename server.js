@@ -8206,6 +8206,85 @@ function extractJsonFromGeminiResponse(payload = {}) {
   }
 }
 
+function uniqueGeminiModels(primary = "", fallback = "") {
+  return [primary, fallback]
+    .map((model) => String(model || "").trim())
+    .filter(Boolean)
+    .filter((model, index, list) => list.indexOf(model) === index);
+}
+
+function geminiResponseErrorMessage(payload = {}, fallback = "") {
+  return String(payload?.error?.message || payload?.error?.status || fallback || "Gemini request failed");
+}
+
+function isTemporaryGeminiDemandError(status = 0, message = "") {
+  const text = String(message || "").toLowerCase();
+  return [429, 500, 502, 503, 504].includes(Number(status)) ||
+    /high demand|temporar|try again later|overloaded|resource exhausted|rate limit|quota|unavailable|capacity/.test(text);
+}
+
+function wait(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function postGeminiVisionWithRetry({
+  apiKey,
+  requestBody,
+  primaryModel = "",
+  fallbackModel = "",
+  requestId = "",
+  label = "Gemini Vision"
+} = {}) {
+  const models = uniqueGeminiModels(
+    primaryModel || process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash",
+    fallbackModel || process.env.GEMINI_VISION_FALLBACK_MODEL || "gemini-1.5-flash"
+  );
+  let last = null;
+
+  for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
+    const model = models[modelIndex];
+    const maxAttempts = modelIndex === 0 ? 2 : 1;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody)
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.ok) {
+          if (modelIndex > 0 || attempt > 1) {
+            console.warn(`[Gemini Retry] requestId=${requestId || "-"} label=${label} recovered model=${model} attempt=${attempt}`);
+          }
+          return { response, payload, model, attempt };
+        }
+
+        const message = geminiResponseErrorMessage(payload, `HTTP ${response.status}`);
+        last = { response, payload, model, attempt, status: response.status, message };
+        if (isTemporaryGeminiDemandError(response.status, message) && (attempt < maxAttempts || modelIndex < models.length - 1)) {
+          console.warn(`[Gemini Retry] requestId=${requestId || "-"} label=${label} model=${model} attempt=${attempt} status=${response.status} reason=${sanitizeUniversalIntakeDetails(message)}`);
+          await wait(700 * attempt);
+          continue;
+        }
+
+        return last;
+      } catch (error) {
+        last = { response: null, payload: {}, model, attempt, status: 0, message: error.message, error };
+        if (attempt < maxAttempts || modelIndex < models.length - 1) {
+          console.warn(`[Gemini Retry] requestId=${requestId || "-"} label=${label} model=${model} attempt=${attempt} status=network reason=${sanitizeUniversalIntakeDetails(error.message)}`);
+          await wait(700 * attempt);
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  return last || { response: null, payload: {}, model: "", attempt: 0, status: 0, message: "Gemini request failed" };
+}
+
 async function extractFlightWithGeminiVision(files = [], { destination = "" } = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -8215,7 +8294,6 @@ async function extractFlightWithGeminiVision(files = [], { destination = "" } = 
   }
 
   const model = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const prompt = [
     "You are extracting flight itinerary data from travel screenshots for GT63.",
     "Return JSON only. Do not add markdown. Do not guess invisible fields.",
@@ -8232,10 +8310,12 @@ async function extractFlightWithGeminiVision(files = [], { destination = "" } = 
     }
   }));
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const gemini = await postGeminiVisionWithRetry({
+    apiKey,
+    primaryModel: model,
+    requestId: "flight-gemini-test",
+    label: "Flight Gemini Test",
+    requestBody: {
       contents: [{
         role: "user",
         parts: [
@@ -8248,17 +8328,19 @@ async function extractFlightWithGeminiVision(files = [], { destination = "" } = 
         responseMimeType: "application/json",
         responseSchema: GEMINI_FLIGHT_SCHEMA
       }
-    })
+    }
   });
 
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || `Gemini request failed with HTTP ${response.status}`);
+  const payload = gemini.payload || {};
+  if (!gemini.response?.ok) {
+    const error = new Error(gemini.message || `Gemini request failed with HTTP ${gemini.status || "unknown"}`);
+    error.statusCode = gemini.status || 500;
+    throw error;
   }
 
   const canonical = validateGeminiFlightJson(extractJsonFromGeminiResponse(payload));
   return {
-    model,
+    model: gemini.model || model,
     canonical,
     flight: geminiCanonicalToFlight(canonical),
     rawResponse: payload
@@ -8648,7 +8730,6 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "", 
   }
   const intakeId = `INTAKE-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   const model = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const prompt = [
     "You are GT63 Universal Travel Intake.",
     "Analyze all provided travel screenshots together.",
@@ -8670,11 +8751,15 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "", 
   })).map(({ inlineData }) => ({ inlineData }));
 
   let response;
+  let payload;
+  let usedModel = model;
   try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const gemini = await postGeminiVisionWithRetry({
+      apiKey,
+      primaryModel: model,
+      requestId,
+      label: "Universal Travel Intake",
+      requestBody: {
         contents: [{
           role: "user",
           parts: [
@@ -8687,30 +8772,22 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "", 
           responseMimeType: "application/json",
           responseSchema: GEMINI_UNIVERSAL_TRAVEL_SCHEMA
         }
-      })
+      }
     });
+    response = gemini.response;
+    payload = gemini.payload || {};
+    usedModel = gemini.model || model;
+    if (!response?.ok) {
+      throw universalIntakeError(
+        "gemini-response",
+        "Gemini returned an error",
+        gemini.message || `HTTP ${gemini.status || "unknown"}`,
+        { statusCode: gemini.status || 500, requestId }
+      );
+    }
   } catch (error) {
+    if (error.stage) throw error;
     throw universalIntakeError("gemini-request", "Gemini request failed", error.message, { cause: error, requestId });
-  }
-
-  let payload;
-  try {
-    payload = await response.json();
-  } catch (error) {
-    throw universalIntakeError("gemini-response", "Gemini response was not JSON", error.message, {
-      cause: error,
-      statusCode: response.status || 500,
-      requestId
-    });
-  }
-
-  if (!response.ok) {
-    throw universalIntakeError(
-      "gemini-response",
-      "Gemini returned an error",
-      payload?.error?.message || `HTTP ${response.status}`,
-      { statusCode: response.status || 500, requestId }
-    );
   }
 
   let geminiJson;
@@ -8746,7 +8823,7 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "", 
 
   return {
     intakeId,
-    model,
+    model: usedModel,
     canonical,
     offerFlight,
     offerHotel,
@@ -10305,6 +10382,8 @@ module.exports = {
   buildFlightDateSourceTrace,
   normalizeUniversalIntakeError,
   universalIntakeError,
+  isTemporaryGeminiDemandError,
+  uniqueGeminiModels,
   buildFlightOcrConfidence,
   archiveRegressionCaseSafe,
   listRegressionCases,

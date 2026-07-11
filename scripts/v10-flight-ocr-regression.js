@@ -40,8 +40,10 @@ const {
   readRegressionCaseDetail,
   summarizeRegressionLibrary,
   summarizeBetaHealth,
+  isTemporaryGeminiDemandError,
   normalizeUniversalIntakeError,
   parseConnectingFlightCheckout,
+  uniqueGeminiModels,
   universalIntakeError,
   buildFlightOcrConfidence,
   ocrPricePatternMetrics
@@ -141,6 +143,8 @@ assert.deepStrictEqual(
   "universal intake errors should expose structured diagnostics"
 );
 assert.ok(!universalPayload.details.includes("SECRET"), "universal intake frontend details should redact API-key-like tokens");
+assert.equal(isTemporaryGeminiDemandError(503, "This model is currently experiencing high demand. Please try again later."), true, "Gemini high demand should be retryable");
+assert.deepStrictEqual(uniqueGeminiModels("gemini-2.5-flash", "gemini-2.5-flash"), ["gemini-2.5-flash"], "Gemini fallback model list should be unique");
 
 fs.rmSync(process.env.REGRESSION_LIBRARY_DIR, { recursive: true, force: true });
 const archiveResult = archiveRegressionCaseSafe({
