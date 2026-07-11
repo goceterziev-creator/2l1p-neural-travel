@@ -16,7 +16,9 @@ if (process.env.OCR_PATTERN_CONFIG_FILE.includes("storage/generated/")) {
 const {
   airportResolverMetrics,
   archiveRegressionCaseSafe,
+  buildFlightDateSourceTrace,
   buildBookingAndroidFlightProfileTrace,
+  buildValidationWarnings,
   classifyFlightScreenshot,
   cleanupFlightDateTimeDisplay,
   detectGenericConnectingFlight,
@@ -38,7 +40,9 @@ const {
   readRegressionCaseDetail,
   summarizeRegressionLibrary,
   summarizeBetaHealth,
+  normalizeUniversalIntakeError,
   parseConnectingFlightCheckout,
+  universalIntakeError,
   buildFlightOcrConfidence,
   ocrPricePatternMetrics
 } = require("../server");
@@ -56,6 +60,87 @@ for (const code of ["SOF", "PMO", "BVA", "JFK", "YYZ", "WAW", "ZRH", "VIE", "IST
 assert.ok(airportRecords.some((record) => record.code === "NUE"), "airport seed must include NUE");
 assert.equal(findAirport("Nuremberg")?.code, "NUE", "shadow airport lookup must resolve Nuremberg");
 assert.ok(Number.isFinite(airportResolverMetrics.totalAirportLookups), "airport resolver metrics must be available");
+
+const canonicalDateOffer = {
+  id: "DATE-SOURCE-TEST",
+  destination: "",
+  travelDates: "16.07.2026 - 18.07.2026",
+  guests: "2 adults",
+  finalPrice: 1000,
+  flights: [{
+    airline: "Test Air",
+    route: "SOF -> PMO / PMO -> SOF",
+    departure: "SOF -> PMO, 16 July - 16 July",
+    arrival: "PMO -> SOF, 16 July - 16 July",
+    outboundSegments: [
+      { from: "SOF", to: "PMO", departure: "16 July 10:00", arrival: "16 July 12:00" }
+    ],
+    inboundSegments: [
+      { from: "PMO", to: "SOF", departure: "18 July 13:00", arrival: "18 July 15:00" }
+    ]
+  }],
+  hotels: []
+};
+const dateTrace = buildFlightDateSourceTrace(canonicalDateOffer, "SOF -> PMO 16 July PMO -> SOF 16 July");
+assert.equal(dateTrace.keys.outbound, "2026-07-16", "validator should use outbound segment departure date");
+assert.equal(dateTrace.keys.inbound, "2026-07-18", "validator should use inbound segment departure date");
+assert.match(dateTrace.sourceFields.inbound, /inboundSegments\[0\]\.departure/, "inbound date source must be inbound segment departure");
+const dateWarnings = buildValidationWarnings(canonicalDateOffer, {}, []);
+assert.ok(!dateWarnings.some((warning) => String(warning).includes("полетът показва")), "stale legacy summary dates must not override canonical segment dates");
+
+const overnightInboundOffer = {
+  id: "DATE-SOURCE-OVERNIGHT",
+  destination: "",
+  travelDates: "16.07.2026 - 18.07.2026",
+  guests: "2 adults",
+  finalPrice: 1000,
+  flights: [{
+    route: "SOF -> PMO / PMO -> SOF",
+    outboundSegments: [
+      { from: "SOF", to: "PMO", departure: "16 July 10:00", arrival: "16 July 12:00" }
+    ],
+    inboundSegments: [
+      { from: "PMO", to: "SOF", departure: "18 July 23:00", arrival: "19 July 01:00" }
+    ]
+  }],
+  hotels: []
+};
+const overnightTrace = buildFlightDateSourceTrace(overnightInboundOffer, "");
+assert.equal(overnightTrace.keys.inbound, "2026-07-18", "inbound validation should use inbound departure date, not overnight arrival date");
+
+const missingYearTrace = buildFlightDateSourceTrace({
+  id: "DATE-SOURCE-MISSING-YEAR",
+  destination: "",
+  travelDates: "16.07 - 18.07",
+  flights: [{
+    outboundSegments: [{ departure: "16 July 10:00" }],
+    inboundSegments: [{ departure: "18 July 12:00" }]
+  }]
+}, "");
+assert.equal(missingYearTrace.keys.outbound, "07-16", "missing year should remain partial date");
+assert.equal(missingYearTrace.keys.inbound, "07-18", "missing year inbound should remain partial date");
+
+const universalError = universalIntakeError("json-parse", "Gemini JSON parse failed", "bad key=SECRET", {
+  requestId: "UI-test",
+  statusCode: 502
+});
+const universalPayload = normalizeUniversalIntakeError(universalError);
+assert.deepStrictEqual(
+  {
+    success: universalPayload.success,
+    stage: universalPayload.stage,
+    reason: universalPayload.reason,
+    requestId: universalPayload.requestId
+  },
+  {
+    success: false,
+    stage: "json-parse",
+    reason: "Gemini JSON parse failed",
+    requestId: "UI-test"
+  },
+  "universal intake errors should expose structured diagnostics"
+);
+assert.ok(!universalPayload.details.includes("SECRET"), "universal intake frontend details should redact API-key-like tokens");
 
 fs.rmSync(process.env.REGRESSION_LIBRARY_DIR, { recursive: true, force: true });
 const archiveResult = archiveRegressionCaseSafe({

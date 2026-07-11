@@ -15,6 +15,9 @@ const zlib = require("zlib");
 const {
   renderClientFlightItineraryBg
 } = require("./server/flight-display-bg");
+const {
+  normalizeTravelDate
+} = require("./server/travel-normalizers/date-normalizer");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -1055,6 +1058,145 @@ function parseDateTokens(value = "", fallbackYear = "") {
   return dates;
 }
 
+function normalizeFlightDateCandidate(value = "", options = {}) {
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  if (!raw) return normalizeTravelDate("");
+
+  let normalized = normalizeTravelDate(raw, options);
+  if (normalized.day && normalized.month) return normalized;
+
+  const monthFirst = raw.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)\.?\s+(\d{1,2})(?:[,]?\s+(20\d{2}))?/i);
+  if (monthFirst) {
+    normalized = normalizeTravelDate(
+      `${monthFirst[2]} ${monthFirst[1]} ${monthFirst[3] || ""}`.trim(),
+      options
+    );
+    if (normalized.day && normalized.month) return normalized;
+  }
+
+  return normalized;
+}
+
+function flightDateKey(date = {}) {
+  if (!date.day || !date.month) return "";
+  const day = String(date.day).padStart(2, "0");
+  const month = String(date.month).padStart(2, "0");
+  return date.year ? `${date.year}-${month}-${day}` : `${month}-${day}`;
+}
+
+function displayFlightDateTraceValue(date = {}) {
+  if (!date.day || !date.month) return "";
+  const day = String(date.day).padStart(2, "0");
+  const month = String(date.month).padStart(2, "0");
+  return date.year ? `${day}.${month}.${date.year}` : `${day}.${month}`;
+}
+
+function extractSegmentDateSource(segment = {}, direction = "", index = 0, field = "departure", options = {}) {
+  const candidates = field === "arrival"
+    ? [segment.arrival, segment.arrivalDate]
+    : [segment.departure, segment.departureDate];
+
+  for (const value of candidates) {
+    const date = normalizeFlightDateCandidate(value, options);
+    if (date.day && date.month) {
+      return {
+        date,
+        value: String(value || "").replace(/\s+/g, " ").trim(),
+        field: `flights[0].${direction}Segments[${index}].${field}`,
+        source: date.source || "segment"
+      };
+    }
+  }
+
+  return { date: normalizeTravelDate(""), value: "", field: "", source: "missing" };
+}
+
+function buildFlightDateSourceTrace(offer = {}, flightText = "") {
+  const flights = getFlights(offer);
+  const flight = flights[0] || {};
+  const trustedOfferYear = inferYearFromText(offer.travelDates) || null;
+  const dateOptions = { trustedOfferYear };
+  const outboundSegments = safeArray(flight.outboundSegments || flight.outbound?.segments);
+  const inboundSegments = safeArray(flight.inboundSegments || flight.inbound?.segments);
+  const combinedSegments = safeArray(flight.segments);
+  const offerDates = parseDateTokens(offer.travelDates, trustedOfferYear || "");
+  const legacySummaryDates = parseDateTokens(flightText, trustedOfferYear || "");
+
+  let outbound = outboundSegments.length
+    ? extractSegmentDateSource(outboundSegments[0], "outbound", 0, "departure", dateOptions)
+    : { date: normalizeTravelDate(""), value: "", field: "", source: "missing" };
+  let inbound = inboundSegments.length
+    ? extractSegmentDateSource(inboundSegments[0], "inbound", 0, "departure", dateOptions)
+    : { date: normalizeTravelDate(""), value: "", field: "", source: "missing" };
+
+  if ((!outbound.date.day || !outbound.date.month) && combinedSegments.length) {
+    outbound = extractSegmentDateSource(combinedSegments[0], "segments", 0, "departure", dateOptions);
+  }
+
+  if ((!inbound.date.day || !inbound.date.month) && combinedSegments.length > 1) {
+    const midpoint = Math.floor(combinedSegments.length / 2);
+    inbound = extractSegmentDateSource(combinedSegments[midpoint], "segments", midpoint, "departure", dateOptions);
+  }
+
+  if ((!outbound.date.day || !outbound.date.month) && legacySummaryDates[0]) {
+    outbound = {
+      date: normalizeFlightDateCandidate(legacySummaryDates[0], dateOptions),
+      value: legacySummaryDates[0],
+      field: "flight.departure/arrival legacy summary",
+      source: "legacy-summary"
+    };
+  }
+
+  if ((!inbound.date.day || !inbound.date.month) && legacySummaryDates[1]) {
+    inbound = {
+      date: normalizeFlightDateCandidate(legacySummaryDates[1], dateOptions),
+      value: legacySummaryDates[1],
+      field: "flight.departure/arrival legacy summary",
+      source: "legacy-summary"
+    };
+  }
+
+  return {
+    segmentDates: {
+      outbound: displayFlightDateTraceValue(outbound.date),
+      inbound: displayFlightDateTraceValue(inbound.date)
+    },
+    rendererDates: {
+      outbound: displayFlightDateTraceValue(outbound.date),
+      inbound: displayFlightDateTraceValue(inbound.date)
+    },
+    validatorDates: {
+      outbound: displayFlightDateTraceValue(outbound.date),
+      inbound: displayFlightDateTraceValue(inbound.date)
+    },
+    legacySummaryDates: {
+      outbound: legacySummaryDates[0] || "",
+      inbound: legacySummaryDates[1] || ""
+    },
+    offerPeriod: {
+      start: offerDates[0] || "",
+      end: offerDates[1] || ""
+    },
+    sourceFields: {
+      outbound: outbound.field,
+      inbound: inbound.field
+    },
+    keys: {
+      outbound: flightDateKey(outbound.date),
+      inbound: flightDateKey(inbound.date),
+      offerStart: offerDates[0] || "",
+      offerEnd: offerDates[1] || ""
+    }
+  };
+}
+
+function offerDateMatchesFlightDate(offerIso = "", flightKey = "") {
+  if (!offerIso || !flightKey) return true;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(flightKey)) return offerIso === flightKey;
+  const offerPartial = String(offerIso).slice(5);
+  return offerPartial === flightKey;
+}
+
 function displayDateToken(isoDate = "") {
   const match = String(isoDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[3]}.${match[2]}.${match[1]}` : "";
@@ -1438,10 +1580,21 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
 
   const offerYear = inferYearFromText(offer.travelDates) || inferYearFromText(flightText);
   const offerDates = parseDateTokens(offer.travelDates, offerYear);
-  const flightDates = parseDateTokens(flightText, offerYear);
+  const dateSourceTrace = buildFlightDateSourceTrace(offer, flightText);
+  const flightDates = [
+    dateSourceTrace.keys?.outbound,
+    dateSourceTrace.keys?.inbound
+  ].filter(Boolean);
+  offer.flightDateSourceTrace = {
+    offerId: offer.id || offer.offerId || "",
+    ...dateSourceTrace
+  };
 
   if (offerDates.length >= 2 && flightDates.length >= 2) {
-    if (offerDates[0] !== flightDates[0] || offerDates[1] !== flightDates[1]) {
+    const outboundMatches = offerDateMatchesFlightDate(offerDates[0], flightDates[0]);
+    const inboundMatches = offerDateMatchesFlightDate(offerDates[1], flightDates[1]);
+    if (!outboundMatches || !inboundMatches) {
+      console.warn("[Flight Date Source]", JSON.stringify(offer.flightDateSourceTrace));
       warnings.push(createQaFinding({ severity: "WARNING", message: `\u041f\u0435\u0440\u0438\u043e\u0434\u044a\u0442 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.travelDates || "-"}", \u043d\u043e \u043f\u043e\u043b\u0435\u0442\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${flightDates[0]} - ${flightDates[1]}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0434\u0430\u0442\u0438\u0442\u0435 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.` }));
     }
   }
@@ -8433,12 +8586,25 @@ function archiveUniversalSourceEvidenceSafe({ files = [], intakeId = "", sources
   }
 }
 
+function createUniversalIntakeRequestId() {
+  return `UI-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+}
+
+function sanitizeUniversalIntakeDetails(details = "") {
+  return String(details || "")
+    .replace(/key=([^&\s]+)/gi, "key=[redacted]")
+    .replace(/api[_-]?key["']?\s*[:=]\s*["']?[^"',\s]+/gi, "apiKey=[redacted]")
+    .slice(0, 800);
+}
+
 function universalIntakeError(stage, reason, details = "", options = {}) {
   const error = new Error(reason || "Universal Intake failed");
   error.stage = stage || "unknown";
   error.reason = reason || "Universal Intake failed";
-  error.details = details || options.cause?.message || "";
+  error.details = sanitizeUniversalIntakeDetails(details || options.cause?.message || "");
   error.statusCode = options.statusCode || options.cause?.statusCode || 500;
+  error.requestId = options.requestId || "";
+  error.cause = options.cause || error.cause;
   return error;
 }
 
@@ -8447,15 +8613,17 @@ function normalizeUniversalIntakeError(error = {}) {
     success: false,
     stage: error.stage || "unknown",
     reason: error.reason || error.message || "Universal Intake failed",
-    details: error.details || error.message || ""
+    details: sanitizeUniversalIntakeDetails(error.details || error.message || ""),
+    requestId: error.requestId || ""
   };
 }
 
 function logUniversalIntakeError(error = {}) {
   const payload = normalizeUniversalIntakeError(error);
   console.error(
-    `[Universal Intake] stage=${payload.stage} reason=${payload.reason} details=${payload.details}`
+    `[Universal Intake] requestId=${payload.requestId || "-"} stage=${payload.stage} reason=${payload.reason} details=${payload.details}`
   );
+  if (error.cause?.stack) console.error(`[Universal Intake] requestId=${payload.requestId || "-"} stack=${error.cause.stack}`);
 }
 
 function sendUniversalIntakeError(res, error = {}) {
@@ -8464,14 +8632,14 @@ function sendUniversalIntakeError(res, error = {}) {
   return res.status(error.statusCode || 500).json(payload);
 }
 
-async function extractUniversalTravelWithGemini(files = [], { destination = "" } = {}) {
+async function extractUniversalTravelWithGemini(files = [], { destination = "", requestId = "" } = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw universalIntakeError(
       "gemini-request",
       "Missing GEMINI_API_KEY",
       "Add GEMINI_API_KEY in Railway Variables to enable Universal Travel Intake.",
-      { statusCode: 400 }
+      { statusCode: 400, requestId }
     );
   }
   const intakeId = `INTAKE-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
@@ -8518,7 +8686,7 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "" }
       })
     });
   } catch (error) {
-    throw universalIntakeError("gemini-request", "Gemini request failed", error.message, { cause: error });
+    throw universalIntakeError("gemini-request", "Gemini request failed", error.message, { cause: error, requestId });
   }
 
   let payload;
@@ -8527,7 +8695,8 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "" }
   } catch (error) {
     throw universalIntakeError("gemini-response", "Gemini response was not JSON", error.message, {
       cause: error,
-      statusCode: response.status || 500
+      statusCode: response.status || 500,
+      requestId
     });
   }
 
@@ -8536,7 +8705,7 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "" }
       "gemini-response",
       "Gemini returned an error",
       payload?.error?.message || `HTTP ${response.status}`,
-      { statusCode: response.status || 500 }
+      { statusCode: response.status || 500, requestId }
     );
   }
 
@@ -8544,14 +8713,14 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "" }
   try {
     geminiJson = extractJsonFromGeminiResponse(payload);
   } catch (error) {
-    throw universalIntakeError("json-parse", "Gemini JSON parse failed", error.message, { cause: error });
+    throw universalIntakeError("json-parse", "Gemini JSON parse failed", error.message, { cause: error, requestId });
   }
 
   let canonical;
   try {
     canonical = normalizeUniversalTravelJson(geminiJson, files, intakeId);
   } catch (error) {
-    throw universalIntakeError("flight-normalization", "Universal travel JSON normalization failed", error.message, { cause: error });
+    throw universalIntakeError("flight-normalization", "Universal travel JSON normalization failed", error.message, { cause: error, requestId });
   }
 
   const evidence = archiveUniversalSourceEvidenceSafe({ files, intakeId, sources: canonical.sources });
@@ -8561,14 +8730,14 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "" }
   try {
     offerFlight = universalFlightToOfferFlight(canonical.flight);
   } catch (error) {
-    throw universalIntakeError("flight-normalization", "Flight normalization failed", error.message, { cause: error });
+    throw universalIntakeError("flight-normalization", "Flight normalization failed", error.message, { cause: error, requestId });
   }
 
   let offerHotel;
   try {
     offerHotel = universalHotelToOfferHotel(canonical.hotel);
   } catch (error) {
-    throw universalIntakeError("hotel-normalization", "Hotel normalization failed", error.message, { cause: error });
+    throw universalIntakeError("hotel-normalization", "Hotel normalization failed", error.message, { cause: error, requestId });
   }
 
   return {
@@ -9307,6 +9476,7 @@ app.post("/api/import-image-gemini-test", requireCapability("imports.run"), uplo
 });
 
 app.post("/api/universal-travel-intake-gemini-test", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {
+  const requestId = createUniversalIntakeRequestId();
   try {
     let imageFiles;
     try {
@@ -9314,18 +9484,18 @@ app.post("/api/universal-travel-intake-gemini-test", requireCapability("imports.
     } catch (error) {
       return sendUniversalIntakeError(
         res,
-        universalIntakeError("image-processing", "Uploaded image processing failed", error.message, { cause: error })
+        universalIntakeError("image-processing", "Uploaded image processing failed", error.message, { cause: error, requestId })
       );
     }
     if (!imageFiles.length) {
       return sendUniversalIntakeError(
         res,
-        universalIntakeError("upload", "No image uploaded", "Select at least one travel screenshot.", { statusCode: 400 })
+        universalIntakeError("upload", "No image uploaded", "Select at least one travel screenshot.", { statusCode: 400, requestId })
       );
     }
 
     const destination = req.body?.destination || "";
-    const geminiResult = await extractUniversalTravelWithGemini(imageFiles, { destination });
+    const geminiResult = await extractUniversalTravelWithGemini(imageFiles, { destination, requestId });
     let parserResult = null;
     let parserError = "";
 
@@ -9354,6 +9524,7 @@ app.post("/api/universal-travel-intake-gemini-test", requireCapability("imports.
       responsePayload = {
         success: true,
         mode: "GEMINI_UNIVERSAL_TRAVEL_INTAKE_TEST",
+        requestId,
         intakeId: geminiResult.intakeId,
         model: geminiResult.model,
         sources: geminiResult.canonical.sources,
@@ -9376,11 +9547,12 @@ app.post("/api/universal-travel-intake-gemini-test", requireCapability("imports.
         }
       };
     } catch (error) {
-      throw universalIntakeError("offer-build", "Universal Intake response build failed", error.message, { cause: error });
+      throw universalIntakeError("offer-build", "Universal Intake response build failed", error.message, { cause: error, requestId });
     }
 
     return res.json(responsePayload);
   } catch (error) {
+    if (!error.requestId) error.requestId = requestId;
     return sendUniversalIntakeError(res, error);
   }
 });
@@ -10125,6 +10297,10 @@ module.exports = {
   parseDirectRoundTripTicket,
   parseWizzCheckout,
   normalizeOffer,
+  buildValidationWarnings,
+  buildFlightDateSourceTrace,
+  normalizeUniversalIntakeError,
+  universalIntakeError,
   buildFlightOcrConfidence,
   archiveRegressionCaseSafe,
   listRegressionCases,

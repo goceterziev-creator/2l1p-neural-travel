@@ -169,6 +169,7 @@ async function fetchJson(url, options = {}) {
       error.stage = data.stage || "";
       error.reason = data.reason || "";
       error.details = data.details || "";
+      error.requestId = data.requestId || "";
       error.response = data;
     }
     throw error;
@@ -2832,12 +2833,14 @@ function renderUniversalTravelError(error = {}) {
   const stage = error.stage || error.response?.stage || "unknown";
   const reason = error.reason || error.response?.reason || error.message || "Universal Intake failed";
   const details = error.details || error.response?.details || error.message || "-";
+  const requestId = error.requestId || error.response?.requestId || "-";
   box.innerHTML = `
     <div class="upload-box warning" style="margin-top: 12px;">
       <h3>Universal Intake Error</h3>
       <p><strong>Stage:</strong><br>${escapeHtml(stage)}</p>
       <p><strong>Reason:</strong><br>${escapeHtml(reason)}</p>
       <p><strong>Details:</strong><br>${escapeHtml(details)}</p>
+      <p><strong>Reference:</strong><br>${escapeHtml(requestId)}</p>
     </div>
   `;
 }
@@ -2873,7 +2876,8 @@ async function uploadUniversalTravelIntake() {
     const stage = error.stage || error.response?.stage || "unknown";
     const reason = error.reason || error.response?.reason || error.message || "Universal Intake failed";
     const details = error.details || error.response?.details || error.message || "-";
-    alert(`Universal Travel Intake failed\n\nStage: ${stage}\nReason: ${reason}\nDetails: ${details}`);
+    const requestId = error.requestId || error.response?.requestId || "-";
+    alert(`Universal Travel Intake failed\n\nStage: ${stage}\nReason: ${reason}\nDetails: ${details}\nReference: ${requestId}`);
   }
 }
 
