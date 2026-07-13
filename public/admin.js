@@ -1215,11 +1215,15 @@ function syncHomeFieldsToCreateSurface() {
   updateCreateSurfaceSummary();
 }
 
-function startHomeUniversalIntake() {
+function startHomeSmartImport() {
   syncHomeFieldsToCreateSurface();
   setCreateSurfaceOpen(true);
   $("createSurface")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  setTimeout(() => $("universalTravelImage")?.focus(), 220);
+  setTimeout(() => $("smartImportImage")?.focus(), 220);
+}
+
+function startHomeUniversalIntake() {
+  startHomeSmartImport();
 }
 
 function startHomeManualProposal() {
@@ -2854,7 +2858,8 @@ function renderUniversalTravelReview(data = {}, files = []) {
   latestUniversalTravelObjectUrls.forEach((url) => URL.revokeObjectURL(url));
   latestUniversalTravelObjectUrls = files.map((file) => URL.createObjectURL(file));
 
-  const box = $("universalTravelReview");
+  const reviewTarget = data.reviewTarget || "universalTravelReview";
+  const box = $(reviewTarget);
   if (!box) return;
 
   const flight = data.offerFlight || {};
@@ -2867,14 +2872,15 @@ function renderUniversalTravelReview(data = {}, files = []) {
 
   box.innerHTML = `
     <div class="upload-box" style="margin-top: 12px;">
-      <h3>Universal Intake Review</h3>
-      <div class="muted">Test mode. Review and edit before using the result.</div>
+      <h3>${data.mode === "GT63_SMART_IMPORT" ? "Smart Import Review" : "Universal Intake Review"}</h3>
+      <div class="muted">${data.mode === "GT63_SMART_IMPORT" ? "Review recognized flight and hotel details before using the result." : "Test mode. Review and edit before using the result."}</div>
 
       <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 12px 0;">
         ${latestUniversalTravelObjectUrls.map((url, index) => `
           <div>
             <img src="${url}" alt="Original screenshot ${index + 1}" style="width:100%; max-height:220px; object-fit:contain; border:1px solid rgba(148,163,184,.35); border-radius:8px; background:#020617;" />
             <div class="muted">${escapeHtml(sources[index]?.sourceType || "unknown")} · ${escapeHtml(sources[index]?.originalFilename || files[index]?.name || `Screenshot ${index + 1}`)}</div>
+            ${sources[index]?.confidence || sources[index]?.reason ? `<div class="muted">${Math.round(Number(sources[index]?.confidence || 0) * 100)}% · ${escapeHtml(sources[index]?.reason || "")}</div>` : ""}
           </div>
         `).join("")}
       </div>
@@ -2933,7 +2939,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
 
       <div class="actions" style="margin-top: 12px;">
         <button type="button" onclick="applyUniversalTravelIntakeResult()">Use Result</button>
-        <button type="button" class="secondary" onclick="$('universalTravelReview').innerHTML=''">Cancel</button>
+        <button type="button" class="secondary" onclick="$('${escapeHtml(reviewTarget)}').innerHTML=''">Cancel</button>
       </div>
 
       <details style="margin-top: 12px;">
@@ -2957,7 +2963,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
 }
 
 function renderUniversalTravelError(error = {}) {
-  const box = $("universalTravelReview");
+  const box = $(error.reviewTarget || "universalTravelReview");
   if (!box) return;
   const stage = error.stage || error.response?.stage || "unknown";
   const reason = error.reason || error.response?.reason || error.message || "Universal Intake failed";
@@ -2972,6 +2978,47 @@ function renderUniversalTravelError(error = {}) {
       <p><strong>Reference:</strong><br>${escapeHtml(requestId)}</p>
     </div>
   `;
+}
+
+async function uploadSmartImport() {
+  if (!hasCapability("imports.run")) {
+    alert("Your role cannot run imports.");
+    return;
+  }
+
+  const input = $("smartImportImage");
+  const files = Array.from(input?.files || []);
+  if (!files.length) {
+    alert("Select at least one travel screenshot first.");
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    files.slice(0, 8).forEach((file) => formData.append("image", file));
+    formData.append("destination", $("destination")?.value || "");
+
+    const data = await fetchJson("/api/smart-import", {
+      method: "POST",
+      body: formData
+    });
+
+    console.log("SMART IMPORT DATA:", data);
+    data.reviewTarget = "smartImportReview";
+    if ($("homeLastIntake")) $("homeLastIntake").textContent = "PASS";
+    renderUniversalTravelReview(data, files.slice(0, 8));
+  } catch (error) {
+    console.error("Smart Import failed:", error);
+    if ($("homeLastIntake")) $("homeLastIntake").textContent = "FAILED";
+    renderUniversalTravelError({
+      ...error,
+      reviewTarget: "smartImportReview",
+      stage: error.stage || "smart-import",
+      reason: error.reason || error.message || "Smart Import failed",
+      details: error.details || error.response?.details || error.message || "-"
+    });
+    alert(`Smart Import failed: ${error.message}`);
+  }
 }
 
 async function uploadUniversalTravelIntake() {
@@ -3053,7 +3100,7 @@ function applyUniversalTravelIntakeResult() {
   }
 
   calculatePricing();
-  alert("Universal Travel Intake result applied. Review and save the offer.");
+  alert(`${data.mode === "GT63_SMART_IMPORT" ? "Smart Import" : "Universal Travel Intake"} result applied. Review and save the offer.`);
 }
 
 function getImportedFlightPrice(data = {}, flight = {}) {
@@ -4298,8 +4345,10 @@ if (validationWarnings.length) {
 window.importData = importData;
 window.uploadFlightImage = uploadFlightImage;
 window.uploadFlightImageGeminiTest = uploadFlightImageGeminiTest;
+window.uploadSmartImport = uploadSmartImport;
 window.uploadUniversalTravelIntake = uploadUniversalTravelIntake;
 window.applyUniversalTravelIntakeResult = applyUniversalTravelIntakeResult;
+window.startHomeSmartImport = startHomeSmartImport;
 window.startHomeUniversalIntake = startHomeUniversalIntake;
 window.startHomeManualProposal = startHomeManualProposal;
 window.scrollToRecentOffers = scrollToRecentOffers;

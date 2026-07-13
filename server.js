@@ -9544,6 +9544,152 @@ function mergeImportedHotelRecords(records = []) {
   };
 }
 
+async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true } = {}) {
+  const parsedHotels = [];
+  const rawParsedHotels = [];
+  for (const file of imageFiles) {
+    const parsed = await callVisionJson({
+      imageBuffer: file.buffer,
+      mimeType: file.mimetype || "image/png",
+      prompt: `
+You are reading a hotel booking screenshot in any language: English, Bulgarian, Italian, Spanish, German, French, or another language.
+Return ONLY strict JSON:
+{
+  "name": "",
+  "stars": "",
+  "area": "",
+  "distance": "",
+  "room": "",
+  "meal": "",
+  "price": 0,
+  "currency": "EUR",
+  "roomsLeft": "",
+  "description": "",
+  "address": "",
+  "location": "",
+  "rating": "",
+  "amenities": []
+}
+Rules:
+- price must be numeric only
+- return all human-readable fields in Bulgarian: area, distance, room, meal, roomsLeft, description
+- keep hotel name as the original brand/name if visible
+- area should include visible city/address/area, not empty when an address is visible
+- amenities should include visible facilities such as Free WiFi, Parking, Breakfast, rating, pool, restaurant
+- description should be short, client-friendly Bulgarian, based only on visible info
+- translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
+- if not visible, use empty string or 0
+`
+    });
+    rawParsedHotels.push(parsed);
+    parsedHotels.push(enrichHotelImportFallbacks(
+      normalizeHotelTextToBulgarian(parsed),
+      parsed,
+      destination || ""
+    ));
+  }
+
+  const hotel = enrichHotelImportFallbacks(
+    mergeImportedHotelRecords(parsedHotels),
+    parsedHotels[0] || {},
+    destination || ""
+  );
+  const imageUrls = await findHotelImagesWithSerpApi(
+    hotel.name,
+    hotel.area || destination || "",
+    3
+  );
+  if (imageUrls.length) {
+    hotel.images = imageUrls;
+  }
+  hotel.sourceAuthority = universalHotelSourceAuthority({
+    hasSerpApiKey: Boolean(process.env.SERPAPI_KEY),
+    imageCount: imageUrls.length,
+    hotelName: hotel.name
+  });
+  hotel.geminiHints = {
+    name: hotel.name || "",
+    area: hotel.area || "",
+    room: hotel.room || "",
+    meal: hotel.meal || "",
+    price: Number(hotel.price || 0),
+    currency: hotel.currency || "EUR",
+    description: hotel.description || ""
+  };
+
+  const metadata = normalizeHotelProfileMetadata(hotel, rawParsedHotels[0] || {});
+  const operatorWarnings = metadata.missingFields.includes("hotel.price")
+    ? ["Hotel price is not visible in the screenshot. Enter it manually."]
+    : [];
+
+  if (archive) {
+    await archiveRegressionCaseSafe({
+      type: "hotel",
+      files: imageFiles,
+      rawOcrText: JSON.stringify(rawParsedHotels, null, 2),
+      parsedOutput: hotel,
+      trace: { rawParsedHotels, metadata },
+      metadata,
+      decision: operatorWarnings.length ? "REVIEW" : "PASS",
+      route: "",
+      destination: hotel.area || hotel.location || destination || "",
+      price: Number(hotel.price || 0),
+      sourceProfile: metadata.source || ""
+    });
+  }
+
+  return {
+    hotel,
+    metadata,
+    source: metadata.source,
+    missingFields: metadata.missingFields,
+    operatorWarnings,
+    rawParsedHotels
+  };
+}
+
+async function classifySmartImportSource(file = {}, index = 0) {
+  try {
+    const result = await callVisionJson({
+      imageBuffer: file.buffer,
+      mimeType: file.mimetype || "image/png",
+      prompt: `
+Classify this travel screenshot for GT63 Smart Import.
+Return ONLY strict JSON:
+{
+  "sourceType": "flight",
+  "confidence": 0,
+  "reason": ""
+}
+Allowed sourceType values: flight, hotel, mixed, unknown.
+Rules:
+- classify only; do not extract full travel data
+- use flight if the screenshot mainly contains flight itinerary, airport codes, flight numbers, boarding/flight details, or airline fare data
+- use hotel if it mainly contains hotel name, room, board, amenities, hotel price, accommodation details, or hotel booking details
+- use mixed only if both flight and hotel information are clearly visible
+- use unknown if unsure
+- confidence is 0 to 1
+`
+    });
+    const sourceType = ["flight", "hotel", "mixed", "unknown"].includes(result.sourceType)
+      ? result.sourceType
+      : "unknown";
+    return {
+      sourceId: `SRC-${index + 1}`,
+      sourceType,
+      confidence: Number(result.confidence || 0) || 0,
+      reason: String(result.reason || "").trim()
+    };
+  } catch (error) {
+    return {
+      sourceId: `SRC-${index + 1}`,
+      sourceType: "unknown",
+      confidence: 0,
+      reason: `Classification failed: ${error.message}`
+    };
+  }
+}
+
 app.post("/api/import-image-gemini-test", requireCapability("imports.run"), upload.array("image", 4), async (req, res) => {
   try {
     const imageFiles = getUploadedImageFiles(req);
@@ -9590,6 +9736,109 @@ app.post("/api/import-image-gemini-test", requireCapability("imports.run"), uplo
     return res.status(error.statusCode || 500).json({
       error: "Gemini Vision intake test failed",
       message: error.message
+    });
+  }
+});
+
+app.post("/api/smart-import", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {
+  const intakeId = `SMART-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+  try {
+    const imageFiles = getUploadedImageFiles(req);
+    if (!imageFiles.length) {
+      return res.status(400).json({ success: false, error: "No image uploaded" });
+    }
+
+    const destination = req.body?.destination || "";
+    const classifications = [];
+    for (let index = 0; index < imageFiles.length; index += 1) {
+      classifications.push(await classifySmartImportSource(imageFiles[index], index));
+    }
+
+    const sources = classifications.map((classification, index) => ({
+      ...classification,
+      originalFilename: imageFiles[index]?.originalname || `screenshot_${index + 1}`,
+      mimeType: imageFiles[index]?.mimetype || "image/png",
+      uploadedAt: new Date().toISOString()
+    }));
+    const evidence = archiveUniversalSourceEvidenceSafe({ files: imageFiles, intakeId, sources });
+    const nextSources = evidence.sources || sources;
+
+    const flightFiles = imageFiles.filter((_, index) => ["flight", "mixed"].includes(classifications[index]?.sourceType));
+    const hotelFiles = imageFiles.filter((_, index) => ["hotel", "mixed"].includes(classifications[index]?.sourceType));
+    const unknownSources = nextSources.filter((source) => source.sourceType === "unknown");
+    const mixedSources = nextSources.filter((source) => source.sourceType === "mixed");
+
+    let offerFlight = {};
+    let flightResult = null;
+    const warnings = [];
+    if (flightFiles.length) {
+      try {
+        flightResult = await extractFlightWithGeminiVision(flightFiles, { destination });
+        offerFlight = flightResult.flight || {};
+      } catch (error) {
+        warnings.push(`Flight extraction failed: ${error.message}`);
+      }
+    }
+
+    let offerHotel = {};
+    let hotelResult = null;
+    if (hotelFiles.length) {
+      try {
+        hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false });
+        offerHotel = hotelResult.hotel || {};
+        warnings.push(...safeArray(hotelResult.operatorWarnings));
+      } catch (error) {
+        warnings.push(`Hotel extraction failed: ${error.message}`);
+      }
+    }
+
+    if (unknownSources.length) {
+      warnings.push("Some screenshots could not be identified. Choose Flight, Hotel, or Skip manually.");
+    }
+    if (mixedSources.length) {
+      warnings.push("Mixed screenshots were routed to both engines and require review.");
+    }
+
+    const responsePayload = {
+      success: true,
+      mode: "GT63_SMART_IMPORT",
+      intakeId,
+      sources: nextSources,
+      classifications,
+      offerFlight,
+      offerHotel,
+      warnings,
+      evidence,
+      flight: flightResult?.canonical || null,
+      hotel: hotelResult ? {
+        metadata: hotelResult.metadata,
+        missingFields: hotelResult.missingFields,
+        hints: hotelResult.rawParsedHotels
+      } : null,
+      debug: {
+        flightModel: flightResult?.model || "",
+        hotelSource: hotelResult?.source || "",
+        universalIntakeDeprecated: true
+      }
+    };
+
+    if (evidence?.root) {
+      const evidenceRoot = path.dirname(evidence.root);
+      try {
+        writeJsonFile(path.join(evidenceRoot, "smart_import_response.json"), responsePayload);
+      } catch (error) {
+        console.warn("GT63 SMART IMPORT EVIDENCE WRITE FAILED:", error.message);
+      }
+    }
+
+    return res.json(responsePayload);
+  } catch (error) {
+    console.error("SMART IMPORT ERROR:", error);
+    return res.status(error.status || error.statusCode || 500).json({
+      success: false,
+      error: "Smart Import failed",
+      details: error.message,
+      intakeId
     });
   }
 });
@@ -10289,6 +10538,20 @@ app.post("/api/import-hotel-image", requireCapability("imports.run"), upload.arr
   try {
     const imageFiles = getUploadedImageFiles(req);
     if (!imageFiles.length) return res.status(400).json({ error: "No image uploaded" });
+
+    const result = await extractHotelHintWithSerpApi(imageFiles, {
+      destination: req.body?.destination || "",
+      archive: true
+    });
+
+    return res.json({
+      success: true,
+      hotel: result.hotel,
+      metadata: result.metadata,
+      source: result.source,
+      missingFields: result.missingFields,
+      operatorWarnings: result.operatorWarnings
+    });
 
     const parsedHotels = [];
     const rawParsedHotels = [];

@@ -2717,7 +2717,7 @@
               <label>Travel Dates</label>
               <input id="homeTravelDates" placeholder="15.09.2026 - 29.09.2026" />
               <div class="home-actions">
-                <button type="button" class="success" onclick="startHomeUniversalIntake()">Start Universal Intake</button>
+                <button type="button" class="success" onclick="startHomeSmartImport()">Start Smart Import</button>
                 <button type="button" class="secondary" onclick="startHomeManualProposal()">Create Manually</button>
               </div>
             </div>
@@ -2731,7 +2731,7 @@
                 <div class="home-health-item"><span>Last Intake</span><strong id="homeLastIntake">No run</strong></div>
               </div>
               <div class="home-links">
-                <button type="button" onclick="startHomeUniversalIntake()">Universal Intake</button>
+                <button type="button" onclick="startHomeSmartImport()">Smart Import</button>
                 <button type="button" onclick="scrollToRecentOffers()">Offers</button>
                 <button type="button" onclick="scrollToAdminWorkspace()">Admin Workspace</button>
               </div>
@@ -2807,39 +2807,46 @@
 
           <div class="divider"></div>
 
-          <h3>Universal Travel Intake</h3>
+          <h3>Smart Import</h3>
           <div class="upload-box">
+            <label>Travel Screenshots</label>
+            <input id="smartImportImage" type="file" accept="image/*" multiple />
+            <div class="actions">
+              <button type="button" class="success" data-capability="imports.run" data-capability-label="Your role cannot run imports" onclick="uploadSmartImport()">Smart Import</button>
+            </div>
+            <div class="muted">Upload flight and hotel screenshots. GT63 recognizes each source and routes it to the right engine.</div>
+          </div>
+          <div id="smartImportReview"></div>
+
+          <div class="divider"></div>
+
+          <details class="upload-box">
+            <summary>Diagnostics / legacy import tools</summary>
+            <p class="muted">Internal comparison tools. Smart Import is the main operator flow.</p>
+
+            <h3>Universal Travel Intake (deprecated/internal)</h3>
             <label>Travel Screenshots</label>
             <input id="universalTravelImage" type="file" accept="image/*" multiple />
             <div class="actions">
               <button type="button" class="secondary" data-capability="imports.run" data-capability-label="Your role cannot run OCR imports" onclick="uploadUniversalTravelIntake()">Gemini Universal Test</button>
             </div>
-            <div class="muted">Test mode: extracts visible flight and hotel details into one review before using the result.</div>
-          </div>
-          <div id="universalTravelReview"></div>
+            <div id="universalTravelReview"></div>
 
-          <div class="divider"></div>
-
-          <h3>AI Flight Screenshot Import</h3>
-          <div class="upload-box">
+            <h3>AI Flight Screenshot Import</h3>
             <label>Flight Screenshots</label>
             <input id="flightImage" type="file" accept="image/*" multiple />
             <div class="actions">
               <button type="button" data-capability="imports.run" data-capability-label="Your role cannot run OCR imports" onclick="uploadFlightImage()">Scan Flight Screenshot</button>
               <button type="button" class="secondary" data-capability="imports.run" data-capability-label="Your role cannot run OCR imports" onclick="uploadFlightImageGeminiTest()">Gemini Vision Test</button>
             </div>
-            <div class="muted">AI fills flight details and flight price.</div>
-          </div>
 
-          <h3>AI Hotel Screenshot Import</h3>
-          <div class="upload-box">
+            <h3>AI Hotel Screenshot Import</h3>
             <label>Hotel Screenshots</label>
             <input id="hotelImage" type="file" accept="image/*" multiple />
             <div class="actions">
               <button type="button" data-capability="imports.run" data-capability-label="Your role cannot run OCR imports" onclick="uploadHotelImage()">Scan Hotel Screenshot</button>
             </div>
-            <div class="muted">AI fills hotel name, room, meal, hotel description and hotel price.</div>
-          </div>
+          </details>
 
 <div class="actions">
   <button type="button" class="success" data-capability="imports.run" data-capability-label="Your role cannot run OCR imports" onclick="autoBuildOffer()">
