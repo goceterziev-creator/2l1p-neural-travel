@@ -9703,6 +9703,7 @@ function buildSmartImportResponse({
 } = {}) {
   return {
     success: true,
+    contractVersion: "1.0",
     mode: "GT63_SMART_IMPORT",
     intakeId,
     sources: safeArray(sources),
@@ -9711,6 +9712,7 @@ function buildSmartImportResponse({
     offerHotel: offerHotel && typeof offerHotel === "object" ? offerHotel : {},
     warnings: safeArray(warnings),
     evidence: evidence && typeof evidence === "object" ? evidence : {},
+    universalIntakeDeprecated: true,
     flight: flightResult?.canonical || null,
     hotel: hotelResult ? {
       metadata: hotelResult.metadata || {},

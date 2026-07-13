@@ -1,0 +1,72 @@
+{
+  "success": true,
+  "contractVersion": "1.0",
+  "mode": "GT63_SMART_IMPORT",
+  "intakeId": "SMART-fixture-hotel-only",
+  "sources": [
+    {
+      "sourceId": "SRC-1",
+      "sourceType": "hotel",
+      "confidence": 0.94,
+      "reason": "Hotel name, room, board and price are visible",
+      "originalFilename": "hotel-screenshot.png",
+      "mimeType": "image/png",
+      "uploadedAt": "2026-07-14T08:05:00.000Z"
+    }
+  ],
+  "classifications": [
+    {
+      "sourceId": "SRC-1",
+      "sourceType": "hotel",
+      "confidence": 0.94,
+      "reason": "Hotel name, room, board and price are visible"
+    }
+  ],
+  "offerFlight": {},
+  "offerHotel": {
+    "name": "Conrad Maldives Rangali Island",
+    "stars": "5",
+    "area": "Rangali Island, Maldives",
+    "room": "Beach Villa",
+    "meal": "Breakfast included",
+    "roomsLeft": "Not specified",
+    "price": 8900,
+    "description": "Luxury island resort with beach villas, overwater dining and spa facilities.",
+    "imageUrls": [
+      "https://example.com/conrad-maldives-1.jpg",
+      "https://example.com/conrad-maldives-2.jpg"
+    ],
+    "sourceAuthority": {
+      "source": "serpapi",
+      "imageCount": 2,
+      "warnings": []
+    }
+  },
+  "warnings": [],
+  "evidence": {
+    "archived": true,
+    "sources": []
+  },
+  "universalIntakeDeprecated": true,
+  "flight": null,
+  "hotel": {
+    "metadata": {
+      "source": "hotel_hint_serpapi",
+      "confidence": 0.86,
+      "missingFields": []
+    },
+    "missingFields": [],
+    "hints": [
+      {
+        "name": "Conrad Maldives Rangali Island",
+        "room": "Beach Villa",
+        "price": 8900
+      }
+    ]
+  },
+  "debug": {
+    "flightModel": "",
+    "hotelSource": "hotel_hint_serpapi",
+    "universalIntakeDeprecated": true
+  }
+}

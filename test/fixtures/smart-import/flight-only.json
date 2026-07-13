@@ -1,0 +1,79 @@
+{
+  "success": true,
+  "contractVersion": "1.0",
+  "mode": "GT63_SMART_IMPORT",
+  "intakeId": "SMART-fixture-flight-only",
+  "sources": [
+    {
+      "sourceId": "SRC-1",
+      "sourceType": "flight",
+      "confidence": 0.96,
+      "reason": "Flight itinerary with IATA codes and flight numbers",
+      "originalFilename": "flight-screenshot.png",
+      "mimeType": "image/png",
+      "uploadedAt": "2026-07-14T08:00:00.000Z"
+    }
+  ],
+  "classifications": [
+    {
+      "sourceId": "SRC-1",
+      "sourceType": "flight",
+      "confidence": 0.96,
+      "reason": "Flight itinerary with IATA codes and flight numbers"
+    }
+  ],
+  "offerFlight": {
+    "airline": "Turkish Airlines",
+    "route": "SOF -> MLE / MLE -> SOF",
+    "departure": "SOF -> MLE, 15 September, via IST",
+    "arrival": "MLE -> SOF, 22 September, via AUH",
+    "baggage": "1 checked bag included",
+    "notes": "Review flight times before reservation.",
+    "price": 2257.94,
+    "outboundSegments": [
+      {
+        "from": "SOF",
+        "to": "IST",
+        "departure": "15 September 01:10",
+        "arrival": "15 September 07:10",
+        "duration": "3h 30min",
+        "flightNumber": "TK1030",
+        "airline": "Turkish Airlines"
+      }
+    ],
+    "inboundSegments": []
+  },
+  "offerHotel": {},
+  "warnings": [],
+  "evidence": {
+    "archived": true,
+    "sources": []
+  },
+  "universalIntakeDeprecated": true,
+  "flight": {
+    "outbound": {
+      "segments": [
+        {
+          "from": "SOF",
+          "to": "IST",
+          "departure": "2026-09-15T01:10",
+          "arrival": "2026-09-15T07:10",
+          "airline": "Turkish Airlines",
+          "flightNumber": "TK1030",
+          "duration": "3h 30min"
+        }
+      ]
+    },
+    "inbound": {
+      "segments": []
+    },
+    "price": 2257.94,
+    "currency": "EUR"
+  },
+  "hotel": null,
+  "debug": {
+    "flightModel": "gemini-fixture",
+    "hotelSource": "",
+    "universalIntakeDeprecated": true
+  }
+}

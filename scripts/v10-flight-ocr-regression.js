@@ -170,6 +170,7 @@ const smartImportContract = buildSmartImportResponse({
   }
 });
 assert.equal(smartImportContract.success, true, "Smart Import contract must be successful");
+assert.equal(smartImportContract.contractVersion, "1.0", "Smart Import contract must expose version 1.0");
 assert.equal(smartImportContract.mode, "GT63_SMART_IMPORT", "Smart Import contract must expose stable mode");
 assert.equal(smartImportContract.intakeId, "SMART-contract-test", "Smart Import contract must include intake id");
 assert.equal(smartImportContract.sources.length, 2, "Smart Import contract must include source evidence list");
@@ -177,7 +178,48 @@ assert.equal(smartImportContract.offerFlight.route, "SOF -> MLE / MLE -> SOF", "
 assert.equal(smartImportContract.offerHotel.name, "Conrad Maldives Rangali Island", "Smart Import contract must include selected hotel offer data");
 assert.equal(smartImportContract.flight.outbound.segments.length, 0, "Smart Import contract must include canonical flight debug payload when available");
 assert.equal(smartImportContract.hotel.metadata.source, "hotel_hint_serpapi", "Smart Import contract must include hotel metadata for admin/debug");
+assert.equal(smartImportContract.universalIntakeDeprecated, true, "Smart Import contract must expose top-level Universal Intake deprecation marker");
 assert.equal(smartImportContract.debug.universalIntakeDeprecated, true, "Smart Import contract must mark Universal Intake as deprecated");
+
+const smartImportFixtureDir = path.join(__dirname, "..", "test", "fixtures", "smart-import");
+const smartImportFixtureNames = [
+  "flight-only.json",
+  "hotel-only.json",
+  "flight-hotel-mixed.json",
+  "unknown-partial-failure.json"
+];
+const expectedSmartImportKeys = Object.keys(smartImportContract).sort();
+for (const fixtureName of smartImportFixtureNames) {
+  const fixturePath = path.join(smartImportFixtureDir, fixtureName);
+  const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+  assert.deepStrictEqual(Object.keys(fixture).sort(), expectedSmartImportKeys, `${fixtureName} must match Smart Import response top-level keys`);
+  assert.equal(fixture.contractVersion, "1.0", `${fixtureName} must expose Smart Import contract version 1.0`);
+  assert.equal(fixture.mode, "GT63_SMART_IMPORT", `${fixtureName} must expose Smart Import mode`);
+  assert.ok(Array.isArray(fixture.sources), `${fixtureName} must include sources array`);
+  assert.ok(Array.isArray(fixture.classifications), `${fixtureName} must include classifications array`);
+  assert.ok(Array.isArray(fixture.warnings), `${fixtureName} must include warnings array`);
+  assert.equal(fixture.universalIntakeDeprecated, true, `${fixtureName} must expose top-level Universal Intake deprecation marker`);
+  assert.equal(fixture.debug?.universalIntakeDeprecated, true, `${fixtureName} must preserve debug Universal Intake deprecation marker`);
+  assert.ok(!JSON.stringify(fixture).match(/OPENAI_API_KEY|GEMINI_API_KEY|SERPAPI_KEY|AIza|sk-|C:\\\\Users|\/data\/|cookie/i), `${fixtureName} must not contain secrets, local paths, cookies, or production storage paths`);
+}
+const smartImportFlightFixture = JSON.parse(fs.readFileSync(path.join(smartImportFixtureDir, "flight-only.json"), "utf8"));
+assert.ok(smartImportFlightFixture.offerFlight.route, "flight-only fixture must include offerFlight");
+assert.deepStrictEqual(smartImportFlightFixture.offerHotel, {}, "flight-only fixture must keep current empty object hotel shape");
+assert.ok(smartImportFlightFixture.classifications.some((item) => item.sourceType === "flight"), "flight-only fixture must include flight classification");
+const smartImportHotelFixture = JSON.parse(fs.readFileSync(path.join(smartImportFixtureDir, "hotel-only.json"), "utf8"));
+assert.ok(smartImportHotelFixture.offerHotel.name, "hotel-only fixture must include offerHotel");
+assert.deepStrictEqual(smartImportHotelFixture.offerFlight, {}, "hotel-only fixture must keep current empty object flight shape");
+assert.ok(smartImportHotelFixture.classifications.some((item) => item.sourceType === "hotel"), "hotel-only fixture must include hotel classification");
+const smartImportMixedFixture = JSON.parse(fs.readFileSync(path.join(smartImportFixtureDir, "flight-hotel-mixed.json"), "utf8"));
+assert.ok(smartImportMixedFixture.offerFlight.route, "mixed fixture must include offerFlight");
+assert.ok(smartImportMixedFixture.offerHotel.name, "mixed fixture must include offerHotel");
+assert.ok(smartImportMixedFixture.sources.length > 1, "mixed fixture must include multiple sources");
+assert.ok(smartImportMixedFixture.classifications.some((item) => item.sourceType === "flight"), "mixed fixture must include flight classification");
+assert.ok(smartImportMixedFixture.classifications.some((item) => item.sourceType === "hotel"), "mixed fixture must include hotel classification");
+const smartImportUnknownFixture = JSON.parse(fs.readFileSync(path.join(smartImportFixtureDir, "unknown-partial-failure.json"), "utf8"));
+assert.ok(smartImportUnknownFixture.classifications.some((item) => item.sourceType === "unknown"), "unknown fixture must include unknown classification");
+assert.ok(smartImportUnknownFixture.warnings.length >= 1, "unknown fixture must include actionable warnings");
+assert.ok(smartImportUnknownFixture.offerFlight.route, "unknown fixture should preserve successful partial extraction");
 
 fs.rmSync(process.env.REGRESSION_LIBRARY_DIR, { recursive: true, force: true });
 const archiveResult = archiveRegressionCaseSafe({

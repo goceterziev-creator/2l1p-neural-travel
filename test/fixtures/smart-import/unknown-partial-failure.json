@@ -1,0 +1,75 @@
+{
+  "success": true,
+  "contractVersion": "1.0",
+  "mode": "GT63_SMART_IMPORT",
+  "intakeId": "SMART-fixture-unknown-partial-failure",
+  "sources": [
+    {
+      "sourceId": "SRC-1",
+      "sourceType": "flight",
+      "confidence": 0.9,
+      "reason": "Flight itinerary is visible",
+      "originalFilename": "flight-screenshot.png",
+      "mimeType": "image/png",
+      "uploadedAt": "2026-07-14T08:15:00.000Z"
+    },
+    {
+      "sourceId": "SRC-2",
+      "sourceType": "unknown",
+      "confidence": 0,
+      "reason": "Classification failed: image too small",
+      "originalFilename": "unclear-screenshot.png",
+      "mimeType": "image/png",
+      "uploadedAt": "2026-07-14T08:15:02.000Z"
+    }
+  ],
+  "classifications": [
+    {
+      "sourceId": "SRC-1",
+      "sourceType": "flight",
+      "confidence": 0.9,
+      "reason": "Flight itinerary is visible"
+    },
+    {
+      "sourceId": "SRC-2",
+      "sourceType": "unknown",
+      "confidence": 0,
+      "reason": "Classification failed: image too small"
+    }
+  ],
+  "offerFlight": {
+    "airline": "Wizz Air",
+    "route": "SOF -> BRI / BRI -> SOF",
+    "departure": "SOF -> BRI, May 7",
+    "arrival": "BRI -> SOF, May 13",
+    "baggage": "Small bag included",
+    "notes": "Partial extraction requires operator review.",
+    "price": 219.36
+  },
+  "offerHotel": {},
+  "warnings": [
+    "Some screenshots could not be identified. Choose Flight, Hotel, or Skip manually.",
+    "Hotel extraction failed: no hotel source detected."
+  ],
+  "evidence": {
+    "archived": true,
+    "sources": []
+  },
+  "universalIntakeDeprecated": true,
+  "flight": {
+    "outbound": {
+      "segments": []
+    },
+    "inbound": {
+      "segments": []
+    },
+    "price": 219.36,
+    "currency": "EUR"
+  },
+  "hotel": null,
+  "debug": {
+    "flightModel": "gemini-fixture",
+    "hotelSource": "",
+    "universalIntakeDeprecated": true
+  }
+}
