@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>2L1P Neural Travel · Admin V8</title>
+  <title>GT63 HOME · Operator Console</title>
 
   <style>
     * { box-sizing: border-box; }
@@ -216,6 +216,143 @@
 
     .create-surface.collapsed .create-surface-body {
       display: none;
+    }
+
+    .gt63-home {
+      display: grid;
+      gap: 14px;
+    }
+
+    .home-hero {
+      background: linear-gradient(135deg, rgba(37,99,235,.18), rgba(16,185,129,.1));
+      border-color: rgba(147,197,253,.2);
+    }
+
+    .home-hero h2 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -.3px;
+    }
+
+    .home-hero p {
+      max-width: 680px;
+      margin: 8px 0 0;
+    }
+
+    .home-metrics,
+    .home-grid,
+    .home-actions,
+    .home-links {
+      display: grid;
+      gap: 10px;
+    }
+
+    .home-metrics {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 16px;
+    }
+
+    .home-metric,
+    .home-panel,
+    .home-offer,
+    .home-health-item {
+      background: rgba(15,23,42,.72);
+      border: 1px solid rgba(148,163,184,.16);
+      border-radius: 14px;
+      padding: 13px;
+    }
+
+    .home-metric span,
+    .home-health-item span {
+      display: block;
+      color: #94a3b8;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .home-metric strong {
+      display: block;
+      margin-top: 7px;
+      color: #fff;
+      font-size: 22px;
+      line-height: 1.1;
+    }
+
+    .home-grid {
+      grid-template-columns: 1.05fr .95fr;
+    }
+
+    .home-panel h3 {
+      margin-top: 0;
+    }
+
+    .home-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 12px;
+    }
+
+    .home-actions button,
+    .home-links button {
+      margin-top: 0;
+    }
+
+    .home-work-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .home-offer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .home-offer strong,
+    .home-panel strong {
+      color: #fff;
+    }
+
+    .home-offer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    .home-offer-actions a,
+    .home-offer-actions button,
+    .home-links button {
+      border: 1px solid rgba(147,197,253,.28);
+      border-radius: 10px;
+      background: rgba(37,99,235,.18);
+      color: #dbeafe;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+      padding: 8px 10px;
+      text-decoration: none;
+      width: auto;
+    }
+
+    .home-health-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .home-health-item strong {
+      display: block;
+      margin-top: 5px;
+      color: #86efac;
+    }
+
+    .home-links {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 10px;
     }
 
     .ops-card {
@@ -2378,7 +2515,7 @@
     }
 
     @media (max-width: 980px) {
-      .layout, .row, .row-3, .stats {
+      .layout, .row, .row-3, .stats, .home-grid, .home-metrics, .home-health-grid, .home-actions, .home-links {
         grid-template-columns: 1fr;
       }
 
@@ -2533,8 +2670,8 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <h1>2L1P Neural Travel · Admin V8</h1>
-        <p>Admin = вътрешни цени. Client Offer = само крайна цена.</p>
+        <h1>GT63 HOME · Operator Console</h1>
+        <p>От клиент и screenshot-и до готова оферта за изпращане.</p>
       </div>
       <div class="session">
         <div class="tenant-context" aria-label="Tenant context">
@@ -2543,7 +2680,7 @@
           <div id="capabilitySummary"></div>
         </div>
         <button type="button" class="secondary" onclick="openCommandPalette()">CMD+K</button>
-        <a href="/admin">Dashboard</a>
+        <a href="/admin">GT63 Home</a>
         <button type="button" class="secondary" onclick="logout()">Logout</button>
       </div>
     </div>
@@ -2552,6 +2689,68 @@
   <main class="wrap">
     <div class="layout">
       <section>
+        <div id="gt63Home" class="gt63-home">
+          <div class="card home-hero">
+            <h2>GT63 HOME</h2>
+            <p class="muted">Travel Proposal Command Center. Start, review, preview and send client proposals from one place.</p>
+            <div class="home-metrics">
+              <div class="home-metric"><span>For Review</span><strong id="homeReviewCount">0</strong></div>
+              <div class="home-metric"><span>Ready to Send</span><strong id="homeReadyCount">0</strong></div>
+              <div class="home-metric"><span>Potential</span><strong id="homePotential">0 EUR</strong></div>
+            </div>
+          </div>
+
+          <div class="home-grid">
+            <div class="card home-panel">
+              <h3>Create New Proposal</h3>
+              <p class="muted">From client name and destination to Universal Intake in one move.</p>
+              <div class="row">
+                <div>
+                  <label>Client Name</label>
+                  <input id="homeClientName" placeholder="Client name" />
+                </div>
+                <div>
+                  <label>Destination</label>
+                  <input id="homeDestination" placeholder="Tokyo, Maldives, Santiago..." />
+                </div>
+              </div>
+              <label>Travel Dates</label>
+              <input id="homeTravelDates" placeholder="15.09.2026 - 29.09.2026" />
+              <div class="home-actions">
+                <button type="button" class="success" onclick="startHomeUniversalIntake()">Start Universal Intake</button>
+                <button type="button" class="secondary" onclick="startHomeManualProposal()">Create Manually</button>
+              </div>
+            </div>
+
+            <div class="card home-panel">
+              <h3>System Health</h3>
+              <p class="muted">Minimal operator status. Debug remains in Admin panels.</p>
+              <div class="home-health-grid">
+                <div class="home-health-item"><span>Gemini</span><strong id="homeGeminiStatus">Ready</strong></div>
+                <div class="home-health-item"><span>SerpAPI</span><strong id="homeSerpStatus">Ready</strong></div>
+                <div class="home-health-item"><span>Last Intake</span><strong id="homeLastIntake">No run</strong></div>
+              </div>
+              <div class="home-links">
+                <button type="button" onclick="startHomeUniversalIntake()">Universal Intake</button>
+                <button type="button" onclick="scrollToRecentOffers()">Offers</button>
+                <button type="button" onclick="scrollToAdminWorkspace()">Admin Workspace</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="home-grid">
+            <div class="card home-panel">
+              <h3>Recent Work</h3>
+              <div id="homeRecentWork" class="home-work-list"><div class="muted">Loading recent offers...</div></div>
+            </div>
+
+            <div class="card home-panel">
+              <h3>Latest Proposal</h3>
+              <div id="homeLatestProposal"><div class="muted">Loading latest proposal...</div></div>
+            </div>
+          </div>
+        </div>
+
         <div id="createSurface" class="card create-surface collapsed">
           <div class="create-surface-head">
             <div>

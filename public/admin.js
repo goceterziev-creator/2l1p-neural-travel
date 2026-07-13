@@ -1189,6 +1189,121 @@ function getWhatsAppText(id) {
   return `Здравейте!\nВашата оферта е готова:\n${getPublicOfferUrl(id)}`;
 }
 
+function offerTimestamp(offer = {}) {
+  return Date.parse(offer.updatedAt || offer.createdAt || offer.created_at || offer.id || "") || 0;
+}
+
+function offerNeedsReview(offer = {}) {
+  return getOfferWarnings(offer).length > 0 || String(offer.status || "").toLowerCase() === "review";
+}
+
+function offerReadyToSend(offer = {}) {
+  const status = String(offer.status || "draft").toLowerCase();
+  return ["draft", "review"].includes(status) && !offerNeedsReview(offer);
+}
+
+function syncHomeFieldsToCreateSurface() {
+  const mappings = [
+    ["homeClientName", "clientName"],
+    ["homeDestination", "destination"],
+    ["homeTravelDates", "travelDates"]
+  ];
+  mappings.forEach(([sourceId, targetId]) => {
+    const value = $(sourceId)?.value || "";
+    if ($(targetId) && value) $(targetId).value = value;
+  });
+  updateCreateSurfaceSummary();
+}
+
+function startHomeUniversalIntake() {
+  syncHomeFieldsToCreateSurface();
+  setCreateSurfaceOpen(true);
+  $("createSurface")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => $("universalTravelImage")?.focus(), 220);
+}
+
+function startHomeManualProposal() {
+  syncHomeFieldsToCreateSurface();
+  setCreateSurfaceOpen(true);
+  $("createSurface")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => $("clientName")?.focus(), 220);
+}
+
+function scrollToRecentOffers() {
+  $("offersBox")?.closest(".card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function scrollToAdminWorkspace() {
+  $("createSurface")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function renderHomeOfferActions(offer = {}) {
+  const id = escapeHtml(offer.id || "");
+  if (!id) return "";
+  return `
+    <div class="home-offer-actions">
+      <button type="button" onclick="openOfferWorkspace('${id}')">Open</button>
+      <a href="/api/offers/view/${id}" target="_blank" rel="noopener">Preview</a>
+      <a href="/api/offers/${id}/pdf" target="_blank" rel="noopener">PDF</a>
+    </div>
+  `;
+}
+
+function renderHomeRecentWork() {
+  const box = $("homeRecentWork");
+  if (!box) return;
+  const offers = [...allOffers]
+    .sort((a, b) => offerTimestamp(b) - offerTimestamp(a))
+    .slice(0, 5);
+  if (!offers.length) {
+    box.innerHTML = `<div class="muted">No recent offers yet.</div>`;
+    return;
+  }
+  box.innerHTML = offers.map((offer) => `
+    <div class="home-offer">
+      <div>
+        <strong>${escapeHtml(offer.destination || "Untitled offer")}</strong>
+        <div class="muted">${escapeHtml(offer.clientName || "No client")} · ${escapeHtml(offer.status || "draft")}</div>
+      </div>
+      ${renderHomeOfferActions(offer)}
+    </div>
+  `).join("");
+}
+
+function renderHomeLatestProposal() {
+  const box = $("homeLatestProposal");
+  if (!box) return;
+  const latest = [...allOffers].sort((a, b) => offerTimestamp(b) - offerTimestamp(a))[0];
+  if (!latest) {
+    box.innerHTML = `<div class="muted">No proposal generated yet.</div>`;
+    return;
+  }
+  const finalPrice = Number(latest.finalPrice || latest.price || 0);
+  box.innerHTML = `
+    <div class="home-offer" style="grid-template-columns:1fr;">
+      <div>
+        <span class="muted">Latest client proposal</span>
+        <h3 style="margin:6px 0 4px;">${escapeHtml(latest.destination || "Untitled offer")}</h3>
+        <div class="muted">${escapeHtml(latest.clientName || "No client")} · ${escapeHtml(latest.status || "draft")}</div>
+        <strong style="display:block; margin-top:10px;">${formatPrice(finalPrice, latest.currency || "EUR")}</strong>
+      </div>
+      ${renderHomeOfferActions(latest)}
+    </div>
+  `;
+}
+
+function renderGt63Home() {
+  if (!$("gt63Home")) return;
+  const reviewCount = allOffers.filter(offerNeedsReview).length;
+  const readyCount = allOffers.filter(offerReadyToSend).length;
+  const potential = allOffers.reduce((sum, offer) => sum + Number(offer.finalPrice || offer.price || 0), 0);
+  if ($("homeReviewCount")) $("homeReviewCount").textContent = reviewCount;
+  if ($("homeReadyCount")) $("homeReadyCount").textContent = readyCount;
+  if ($("homePotential")) $("homePotential").textContent = formatPrice(potential);
+  renderHomeRecentWork();
+  renderHomeLatestProposal();
+}
+
 function statusBadge(status = "draft") {
   const safeStatus = String(status || "draft").toLowerCase();
   return `<span class="status-badge status-${escapeHtml(safeStatus)}">${escapeHtml(safeStatus)}</span>`;
@@ -2163,6 +2278,7 @@ function handleEntityFlowKeydown(event) {
 function renderOffers() {
   const box = $("offersBox");
   if (!box) return;
+  renderGt63Home();
 
   if (!allOffers.length) {
     box.innerHTML = `<div class="muted">No offers yet.</div>`;
@@ -2266,6 +2382,7 @@ async function loadOffers() {
     renderClients();
     renderQaSnapshot();
     renderPipelinePreview();
+    renderGt63Home();
     renderOffers();
   } catch (error) {
     console.error("Offers error:", error);
@@ -2881,9 +2998,11 @@ async function uploadUniversalTravelIntake() {
     });
 
     console.log("UNIVERSAL GEMINI INTAKE DATA:", data);
+    if ($("homeLastIntake")) $("homeLastIntake").textContent = "PASS";
     renderUniversalTravelReview(data, files.slice(0, 8));
   } catch (error) {
     console.error("Universal Travel Intake failed:", error);
+    if ($("homeLastIntake")) $("homeLastIntake").textContent = "FAILED";
     renderUniversalTravelError(error);
     const stage = error.stage || error.response?.stage || "unknown";
     const reason = error.reason || error.response?.reason || error.message || "Universal Intake failed";
@@ -4181,6 +4300,10 @@ window.uploadFlightImage = uploadFlightImage;
 window.uploadFlightImageGeminiTest = uploadFlightImageGeminiTest;
 window.uploadUniversalTravelIntake = uploadUniversalTravelIntake;
 window.applyUniversalTravelIntakeResult = applyUniversalTravelIntakeResult;
+window.startHomeUniversalIntake = startHomeUniversalIntake;
+window.startHomeManualProposal = startHomeManualProposal;
+window.scrollToRecentOffers = scrollToRecentOffers;
+window.scrollToAdminWorkspace = scrollToAdminWorkspace;
 window.uploadHotelImage = uploadHotelImage;
 window.autoBuildOffer = autoBuildOffer;
 window.saveOffer = saveOffer;
