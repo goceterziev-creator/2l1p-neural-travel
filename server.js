@@ -9690,6 +9690,41 @@ Rules:
   }
 }
 
+function buildSmartImportResponse({
+  intakeId = "",
+  sources = [],
+  classifications = [],
+  offerFlight = {},
+  offerHotel = {},
+  warnings = [],
+  evidence = {},
+  flightResult = null,
+  hotelResult = null
+} = {}) {
+  return {
+    success: true,
+    mode: "GT63_SMART_IMPORT",
+    intakeId,
+    sources: safeArray(sources),
+    classifications: safeArray(classifications),
+    offerFlight: offerFlight && typeof offerFlight === "object" ? offerFlight : {},
+    offerHotel: offerHotel && typeof offerHotel === "object" ? offerHotel : {},
+    warnings: safeArray(warnings),
+    evidence: evidence && typeof evidence === "object" ? evidence : {},
+    flight: flightResult?.canonical || null,
+    hotel: hotelResult ? {
+      metadata: hotelResult.metadata || {},
+      missingFields: safeArray(hotelResult.missingFields),
+      hints: safeArray(hotelResult.rawParsedHotels)
+    } : null,
+    debug: {
+      flightModel: flightResult?.model || "",
+      hotelSource: hotelResult?.source || "",
+      universalIntakeDeprecated: true
+    }
+  };
+}
+
 app.post("/api/import-image-gemini-test", requireCapability("imports.run"), upload.array("image", 4), async (req, res) => {
   try {
     const imageFiles = getUploadedImageFiles(req);
@@ -9799,9 +9834,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       warnings.push("Mixed screenshots were routed to both engines and require review.");
     }
 
-    const responsePayload = {
-      success: true,
-      mode: "GT63_SMART_IMPORT",
+    const responsePayload = buildSmartImportResponse({
       intakeId,
       sources: nextSources,
       classifications,
@@ -9809,18 +9842,9 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       offerHotel,
       warnings,
       evidence,
-      flight: flightResult?.canonical || null,
-      hotel: hotelResult ? {
-        metadata: hotelResult.metadata,
-        missingFields: hotelResult.missingFields,
-        hints: hotelResult.rawParsedHotels
-      } : null,
-      debug: {
-        flightModel: flightResult?.model || "",
-        hotelSource: hotelResult?.source || "",
-        universalIntakeDeprecated: true
-      }
-    };
+      flightResult,
+      hotelResult
+    });
 
     if (evidence?.root) {
       const evidenceRoot = path.dirname(evidence.root);
@@ -10683,6 +10707,7 @@ module.exports = {
   buildFlightDateSourceTrace,
   normalizeUniversalIntakeError,
   universalIntakeError,
+  buildSmartImportResponse,
   isTemporaryGeminiDemandError,
   uniqueGeminiModels,
   buildFlightOcrConfidence,

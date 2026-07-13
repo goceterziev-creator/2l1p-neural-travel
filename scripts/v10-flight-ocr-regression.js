@@ -18,6 +18,7 @@ const {
   archiveRegressionCaseSafe,
   buildFlightDateSourceTrace,
   buildBookingAndroidFlightProfileTrace,
+  buildSmartImportResponse,
   buildValidationWarnings,
   classifyFlightScreenshot,
   cleanupFlightDateTimeDisplay,
@@ -145,6 +146,38 @@ assert.deepStrictEqual(
 assert.ok(!universalPayload.details.includes("SECRET"), "universal intake frontend details should redact API-key-like tokens");
 assert.equal(isTemporaryGeminiDemandError(503, "This model is currently experiencing high demand. Please try again later."), true, "Gemini high demand should be retryable");
 assert.deepStrictEqual(uniqueGeminiModels("gemini-2.5-flash", "gemini-2.5-flash"), ["gemini-2.5-flash"], "Gemini fallback model list should be unique");
+
+const smartImportContract = buildSmartImportResponse({
+  intakeId: "SMART-contract-test",
+  sources: [
+    { sourceId: "SRC-1", sourceType: "flight", confidence: 0.95, reason: "flight itinerary" },
+    { sourceId: "SRC-2", sourceType: "hotel", confidence: 0.91, reason: "hotel details" }
+  ],
+  classifications: [
+    { sourceId: "SRC-1", sourceType: "flight", confidence: 0.95, reason: "flight itinerary" },
+    { sourceId: "SRC-2", sourceType: "hotel", confidence: 0.91, reason: "hotel details" }
+  ],
+  offerFlight: { route: "SOF -> MLE / MLE -> SOF", price: 1200 },
+  offerHotel: { name: "Conrad Maldives Rangali Island", price: 8000 },
+  warnings: ["Review mixed sources if needed."],
+  evidence: { archived: true, sources: [] },
+  flightResult: { canonical: { outbound: { segments: [] } }, model: "gemini-test" },
+  hotelResult: {
+    source: "serpapi",
+    metadata: { source: "hotel_hint_serpapi" },
+    missingFields: [],
+    rawParsedHotels: [{ name: "Conrad Maldives Rangali Island" }]
+  }
+});
+assert.equal(smartImportContract.success, true, "Smart Import contract must be successful");
+assert.equal(smartImportContract.mode, "GT63_SMART_IMPORT", "Smart Import contract must expose stable mode");
+assert.equal(smartImportContract.intakeId, "SMART-contract-test", "Smart Import contract must include intake id");
+assert.equal(smartImportContract.sources.length, 2, "Smart Import contract must include source evidence list");
+assert.equal(smartImportContract.offerFlight.route, "SOF -> MLE / MLE -> SOF", "Smart Import contract must include selected flight offer data");
+assert.equal(smartImportContract.offerHotel.name, "Conrad Maldives Rangali Island", "Smart Import contract must include selected hotel offer data");
+assert.equal(smartImportContract.flight.outbound.segments.length, 0, "Smart Import contract must include canonical flight debug payload when available");
+assert.equal(smartImportContract.hotel.metadata.source, "hotel_hint_serpapi", "Smart Import contract must include hotel metadata for admin/debug");
+assert.equal(smartImportContract.debug.universalIntakeDeprecated, true, "Smart Import contract must mark Universal Intake as deprecated");
 
 fs.rmSync(process.env.REGRESSION_LIBRARY_DIR, { recursive: true, force: true });
 const archiveResult = archiveRegressionCaseSafe({
