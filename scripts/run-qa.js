@@ -5,7 +5,9 @@ const BASE_URL = process.env.SMOKE_BASE_URL || process.env.LIVE_BASE_URL || `htt
 const CHECK_TARGETS = [
   "server.js",
   "public/admin.js",
+  "gt63-core/smart-import-consumer-adapter.js",
   "scripts/v10-persistence-safety-check.js",
+  "scripts/smart-import-consumer-adapter-regression.js",
   "scripts/v10-flight-ocr-regression.js",
   "scripts/smoke-test.js",
   "scripts/v9-architecture-check.js",
@@ -71,6 +73,7 @@ async function main() {
   }
 
   try {
+    await runNode(["scripts/smart-import-consumer-adapter-regression.js"]);
     await runNode(["scripts/v10-flight-ocr-regression.js"]);
     await runNode(["scripts/v10-persistence-safety-check.js"]);
     await runNode(["scripts/smoke-test.js"], { env: { SMOKE_BASE_URL: BASE_URL } });
