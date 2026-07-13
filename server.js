@@ -8622,15 +8622,39 @@ function universalFlightToOfferFlight(universalFlight = {}) {
     currency: universalFlight.price?.currency || "EUR",
     outboundSegments: normalizeStoredFlightSegments(outboundSegments),
     inboundSegments: normalizeStoredFlightSegments(inboundSegments),
-    segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments])
+    segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments]),
+    sourceAuthority: {
+      flightPrimary: "gemini-vision"
+    }
   };
   flight.displayBg = { itineraryText: renderClientFlightItineraryBg(flight) };
   return flight;
 }
 
-function universalHotelToOfferHotel(hotel = {}) {
+function universalHotelSourceAuthority({ hasSerpApiKey = false, imageCount = 0, hotelName = "" } = {}) {
+  return {
+    hotelPrimary: hasSerpApiKey && hotelName ? "serpapi" : "operator-review",
+    hotelHints: "gemini-screenshot",
+    flightPrimary: "gemini-vision",
+    serpApiAvailable: Boolean(hasSerpApiKey),
+    serpApiImages: Number(imageCount || 0)
+  };
+}
+
+async function universalHotelToOfferHotel(hotel = {}, { destination = "" } = {}) {
   const firstRoom = safeArray(hotel.rooms)[0] || {};
   const area = [hotel.city, hotel.country].filter(Boolean).join(", ");
+  const hotelName = hotel.name || "";
+  const imageUrls = await findHotelImagesWithSerpApi(
+    hotelName,
+    area || destination || "",
+    3
+  );
+  const sourceAuthority = universalHotelSourceAuthority({
+    hasSerpApiKey: Boolean(process.env.SERPAPI_KEY),
+    imageCount: imageUrls.length,
+    hotelName
+  });
   return {
     name: hotel.name || "",
     stars: "",
@@ -8648,7 +8672,21 @@ function universalHotelToOfferHotel(hotel = {}) {
       hotel.cancellationPolicy ? `Условия: ${hotel.cancellationPolicy}.` : ""
     ].filter(Boolean).join(" "),
     supplier: hotel.supplier || "",
-    images: []
+    images: imageUrls,
+    sourceAuthority,
+    geminiHints: {
+      name: hotel.name || "",
+      city: hotel.city || "",
+      country: hotel.country || "",
+      checkIn: hotel.checkIn || "",
+      checkOut: hotel.checkOut || "",
+      nights: hotel.nights || "",
+      room: firstRoom.roomType || "",
+      meal: firstRoom.board || "",
+      price: Number(hotel.price?.amount || 0) || 0,
+      currency: hotel.price?.currency || "EUR",
+      supplier: hotel.supplier || ""
+    }
   };
 }
 
@@ -8816,7 +8854,7 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "", 
 
   let offerHotel;
   try {
-    offerHotel = universalHotelToOfferHotel(canonical.hotel);
+    offerHotel = await universalHotelToOfferHotel(canonical.hotel, { destination });
   } catch (error) {
     throw universalIntakeError("hotel-normalization", "Hotel normalization failed", error.message, { cause: error, requestId });
   }

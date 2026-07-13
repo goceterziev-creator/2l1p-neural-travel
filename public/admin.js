@@ -2742,6 +2742,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
 
   const flight = data.offerFlight || {};
   const hotel = data.offerHotel || {};
+  const hotelAuthority = hotel.sourceAuthority || {};
   const warnings = Array.from(new Set((data.warnings || []).map(universalWarningText).filter(Boolean)));
   const sources = Array.isArray(data.sources) ? data.sources : [];
   const hasFlight = Boolean(flight.route || flight.airline || (flight.outboundSegments || []).length || (flight.inboundSegments || []).length);
@@ -2766,6 +2767,12 @@ function renderUniversalTravelReview(data = {}, files = []) {
           ${warnings.map((warning) => `<div>• ${escapeHtml(warning)}</div>`).join("")}
         </div>
       ` : `<div class="muted">Няма критични предупреждения от Gemini.</div>`}
+
+      <div class="muted" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin: 10px 0;">
+        <div><strong>Flight source:</strong> ${escapeHtml(flight.sourceAuthority?.flightPrimary || hotelAuthority.flightPrimary || "gemini-vision")}</div>
+        <div><strong>Hotel source:</strong> ${escapeHtml(hotelAuthority.hotelPrimary || "operator-review")}</div>
+        <div><strong>Hotel hints:</strong> ${escapeHtml(hotelAuthority.hotelHints || "gemini-screenshot")}</div>
+      </div>
 
       <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px;">
         <section>
@@ -2802,6 +2809,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
             <input id="universalHotelPrice" type="number" step="0.01" value="${Number(hotel.price || 0)}" />
             <label>Description</label>
             <textarea id="universalHotelDescription" rows="4">${escapeHtml(hotel.description || "")}</textarea>
+            ${hotelAuthority.serpApiImages ? `<div class="muted">SerpAPI images: ${Number(hotelAuthority.serpApiImages || 0)}</div>` : ""}
           ` : `<div class="muted">Не е открит видим хотел.</div>`}
         </section>
       </div>
@@ -2819,6 +2827,10 @@ function renderUniversalTravelReview(data = {}, files = []) {
           sources: data.sources,
           flight: data.flight,
           hotel: data.hotel,
+          sourceAuthority: {
+            flight: flight.sourceAuthority || {},
+            hotel: hotel.sourceAuthority || {}
+          },
           parser: data.parser,
           evidence: data.evidence
         }, null, 2))}</pre>
