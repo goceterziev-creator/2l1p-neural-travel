@@ -1,6 +1,7 @@
 "use strict";
 
 const productProvider = window.GT63CoreDataProvider;
+const offerEngineAdapter = window.GT63OfferEngineAdapter;
 const proposalInputAdapter = window.GT63ProposalInputAdapter;
 const luxuryRenderer = window.GT63LuxuryV11Renderer;
 
@@ -25,7 +26,9 @@ const nodes = {
   hotelReview: document.getElementById("hotelReview"),
   warningsReview: document.getElementById("warningsReview"),
   blockingReview: document.getElementById("blockingReview"),
-  previewArea: document.getElementById("previewArea")
+  previewArea: document.getElementById("previewArea"),
+  createOfferButton: document.getElementById("createOfferButton"),
+  offerResult: document.getElementById("offerResult")
 };
 
 let currentModel = null;
@@ -134,7 +137,9 @@ function proposalContext() {
     clientName: nodes.clientName.value.trim(),
     destination: nodes.destination.value.trim(),
     travelDates: nodes.travelDates.value.trim(),
-    travelers: ""
+    travelers: "",
+    guests: "",
+    clientPhone: ""
   };
 }
 
@@ -165,6 +170,7 @@ function renderGate(model) {
     ? "<strong>Continue to Preview</strong><span>This proposal is ready for the next step.</span>"
     : "<strong>Needs operator action</strong><span>Resolve blocking issues before preview.</span>";
   nodes.continueButton.disabled = !ready;
+  nodes.createOfferButton.disabled = !ready;
   nodes.currentStep.textContent = ready ? "Preview ready" : "Review required";
 }
 
@@ -176,6 +182,10 @@ function renderModel(model) {
   nodes.blockingReview.innerHTML = renderList(model.blockingIssues, "No blocking issues");
   renderGate(model);
   renderPreview(model);
+  nodes.offerResult.className = "disabled-preview";
+  nodes.offerResult.textContent = model.readiness === "ready"
+    ? "Ready to create a draft offer in 2L1P."
+    : "Create Offer is available after readiness is READY.";
 }
 
 function showError(message) {
@@ -237,6 +247,48 @@ async function loadProductModel() {
   });
 }
 
+async function createOfferFromCurrentModel() {
+  if (!currentModel || currentModel.readiness !== "ready") {
+    throw new Error("Create Offer requires READY readiness.");
+  }
+  if (!offerEngineAdapter?.buildOfferPayloadFromProductModel) {
+    throw new Error("Offer Engine adapter unavailable.");
+  }
+
+  const payload = offerEngineAdapter.buildOfferPayloadFromProductModel(currentModel, proposalContext());
+  const response = await fetch("/api/offers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  if (!response.ok) {
+    const message = data?.error || data?.message || text || `Offer Engine failed (${response.status})`;
+    throw new Error(message);
+  }
+  return data?.offer || data;
+}
+
+function renderCreatedOffer(offer) {
+  const offerId = offer?.id || offer?.offerId || "";
+  const publicLink = offer?.publicLink || (offerId ? `/offer/${encodeURIComponent(offerId)}` : "");
+  nodes.offerResult.className = "offer-result";
+  nodes.offerResult.innerHTML = `
+    <strong>Offer created</strong>
+    <span>${escapeHtml(offerId || "Draft offer")}</span>
+    <div class="offer-actions">
+      ${publicLink ? `<a href="${escapeHtml(publicLink)}" target="_blank" rel="noreferrer">Open Proposal</a>` : ""}
+      ${offerId ? `<a href="/admin" target="_blank" rel="noreferrer">Open Admin</a>` : ""}
+    </div>
+  `;
+}
+
 nodes.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
@@ -252,6 +304,21 @@ nodes.form.addEventListener("submit", async (event) => {
 nodes.continueButton.addEventListener("click", () => {
   if (!currentModel || currentModel.readiness !== "ready") return;
   document.querySelector(".preview-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+nodes.createOfferButton.addEventListener("click", async () => {
+  try {
+    nodes.createOfferButton.disabled = true;
+    nodes.offerResult.className = "disabled-preview";
+    nodes.offerResult.textContent = "Creating offer in 2L1P...";
+    const offer = await createOfferFromCurrentModel();
+    renderCreatedOffer(offer);
+  } catch (error) {
+    nodes.offerResult.className = "error-panel";
+    nodes.offerResult.textContent = error.message || "Create Offer failed.";
+  } finally {
+    nodes.createOfferButton.disabled = !currentModel || currentModel.readiness !== "ready";
+  }
 });
 
 nodes.providerMode.addEventListener("change", syncProviderMode);

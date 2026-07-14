@@ -685,7 +685,8 @@ button:focus-visible {
 
 .warning-box,
 .disabled-preview,
-.error-panel {
+.error-panel,
+.offer-result {
   border-radius: 16px;
   padding: 16px;
 }
@@ -706,6 +707,41 @@ button:focus-visible {
   border-color: rgba(248, 113, 113, 0.36);
   background: var(--danger-soft);
   color: #fecaca;
+}
+
+.offer-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.offer-result {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(6, 182, 212, 0.28);
+  background: rgba(6, 182, 212, 0.08);
+  color: var(--muted-strong);
+}
+
+.offer-result strong {
+  color: #fff;
+}
+
+.offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.offer-actions a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  border: 1px solid rgba(6, 182, 212, 0.34);
+  border-radius: 999px;
+  padding: 0 12px;
+  color: #a5f3fc;
+  text-decoration: none;
+  font-weight: 900;
 }
 
 ul {

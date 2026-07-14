@@ -1,0 +1,126 @@
+"use strict";
+
+(function exposeOfferEngineAdapter(root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports) {
+    module.exports = api;
+  }
+  root.GT63OfferEngineAdapter = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function createOfferEngineAdapter() {
+  function cleanText(value) {
+    return String(value ?? "").trim();
+  }
+
+  function amount(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : 0;
+  }
+
+  function asArray(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function firstText(...values) {
+    for (const value of values) {
+      const text = cleanText(value);
+      if (text) return text;
+    }
+    return "";
+  }
+
+  function segmentRoute(segments) {
+    const list = asArray(segments);
+    if (!list.length) return "";
+    return [list[0].from, ...list.map((segment) => segment.to)].map(cleanText).filter(Boolean).join(" -> ");
+  }
+
+  function segmentSummary(segment) {
+    const fromTo = [segment.from, segment.to].map(cleanText).filter(Boolean).join(" -> ");
+    const times = [segment.departure, segment.arrival].map(cleanText).filter(Boolean).join(" - ");
+    const via = cleanText(segment.duration) ? ` (${cleanText(segment.duration)})` : "";
+    return [fromTo, times].filter(Boolean).join(", ") + via;
+  }
+
+  function segmentsSummary(segments) {
+    return asArray(segments).map(segmentSummary).filter(Boolean).join("; ");
+  }
+
+  function flightNumbers(flight) {
+    return [
+      ...asArray(flight?.outboundSegments),
+      ...asArray(flight?.inboundSegments)
+    ].map((segment) => cleanText(segment.flightNumber)).filter(Boolean);
+  }
+
+  function offerRoute(flight) {
+    if (!flight) return "";
+    const outbound = segmentRoute(flight.outboundSegments);
+    const inbound = segmentRoute(flight.inboundSegments);
+    return firstText(flight.route, outbound && inbound ? `${outbound} / ${inbound}` : outbound || inbound);
+  }
+
+  function buildFlightNotes(flight, warnings) {
+    const numbers = flightNumbers(flight);
+    const notes = [
+      numbers.length ? `Flight numbers: ${numbers.join(", ")}.` : "",
+      cleanText(flight?.notes),
+      asArray(warnings).length ? `Core warnings: ${asArray(warnings).join(" | ")}` : "",
+      "Created from GT63 Core Workspace."
+    ].filter(Boolean);
+    return notes.join(" ");
+  }
+
+  function buildHotelImages(hotel) {
+    return [
+      ...asArray(hotel?.imageUrls),
+      ...asArray(hotel?.images),
+      hotel?.imageUrl,
+      hotel?.image,
+      hotel?.photo,
+      hotel?.thumbnail
+    ].map(cleanText).filter(Boolean);
+  }
+
+  function buildOfferPayloadFromProductModel(model = {}, context = {}) {
+    const flight = model.flight || null;
+    const hotel = model.hotel || null;
+    const destination = firstText(context.destination, hotel?.area, hotel?.name, flight?.route, "Travel Proposal");
+    const travelDates = firstText(context.travelDates, flight?.departure, flight?.arrival);
+    const flightPrice = amount(flight?.price);
+    const hotelPrice = amount(hotel?.price);
+
+    return {
+      clientName: firstText(context.clientName, "GT63 Client"),
+      clientPhone: cleanText(context.clientPhone),
+      destination,
+      travelDates,
+      guests: firstText(context.guests, context.travelers, "2 adults"),
+      status: "draft",
+      currency: "EUR",
+      flightAirline: cleanText(flight?.airline),
+      flightRoute: offerRoute(flight),
+      flightDeparture: firstText(flight?.departure, segmentsSummary(flight?.outboundSegments)),
+      flightArrival: firstText(flight?.arrival, segmentsSummary(flight?.inboundSegments)),
+      flightBaggage: cleanText(flight?.baggage),
+      flightNotes: buildFlightNotes(flight, model.warnings),
+      hotelName: cleanText(hotel?.name),
+      hotelArea: firstText(hotel?.area, destination),
+      hotelRoom: cleanText(hotel?.room),
+      hotelMeal: cleanText(hotel?.meal),
+      hotelRoomsLeft: cleanText(hotel?.roomsLeft),
+      hotelDescription: cleanText(hotel?.description),
+      hotelImages: buildHotelImages(hotel),
+      destinationDescription: `Curated proposal for ${destination}.`,
+      notes: asArray(model.warnings).join(" | "),
+      flightPrice,
+      hotelPrice,
+      transferPrice: 0,
+      markupPercent: 5,
+      validForDays: 1
+    };
+  }
+
+  return {
+    buildOfferPayloadFromProductModel
+  };
+});

@@ -145,10 +145,23 @@
       </div>
       <div id="previewArea" class="disabled-preview">Preview disabled until readiness is READY.</div>
     </section>
+
+    <section class="panel offer-panel">
+      <div class="section-heading">
+        <span class="step-number">5</span>
+        <div>
+          <h2>Create Offer</h2>
+          <p>Send the reviewed GT63 model to the existing 2L1P Offer Engine.</p>
+        </div>
+      </div>
+      <button id="createOfferButton" class="primary-action" type="button" disabled>Create Offer in 2L1P</button>
+      <div id="offerResult" class="disabled-preview">Create Offer is available after readiness is READY.</div>
+    </section>
   </main>
 
   <script src="../smart-import-consumer-adapter.js"></script>
   <script src="../core-data-provider.js"></script>
+  <script src="../offer-engine-adapter.js"></script>
   <script src="../proposal-input-adapter.js"></script>
   <script src="../luxury-v11-renderer.js"></script>
   <script src="app.js"></script>
