@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GT63 Core Mock Shell</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, sans-serif;
+      color: #142033;
+      background: #eef2f6;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px;
+    }
+
+    main {
+      max-width: 1040px;
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #d7dee8;
+      border-radius: 8px;
+      padding: 18px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: end;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-weight: 700;
+    }
+
+    select,
+    button {
+      min-height: 40px;
+      border: 1px solid #aab6c7;
+      border-radius: 6px;
+      padding: 0 12px;
+      font: inherit;
+    }
+
+    button {
+      border-color: #1454d4;
+      background: #1454d4;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .readiness {
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      background: #eef2f6;
+    }
+
+    .ready {
+      background: #ddf7e7;
+      color: #0f6b3a;
+    }
+
+    .review {
+      background: #fff3d9;
+      color: #8a5700;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #f6f8fb;
+      border: 1px solid #dde4ee;
+      border-radius: 6px;
+      padding: 12px;
+      min-height: 96px;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .error {
+      display: none;
+      border-color: #f1b4b4;
+      background: #fff0f0;
+      color: #8c1d1d;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 18px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <h1>GT63 Core Mock Shell</h1>
+      <p>This sandbox proves fixture → adapter → product model without the engine, uploads, Gemini, SerpAPI, database, offer generation, or admin UI.</p>
+      <div class="controls">
+        <label>
+          Fixture selector
+          <select id="fixtureSelect">
+            <option value="../test/fixtures/smart-import/flight-only.json">Flight only</option>
+            <option value="../test/fixtures/smart-import/hotel-only.json">Hotel only</option>
+            <option value="../test/fixtures/smart-import/flight-hotel-mixed.json">Flight + Hotel Mixed</option>
+            <option value="../test/fixtures/smart-import/unknown-partial-failure.json">Unknown / Partial Failure</option>
+          </select>
+        </label>
+        <button type="button" id="loadFixtureButton">Load Fixture</button>
+      </div>
+    </section>
+
+    <section class="panel error" id="errorPanel">
+      <h2>Sandbox Error</h2>
+      <p id="errorMessage">Fixture load failed</p>
+    </section>
+
+    <section class="panel">
+      <h2>Readiness</h2>
+      <div id="readiness" class="readiness review">REVIEW</div>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Flight</h2>
+        <pre id="flightOutput">No flight data</pre>
+      </article>
+
+      <article class="panel">
+        <h2>Hotel</h2>
+        <pre id="hotelOutput">No hotel data</pre>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>Warnings</h2>
+      <div id="warningsOutput">No warnings</div>
+    </section>
+  </main>
+
+  <script src="smart-import-consumer-adapter.js"></script>
+  <script>
+    const fixtureSelect = document.getElementById("fixtureSelect");
+    const loadFixtureButton = document.getElementById("loadFixtureButton");
+    const readiness = document.getElementById("readiness");
+    const flightOutput = document.getElementById("flightOutput");
+    const hotelOutput = document.getElementById("hotelOutput");
+    const warningsOutput = document.getElementById("warningsOutput");
+    const errorPanel = document.getElementById("errorPanel");
+    const errorMessage = document.getElementById("errorMessage");
+
+    function showError(message) {
+      errorMessage.textContent = message;
+      errorPanel.style.display = "block";
+    }
+
+    function clearError() {
+      errorPanel.style.display = "none";
+      errorMessage.textContent = "";
+    }
+
+    function renderJson(target, value, emptyMessage) {
+      target.textContent = value ? JSON.stringify(value, null, 2) : emptyMessage;
+    }
+
+    function renderWarnings(warnings) {
+      if (!warnings.length) {
+        warningsOutput.textContent = "No warnings";
+        return;
+      }
+      warningsOutput.innerHTML = `<ul>${warnings.map((warning) => `<li>${String(warning).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]))}</li>`).join("")}</ul>`;
+    }
+
+    function renderModel(model) {
+      readiness.textContent = String(model.readiness || "review").toUpperCase();
+      readiness.className = `readiness ${model.readiness === "ready" ? "ready" : "review"}`;
+      renderJson(flightOutput, model.flight, "No flight data");
+      renderJson(hotelOutput, model.hotel, "No hotel data");
+      renderWarnings(Array.isArray(model.warnings) ? model.warnings : []);
+    }
+
+    async function loadFixture() {
+      clearError();
+      try {
+        const response = await fetch(fixtureSelect.value, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Fixture load failed (${response.status})`);
+        const contract = await response.json();
+        if (contract.contractVersion !== "1.0") throw new Error("Unsupported contract version");
+        const adapter = window.GT63SmartImportConsumerAdapter;
+        if (!adapter || typeof adapter.adaptSmartImportForProduct !== "function") throw new Error("Adapter failed");
+        renderModel(adapter.adaptSmartImportForProduct(contract));
+      } catch (error) {
+        showError(error.message || "Fixture load failed");
+      }
+    }
+
+    loadFixtureButton.addEventListener("click", loadFixture);
+  </script>
+</body>
+</html>
