@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GT63 Core Mock Review</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, sans-serif;
+      color: #172033;
+      background: #eef2f6;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #d7dee8;
+      border-radius: 8px;
+      padding: 18px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: end;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-weight: 700;
+    }
+
+    select,
+    button {
+      min-height: 40px;
+      border: 1px solid #aab6c7;
+      border-radius: 6px;
+      padding: 0 12px;
+      font: inherit;
+    }
+
+    button {
+      border-color: #1454d4;
+      background: #1454d4;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .ghost-button {
+      border-color: #aab6c7;
+      background: #fff;
+      color: #172033;
+    }
+
+    .readiness {
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      background: #eef2f6;
+    }
+
+    .ready {
+      background: #ddf7e7;
+      color: #0f6b3a;
+    }
+
+    .review {
+      background: #fff3d9;
+      color: #8a5700;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .summary {
+      display: grid;
+      gap: 10px;
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 12px;
+      border-bottom: 1px solid #e5ebf3;
+      padding-bottom: 10px;
+    }
+
+    .summary-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .label {
+      color: #5b6575;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .segment {
+      display: grid;
+      gap: 6px;
+      border: 1px solid #dde4ee;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 10px;
+      background: #f8fafc;
+    }
+
+    .segment-title {
+      font-weight: 800;
+    }
+
+    .muted {
+      color: #687386;
+    }
+
+    .hotel-image {
+      width: 100%;
+      max-height: 180px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #dde4ee;
+      background: #f3f6fa;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    pre {
+      display: none;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #101828;
+      color: #eef2f6;
+      border-radius: 8px;
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .error {
+      display: none;
+      border-color: #f1b4b4;
+      background: #fff0f0;
+      color: #8c1d1d;
+    }
+
+    @media (max-width: 860px) {
+      body {
+        padding: 18px;
+      }
+
+      .grid,
+      .summary-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <h1>GT63 Core Mock Review</h1>
+      <p>This sandbox proves product model to human operator review without admin, uploads, Gemini, SerpAPI, database, Offer Engine, PDF, or WhatsApp.</p>
+      <div class="controls">
+        <label>
+          Fixture selector
+          <select id="fixtureSelect">
+            <option value="../test/fixtures/smart-import/flight-only.json">Flight only</option>
+            <option value="../test/fixtures/smart-import/hotel-only.json">Hotel only</option>
+            <option value="../test/fixtures/smart-import/flight-hotel-mixed.json">Flight + Hotel Mixed</option>
+            <option value="../test/fixtures/smart-import/unknown-partial-failure.json">Unknown / Partial Failure</option>
+          </select>
+        </label>
+        <button type="button" id="loadFixtureButton">Load Fixture</button>
+      </div>
+    </section>
+
+    <section class="panel error" id="errorPanel">
+      <h2>Sandbox Error</h2>
+      <p id="errorMessage">Fixture load failed</p>
+    </section>
+
+    <section class="panel">
+      <h2>Readiness</h2>
+      <div id="readiness" class="readiness review">REVIEW</div>
+    </section>
+
+    <section class="grid">
+      <article class="panel" id="flightReview">
+        <h2>Flight Review</h2>
+        <div id="flightContent">No flight data</div>
+      </article>
+
+      <article class="panel" id="hotelReview">
+        <h2>Hotel Review</h2>
+        <div id="hotelContent">No hotel data</div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>Warnings</h2>
+      <div id="warningsContent">No warnings</div>
+    </section>
+
+    <section class="panel">
+      <button type="button" class="ghost-button" id="toggleDebugButton">Show Product Model</button>
+      <pre id="debugOutput"></pre>
+    </section>
+  </main>
+
+  <script src="smart-import-consumer-adapter.js"></script>
+  <script>
+    const fixtureSelect = document.getElementById("fixtureSelect");
+    const loadFixtureButton = document.getElementById("loadFixtureButton");
+    const readiness = document.getElementById("readiness");
+    const flightContent = document.getElementById("flightContent");
+    const hotelContent = document.getElementById("hotelContent");
+    const warningsContent = document.getElementById("warningsContent");
+    const errorPanel = document.getElementById("errorPanel");
+    const errorMessage = document.getElementById("errorMessage");
+    const toggleDebugButton = document.getElementById("toggleDebugButton");
+    const debugOutput = document.getElementById("debugOutput");
+    let currentProductModel = null;
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function showError(message) {
+      errorMessage.textContent = message;
+      errorPanel.style.display = "block";
+    }
+
+    function clearError() {
+      errorPanel.style.display = "none";
+      errorMessage.textContent = "";
+    }
+
+    function valueOrFallback(value, fallback = "-") {
+      const text = String(value ?? "").trim();
+      return text || fallback;
+    }
+
+    function money(value) {
+      const amount = Number(value || 0);
+      if (!Number.isFinite(amount) || amount <= 0) return "-";
+      return `${amount.toLocaleString("en-US")} EUR`;
+    }
+
+    function routeFromSegments(segments) {
+      if (!Array.isArray(segments) || !segments.length) return "";
+      const codes = [segments[0].from, ...segments.map((segment) => segment.to)].filter(Boolean);
+      return codes.join(" -> ");
+    }
+
+    function segmentHtml(segment) {
+      const airlineLine = [segment.airline, segment.flightNumber].filter(Boolean).join(" ");
+      return `
+        <div class="segment">
+          <div class="segment-title">${escapeHtml(valueOrFallback(airlineLine, "Flight segment"))}</div>
+          <div>${escapeHtml(valueOrFallback(segment.from))} &rarr; ${escapeHtml(valueOrFallback(segment.to))}</div>
+          <div>${escapeHtml(valueOrFallback(segment.departure))} &rarr; ${escapeHtml(valueOrFallback(segment.arrival))}</div>
+          <div class="muted">Duration: ${escapeHtml(valueOrFallback(segment.duration))}</div>
+        </div>
+      `;
+    }
+
+    function renderFlight(flight) {
+      if (!flight) {
+        flightContent.textContent = "No flight data";
+        return;
+      }
+
+      const outboundSegments = Array.isArray(flight.outboundSegments) ? flight.outboundSegments : [];
+      const inboundSegments = Array.isArray(flight.inboundSegments) ? flight.inboundSegments : [];
+      const outboundSummary = routeFromSegments(outboundSegments) || flight.departure || "-";
+      const inboundSummary = routeFromSegments(inboundSegments) || flight.arrival || "-";
+
+      flightContent.innerHTML = `
+        <div class="summary">
+          <div class="summary-row"><div class="label">Airline</div><div>${escapeHtml(valueOrFallback(flight.airline))}</div></div>
+          <div class="summary-row"><div class="label">Route</div><div>${escapeHtml(valueOrFallback(flight.route))}</div></div>
+          <div class="summary-row"><div class="label">Outbound</div><div>${escapeHtml(valueOrFallback(outboundSummary))}</div></div>
+          <div class="summary-row"><div class="label">Inbound</div><div>${escapeHtml(valueOrFallback(inboundSummary))}</div></div>
+          <div class="summary-row"><div class="label">Baggage</div><div>${escapeHtml(valueOrFallback(flight.baggage, "No baggage data"))}</div></div>
+          <div class="summary-row"><div class="label">Price</div><div>${escapeHtml(money(flight.price))}</div></div>
+          <div class="summary-row"><div class="label">Notes</div><div>${escapeHtml(valueOrFallback(flight.notes, "No notes"))}</div></div>
+        </div>
+        <h3>Outbound segments</h3>
+        ${outboundSegments.length ? outboundSegments.map(segmentHtml).join("") : "<p>No outbound segments</p>"}
+        <h3>Inbound segments</h3>
+        ${inboundSegments.length ? inboundSegments.map(segmentHtml).join("") : "<p>No inbound segments</p>"}
+      `;
+    }
+
+    function renderHotel(hotel) {
+      if (!hotel) {
+        hotelContent.textContent = "No hotel data";
+        return;
+      }
+
+      const imageUrl = Array.isArray(hotel.imageUrls) && hotel.imageUrls.length ? hotel.imageUrls[0] : "";
+      hotelContent.innerHTML = `
+        ${imageUrl ? `<img class="hotel-image" src="${escapeHtml(imageUrl)}" alt="">` : ""}
+        <div class="summary">
+          <div class="summary-row"><div class="label">Name</div><div>${escapeHtml(valueOrFallback(hotel.name))}</div></div>
+          <div class="summary-row"><div class="label">Stars</div><div>${escapeHtml(valueOrFallback(hotel.stars))}</div></div>
+          <div class="summary-row"><div class="label">Area</div><div>${escapeHtml(valueOrFallback(hotel.area))}</div></div>
+          <div class="summary-row"><div class="label">Room</div><div>${escapeHtml(valueOrFallback(hotel.room))}</div></div>
+          <div class="summary-row"><div class="label">Meal</div><div>${escapeHtml(valueOrFallback(hotel.meal))}</div></div>
+          <div class="summary-row"><div class="label">Rooms left</div><div>${escapeHtml(valueOrFallback(hotel.roomsLeft))}</div></div>
+          <div class="summary-row"><div class="label">Price</div><div>${escapeHtml(money(hotel.price))}</div></div>
+          <div class="summary-row"><div class="label">Description</div><div>${escapeHtml(valueOrFallback(hotel.description, "No description"))}</div></div>
+        </div>
+      `;
+    }
+
+    function renderWarnings(warnings) {
+      if (!warnings.length) {
+        warningsContent.textContent = "No warnings";
+        return;
+      }
+      warningsContent.innerHTML = `<ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>`;
+    }
+
+    function renderModel(model) {
+      currentProductModel = model;
+      readiness.textContent = String(model.readiness || "review").toUpperCase();
+      readiness.className = `readiness ${model.readiness === "ready" ? "ready" : "review"}`;
+      renderFlight(model.flight);
+      renderHotel(model.hotel);
+      renderWarnings(Array.isArray(model.warnings) ? model.warnings : []);
+      debugOutput.textContent = JSON.stringify(model, null, 2);
+    }
+
+    async function loadFixture() {
+      clearError();
+      try {
+        const response = await fetch(fixtureSelect.value, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Fixture load failed (${response.status})`);
+        const contract = await response.json();
+        if (contract.contractVersion !== "1.0") throw new Error("Unsupported contract version");
+        const adapter = window.GT63SmartImportConsumerAdapter;
+        if (!adapter || typeof adapter.adaptSmartImportForProduct !== "function") throw new Error("Adapter failed");
+        renderModel(adapter.adaptSmartImportForProduct(contract));
+      } catch (error) {
+        showError(error.message || "Fixture load failed");
+      }
+    }
+
+    toggleDebugButton.addEventListener("click", () => {
+      const isHidden = debugOutput.style.display !== "block";
+      debugOutput.style.display = isHidden ? "block" : "none";
+      toggleDebugButton.textContent = isHidden ? "Hide Product Model" : "Show Product Model";
+      if (currentProductModel) debugOutput.textContent = JSON.stringify(currentProductModel, null, 2);
+    });
+
+    loadFixtureButton.addEventListener("click", loadFixture);
+  </script>
+</body>
+</html>

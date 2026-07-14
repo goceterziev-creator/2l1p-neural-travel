@@ -8,6 +8,7 @@ const { adaptSmartImportForProduct } = require("../gt63-core/smart-import-consum
 
 const fixtureDir = path.join(__dirname, "..", "test", "fixtures", "smart-import");
 const mockShellPath = path.join(__dirname, "..", "gt63-core", "mock-shell.html");
+const mockReviewPath = path.join(__dirname, "..", "gt63-core", "mock-review.html");
 const expectedProductKeys = ["flight", "hotel", "readiness", "warnings"];
 
 function readFixture(name) {
@@ -73,5 +74,22 @@ for (const fixtureName of [
   assert.match(mockShellHtml, new RegExp(fixtureName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `mock shell must reference ${fixtureName}`);
 }
 assert.ok(!mockShellHtml.match(/\/api\/|Gemini request|SerpAPI request|multipart\/form-data|generate PDF/i), "mock shell must not call production APIs, uploads, providers or PDF generation");
+
+const mockReviewHtml = fs.readFileSync(mockReviewPath, "utf8");
+assert.match(mockReviewHtml, /GT63 Core Mock Review/, "mock review should exist");
+assert.match(mockReviewHtml, /smart-import-consumer-adapter\.js/, "mock review must use the existing adapter file");
+assert.match(mockReviewHtml, /Flight Review/, "mock review must include flight review section");
+assert.match(mockReviewHtml, /Hotel Review/, "mock review must include hotel review section");
+assert.match(mockReviewHtml, /Warnings/, "mock review must include warnings section");
+assert.match(mockReviewHtml, /Show Product Model/, "mock review may expose product model behind a hidden debug toggle");
+for (const fixtureName of [
+  "flight-only.json",
+  "hotel-only.json",
+  "flight-hotel-mixed.json",
+  "unknown-partial-failure.json"
+]) {
+  assert.match(mockReviewHtml, new RegExp(fixtureName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `mock review must reference ${fixtureName}`);
+}
+assert.ok(!mockReviewHtml.match(/fetch\(["']\/api|\/api\/|multipart\/form-data|FormData|api\/offers|api\/smart-import|\.pdf/i), "mock review must not call production APIs, uploads, providers, PDF, WhatsApp or Offer Engine");
 
 console.log("SMART IMPORT CONSUMER ADAPTER REGRESSION PASS");
