@@ -10,6 +10,7 @@ const {
 } = require("../gt63-core/core-data-provider");
 
 const fixtureDir = path.join(__dirname, "..", "test", "fixtures", "smart-import");
+const productDir = path.join(__dirname, "..", "gt63-core", "product");
 const expectedProductKeys = ["blockingIssues", "flight", "hotel", "readiness", "warnings"];
 
 function readFixture(name) {
@@ -49,6 +50,10 @@ function assertReviewFlow(model, label) {
   assert.equal(model.readiness, "review", `${label} should require review`);
   assert.ok(model.blockingIssues.length >= 1, `${label} should explain why preview is blocked`);
   assert.equal(previewEnabled(model), false, `${label} should disable preview`);
+}
+
+function readProductFile(name) {
+  return fs.readFileSync(path.join(productDir, name), "utf8");
 }
 
 async function loadFixtureModel(fixtureName) {
@@ -91,6 +96,29 @@ async function main() {
   const liveModel = await liveProvider.loadProductModel({ formData: fakeFormData });
   assertReadyFlow(liveModel, "live-smart-import");
   assert.ok(liveModel.flight && liveModel.hotel, "live smart import should adapt to same product model shape");
+
+  const indexHtml = readProductFile("index.html");
+  const appJs = readProductFile("app.js");
+  const stylesCss = readProductFile("styles.css");
+
+  assert.match(indexHtml, /GT63 Core/, "product shell should identify GT63 Core");
+  assert.match(indexHtml, /Travel Proposal Workspace/, "product shell should expose workspace language");
+  assert.match(indexHtml, /core-data-provider\.js/, "product shell should load Core Data Provider");
+  assert.match(indexHtml, /app\.js/, "product shell should load product app");
+  assert.match(indexHtml, /DEV/, "product shell should mark provider mode as development control");
+  assert.match(indexHtml, /Start Smart Import/, "product shell should expose the start action");
+  assert.match(indexHtml, /Continue to Preview/, "product shell should expose the preview action");
+  assert.match(indexHtml, /Proposal Preview/, "product shell should expose preview area");
+
+  assert.match(appJs, /loadProductModel/, "product shell app should use Core Data Provider");
+  assert.match(appJs, /provider: "fixture"/, "product shell app should support fixture provider");
+  assert.match(appJs, /provider: "live"/, "product shell app should support live provider");
+  assert.match(appJs, /readiness === "ready"/, "product shell app should gate preview by readiness");
+  assert.match(appJs, /Preview disabled until readiness is READY/, "product shell app should disable preview when review is required");
+  assert.ok(!appJs.match(/adaptSmartImportForProduct|contractVersion|classifications|sources|debug|metadata|universalIntakeDeprecated|Gemini|SerpAPI/i), "product shell app must not read engine or diagnostic fields");
+  assert.ok(!appJs.match(/api\/offers|api\/clients|api\/activities|generate PDF|WhatsApp/i), "product shell app must not call non-Core product services");
+
+  assert.match(stylesCss, /Travel Proposal Workspace|preview-shell|gate-message/s, "product shell styles should cover the product workflow");
 
   console.log("GT63 CORE E2E SMOKE PASS");
 }

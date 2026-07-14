@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GT63 Core</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">GT63 Core</p>
+        <h1>Travel Proposal Workspace</h1>
+        <p class="lede">Create a reviewed travel proposal from structured flight and hotel data.</p>
+      </div>
+      <div class="hero-card">
+        <span class="mini-label">Current step</span>
+        <strong id="currentStep">Create proposal</strong>
+      </div>
+    </header>
+
+    <section class="workspace-grid">
+      <form class="panel create-panel" id="proposalForm">
+        <div class="section-heading">
+          <span class="step-number">1</span>
+          <div>
+            <h2>Create Proposal</h2>
+            <p>Start with the client context, then import screenshots.</p>
+          </div>
+        </div>
+
+        <label>
+          Client
+          <input id="clientName" type="text" placeholder="Client name">
+        </label>
+
+        <label>
+          Destination
+          <input id="destination" type="text" placeholder="Destination">
+        </label>
+
+        <label>
+          Travel Dates
+          <input id="travelDates" type="text" placeholder="Travel dates">
+        </label>
+
+        <label>
+          Upload Screenshots
+          <input id="screenshots" type="file" accept="image/*" multiple>
+        </label>
+
+        <div class="dev-box">
+          <div>
+            <span class="dev-pill">DEV</span>
+            <strong>Source mode</strong>
+          </div>
+          <div class="dev-controls">
+            <label>
+              Provider
+              <select id="providerMode">
+                <option value="fixture">Fixture</option>
+                <option value="live">Live Smart Import</option>
+              </select>
+            </label>
+            <label id="fixtureField">
+              Fixture
+              <select id="fixtureSelect">
+                <option value="../../test/fixtures/smart-import/flight-only.json">Flight only</option>
+                <option value="../../test/fixtures/smart-import/hotel-only.json">Hotel only</option>
+                <option value="../../test/fixtures/smart-import/flight-hotel-mixed.json">Flight + Hotel Mixed</option>
+                <option value="../../test/fixtures/smart-import/unknown-partial-failure.json">Unknown / Partial Failure</option>
+              </select>
+            </label>
+            <label id="endpointField" class="hidden">
+              Endpoint
+              <input id="liveEndpoint" type="text" value="/api/smart-import">
+            </label>
+          </div>
+        </div>
+
+        <button class="primary-action" type="submit">Start Smart Import</button>
+      </form>
+
+      <section class="panel gate-panel">
+        <div class="section-heading">
+          <span class="step-number">2</span>
+          <div>
+            <h2>Readiness</h2>
+            <p>Can this proposal continue?</p>
+          </div>
+        </div>
+        <div id="readinessBadge" class="readiness review">REVIEW</div>
+        <div id="gateMessage" class="gate-message review-message">
+          <strong>Needs operator action</strong>
+          <span>Load data to evaluate readiness.</span>
+        </div>
+        <button id="continueButton" class="secondary-action" type="button" disabled>Continue to Preview</button>
+      </section>
+    </section>
+
+    <section class="panel error-panel hidden" id="errorPanel">
+      <h2>Import Error</h2>
+      <p id="errorMessage">Product model load failed.</p>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <span class="step-number">3</span>
+        <div>
+          <h2>Review</h2>
+          <p>What was recognized from the source data?</p>
+        </div>
+      </div>
+      <div class="review-grid">
+        <article class="review-card">
+          <h3>Flight</h3>
+          <div id="flightReview">No flight data</div>
+        </article>
+        <article class="review-card">
+          <h3>Hotel</h3>
+          <div id="hotelReview">No hotel data</div>
+        </article>
+      </div>
+      <div class="signal-grid">
+        <div>
+          <h3>Warnings</h3>
+          <div id="warningsReview">No warnings</div>
+        </div>
+        <div>
+          <h3>Blocking Issues</h3>
+          <div id="blockingReview">No blocking issues</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel preview-panel">
+      <div class="section-heading">
+        <span class="step-number">4</span>
+        <div>
+          <h2>Proposal Preview</h2>
+          <p>Client-facing preview appears only when the model is ready.</p>
+        </div>
+      </div>
+      <div id="previewArea" class="disabled-preview">Preview disabled until readiness is READY.</div>
+    </section>
+  </main>
+
+  <script src="../smart-import-consumer-adapter.js"></script>
+  <script src="../core-data-provider.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

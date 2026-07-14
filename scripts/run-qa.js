@@ -7,6 +7,7 @@ const CHECK_TARGETS = [
   "public/admin.js",
   "gt63-core/smart-import-consumer-adapter.js",
   "gt63-core/core-data-provider.js",
+  "gt63-core/product/app.js",
   "scripts/v10-persistence-safety-check.js",
   "scripts/smart-import-consumer-adapter-regression.js",
   "scripts/gt63-core-e2e-smoke.js",
