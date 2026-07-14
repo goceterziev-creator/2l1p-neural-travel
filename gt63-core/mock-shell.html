@@ -114,6 +114,10 @@
       color: #8c1d1d;
     }
 
+    .live-only {
+      display: none;
+    }
+
     @media (max-width: 760px) {
       body {
         padding: 18px;
@@ -132,6 +136,13 @@
       <p>This sandbox proves fixture → adapter → product model without the engine, uploads, Gemini, SerpAPI, database, offer generation, or admin UI.</p>
       <div class="controls">
         <label>
+          Provider
+          <select id="providerSelect">
+            <option value="fixture">Fixture</option>
+            <option value="live">Live Smart Import</option>
+          </select>
+        </label>
+        <label>
           Fixture selector
           <select id="fixtureSelect">
             <option value="../test/fixtures/smart-import/flight-only.json">Flight only</option>
@@ -140,7 +151,19 @@
             <option value="../test/fixtures/smart-import/unknown-partial-failure.json">Unknown / Partial Failure</option>
           </select>
         </label>
-        <button type="button" id="loadFixtureButton">Load Fixture</button>
+        <label class="live-only">
+          Live endpoint
+          <input id="liveEndpoint" type="text" value="/api/smart-import">
+        </label>
+        <label class="live-only">
+          Destination
+          <input id="liveDestination" type="text" placeholder="Optional destination">
+        </label>
+        <label class="live-only">
+          Travel screenshots
+          <input id="liveScreenshots" type="file" accept="image/*" multiple>
+        </label>
+        <button type="button" id="loadFixtureButton">Load Product Model</button>
       </div>
     </section>
 
@@ -176,6 +199,10 @@
   <script src="core-data-provider.js"></script>
   <script>
     const fixtureSelect = document.getElementById("fixtureSelect");
+    const providerSelect = document.getElementById("providerSelect");
+    const liveEndpoint = document.getElementById("liveEndpoint");
+    const liveDestination = document.getElementById("liveDestination");
+    const liveScreenshots = document.getElementById("liveScreenshots");
     const loadFixtureButton = document.getElementById("loadFixtureButton");
     const readiness = document.getElementById("readiness");
     const flightOutput = document.getElementById("flightOutput");
@@ -220,21 +247,42 @@
       renderWarnings(Array.isArray(model.warnings) ? model.warnings : []);
     }
 
-    async function loadFixture() {
+    function syncProviderControls() {
+      const live = providerSelect.value === "live";
+      fixtureSelect.closest("label").style.display = live ? "none" : "grid";
+      document.querySelectorAll(".live-only").forEach((element) => {
+        element.style.display = live ? "grid" : "none";
+      });
+    }
+
+    async function loadSelectedSource() {
       clearError();
       try {
         const provider = window.GT63CoreDataProvider;
         if (!provider || typeof provider.loadProductModel !== "function") throw new Error("Core Data Provider failed");
+        if (providerSelect.value === "live") {
+          const files = Array.from(liveScreenshots.files || []);
+          if (!files.length) throw new Error("Select at least one travel screenshot first");
+          renderModel(await provider.loadProductModel({
+            provider: "live",
+            endpoint: liveEndpoint.value || "/api/smart-import",
+            destination: liveDestination.value || "",
+            files
+          }));
+          return;
+        }
         renderModel(await provider.loadProductModel({
           provider: "fixture",
           fixtureUrl: fixtureSelect.value
         }));
       } catch (error) {
-        showError(error.message || "Fixture load failed");
+        showError(error.message || "Product model load failed");
       }
     }
 
-    loadFixtureButton.addEventListener("click", loadFixture);
+    providerSelect.addEventListener("change", syncProviderControls);
+    loadFixtureButton.addEventListener("click", loadSelectedSource);
+    syncProviderControls();
   </script>
 </body>
 </html>

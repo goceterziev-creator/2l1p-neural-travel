@@ -81,11 +81,9 @@
 
     return {
       async loadProductModel(input = {}) {
-        const response = await getFetch(fetchImpl)(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(input.request || input)
-        });
+        const targetEndpoint = input.endpoint || endpoint;
+        const requestOptions = buildLiveRequest(input);
+        const response = await getFetch(fetchImpl)(targetEndpoint, requestOptions);
         if (!response.ok) {
           throw new Error(`Live Smart Import failed (${response.status})`);
         }
@@ -93,6 +91,35 @@
         assertContractVersion(contract);
         return adaptContract(contract);
       }
+    };
+  }
+
+  function buildLiveRequest(input = {}) {
+    if (input.formData) {
+      return {
+        method: "POST",
+        body: input.formData
+      };
+    }
+
+    const files = Array.from(input.files || input.screenshots || []);
+    if (files.length) {
+      if (typeof root.FormData !== "function") {
+        throw new Error("FormData unavailable");
+      }
+      const formData = new root.FormData();
+      files.slice(0, 8).forEach((file) => formData.append("image", file));
+      formData.append("destination", input.destination || "");
+      return {
+        method: "POST",
+        body: formData
+      };
+    }
+
+    return {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input.request || input)
     };
   }
 

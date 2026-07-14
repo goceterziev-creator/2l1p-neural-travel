@@ -112,6 +112,20 @@ assert.deepStrictEqual(empty, {
   assert.equal(liveModel.flight.route, "SOF -> MLE / MLE -> SOF", "live provider should adapt engine contract through product model");
   assert.equal(liveModel.hotel, null, "live provider should preserve absent hotel data");
 
+  const fakeFormData = { marker: "form-data" };
+  const liveUploadProvider = createLiveSmartImportProvider({
+    fetchImpl: async (endpoint, request) => {
+      assert.equal(endpoint, "/api/smart-import", "live upload provider should default to Smart Import endpoint");
+      assert.equal(request.method, "POST", "live upload provider should POST uploads");
+      assert.equal(request.body, fakeFormData, "live upload provider should pass FormData through unchanged");
+      assert.equal(Object.prototype.hasOwnProperty.call(request, "headers"), false, "live upload provider must not set JSON headers for FormData");
+      return createFetchResponse(readFixture("flight-hotel-mixed.json"));
+    }
+  });
+  const liveUploadModel = await liveUploadProvider.loadProductModel({ formData: fakeFormData });
+  assertProductModelShape(liveUploadModel, "live-upload-provider");
+  assert.equal(liveUploadModel.readiness, "ready", "live upload provider should return product model");
+
   const defaultModel = await loadProductModel(
     { provider: "fixture", fixtureUrl: "fixture://hotel" },
     {
@@ -127,6 +141,9 @@ assert.match(mockShellHtml, /GT63 Core Mock Shell/, "mock shell should exist");
 assert.match(mockShellHtml, /smart-import-consumer-adapter\.js/, "mock shell must use the existing adapter file");
 assert.match(mockShellHtml, /core-data-provider\.js/, "mock shell must use the Core Data Provider");
 assert.match(mockShellHtml, /loadProductModel/, "mock shell must load product model through the provider");
+assert.match(mockShellHtml, /Live Smart Import/, "mock shell must expose a live provider test option");
+assert.match(mockShellHtml, /liveScreenshots/, "mock shell must accept live screenshots for provider test");
+assert.match(mockShellHtml, /liveEndpoint/, "mock shell must allow live endpoint configuration");
 for (const fixtureName of [
   "flight-only.json",
   "hotel-only.json",
@@ -135,7 +152,8 @@ for (const fixtureName of [
 ]) {
   assert.match(mockShellHtml, new RegExp(fixtureName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `mock shell must reference ${fixtureName}`);
 }
-assert.ok(!mockShellHtml.match(/\/api\/|Gemini request|SerpAPI request|multipart\/form-data|generate PDF/i), "mock shell must not call production APIs, uploads, providers or PDF generation");
+assert.match(mockShellHtml, /\/api\/smart-import/, "mock shell live provider test must target Smart Import only");
+assert.ok(!mockShellHtml.match(/api\/offers|api\/gemini|api\/hotel|Gemini request|SerpAPI request|generate PDF/i), "mock shell must not call non-Smart-Import APIs, providers or PDF generation");
 
 const mockReviewHtml = fs.readFileSync(mockReviewPath, "utf8");
 assert.match(mockReviewHtml, /GT63 Core Mock Review/, "mock review should exist");
