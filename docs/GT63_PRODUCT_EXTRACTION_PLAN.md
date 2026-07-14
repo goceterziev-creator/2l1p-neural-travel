@@ -18,6 +18,8 @@ GT63 Core Platform
 
 The product shell should use stable API contracts against the current engine first. Only after a module is stable, isolated, and proven should it be physically extracted.
 
+Phase B.0 product shell boundaries are locked in `docs/GT63_CORE_PRODUCT_SHELL_BOUNDARY.md`.
+
 ## 1. Product Definition
 
 GT63 turns raw travel information into a checked, sellable client proposal with minimal operator effort.
