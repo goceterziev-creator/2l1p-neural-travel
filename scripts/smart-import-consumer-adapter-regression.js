@@ -9,6 +9,7 @@ const { adaptSmartImportForProduct } = require("../gt63-core/smart-import-consum
 const fixtureDir = path.join(__dirname, "..", "test", "fixtures", "smart-import");
 const mockShellPath = path.join(__dirname, "..", "gt63-core", "mock-shell.html");
 const mockReviewPath = path.join(__dirname, "..", "gt63-core", "mock-review.html");
+const mockProposalPreviewPath = path.join(__dirname, "..", "gt63-core", "mock-proposal-preview.html");
 const expectedProductKeys = ["blockingIssues", "flight", "hotel", "readiness", "warnings"];
 
 function readFixture(name) {
@@ -49,6 +50,7 @@ assert.deepStrictEqual(mixed.blockingIssues, [], "mixed fixture warning should n
 assert.equal(mixed.flight.airline, "Emirates", "mixed fixture should expose flight data");
 assert.equal(mixed.hotel.name, "Patina Maldives", "mixed fixture should expose hotel data");
 assert.ok(mixed.warnings.some((warning) => warning.includes("Mixed screenshots")), "mixed fixture should preserve warning text");
+assert.ok(mixed.warnings.some((warning) => warning.includes("Final operator review is recommended")), "mixed fixture warning must recommend review without blocking preview");
 
 const unknown = adaptSmartImportForProduct(readFixture("unknown-partial-failure.json"));
 assertProductModelShape(unknown, "unknown");
@@ -100,5 +102,24 @@ for (const fixtureName of [
   assert.match(mockReviewHtml, new RegExp(fixtureName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `mock review must reference ${fixtureName}`);
 }
 assert.ok(!mockReviewHtml.match(/fetch\(["']\/api|\/api\/|multipart\/form-data|FormData|api\/offers|api\/smart-import|\.pdf/i), "mock review must not call production APIs, uploads, providers, PDF, WhatsApp or Offer Engine");
+
+const mockProposalPreviewHtml = fs.readFileSync(mockProposalPreviewPath, "utf8");
+assert.match(mockProposalPreviewHtml, /GT63 Core Mock Proposal Preview/, "mock proposal preview should exist");
+assert.match(mockProposalPreviewHtml, /smart-import-consumer-adapter\.js/, "mock proposal preview must use the existing adapter file");
+assert.match(mockProposalPreviewHtml, /Readiness Gate/, "mock proposal preview must include readiness gate");
+assert.match(mockProposalPreviewHtml, /Preview enabled/, "mock proposal preview must include ready state");
+assert.match(mockProposalPreviewHtml, /Preview disabled/, "mock proposal preview must include review state");
+assert.match(mockProposalPreviewHtml, /Blocking Issues/, "mock proposal preview must show blocking issues");
+assert.match(mockProposalPreviewHtml, /Client Preview/, "mock proposal preview must include client preview section");
+assert.match(mockProposalPreviewHtml, /Show Product Model/, "mock proposal preview may expose product model behind a hidden debug toggle");
+for (const fixtureName of [
+  "flight-only.json",
+  "hotel-only.json",
+  "flight-hotel-mixed.json",
+  "unknown-partial-failure.json"
+]) {
+  assert.match(mockProposalPreviewHtml, new RegExp(fixtureName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `mock proposal preview must reference ${fixtureName}`);
+}
+assert.ok(!mockProposalPreviewHtml.match(/fetch\(["']\/api|\/api\/|multipart\/form-data|FormData|api\/offers|api\/smart-import|\.pdf|WhatsApp/i), "mock proposal preview must not call production APIs, uploads, providers, PDF, WhatsApp or Offer Engine");
 
 console.log("SMART IMPORT CONSUMER ADAPTER REGRESSION PASS");

@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GT63 Core Mock Proposal Preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, sans-serif;
+      color: #142033;
+      background: #edf2f7;
+    }
+
+    body {
+      margin: 0;
+      padding: 32px;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #d7dee8;
+      border-radius: 8px;
+      padding: 18px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: end;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-weight: 700;
+    }
+
+    select,
+    button {
+      min-height: 40px;
+      border: 1px solid #aab6c7;
+      border-radius: 6px;
+      padding: 0 12px;
+      font: inherit;
+    }
+
+    button {
+      border-color: #1454d4;
+      background: #1454d4;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .ghost-button {
+      border-color: #aab6c7;
+      background: #fff;
+      color: #172033;
+    }
+
+    .readiness {
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      background: #eef2f6;
+    }
+
+    .ready {
+      background: #ddf7e7;
+      color: #0f6b3a;
+    }
+
+    .review {
+      background: #fff3d9;
+      color: #8a5700;
+    }
+
+    .gate {
+      display: grid;
+      gap: 10px;
+      border-radius: 8px;
+      border: 1px solid #d7dee8;
+      padding: 14px;
+      background: #f8fafc;
+      margin-top: 14px;
+    }
+
+    .gate.ready-gate {
+      border-color: #b7e7c7;
+      background: #f1fbf5;
+    }
+
+    .gate.review-gate {
+      border-color: #f4d28e;
+      background: #fff8e9;
+    }
+
+    .preview-shell {
+      display: grid;
+      gap: 16px;
+    }
+
+    .hero {
+      border-radius: 8px;
+      background: #0f1c2e;
+      color: #fff;
+      padding: 24px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .hero h2 {
+      font-size: 34px;
+      line-height: 1.05;
+      margin-bottom: 0;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .preview-card {
+      display: grid;
+      gap: 12px;
+      border: 1px solid #d7dee8;
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 12px;
+      border-bottom: 1px solid #e5ebf3;
+      padding-bottom: 10px;
+    }
+
+    .summary-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .label {
+      color: #5b6575;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .segment {
+      display: grid;
+      gap: 6px;
+      border: 1px solid #dde4ee;
+      border-radius: 8px;
+      padding: 12px;
+      background: #f8fafc;
+    }
+
+    .segment-title {
+      font-weight: 800;
+    }
+
+    .hotel-image {
+      width: 100%;
+      max-height: 190px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #dde4ee;
+      background: #f3f6fa;
+    }
+
+    .muted {
+      color: #687386;
+    }
+
+    .warning-box {
+      border: 1px solid #f4d28e;
+      border-radius: 8px;
+      background: #fff8e9;
+      padding: 14px;
+    }
+
+    .disabled-preview {
+      border: 1px dashed #c6cfdc;
+      border-radius: 8px;
+      padding: 20px;
+      background: #f8fafc;
+      color: #5b6575;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    pre {
+      display: none;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #101828;
+      color: #eef2f6;
+      border-radius: 8px;
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .error {
+      display: none;
+      border-color: #f1b4b4;
+      background: #fff0f0;
+      color: #8c1d1d;
+    }
+
+    @media (max-width: 860px) {
+      body {
+        padding: 18px;
+      }
+
+      .preview-grid,
+      .summary-row {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h2 {
+        font-size: 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <h1>GT63 Core Mock Proposal Preview</h1>
+      <p>This sandbox proves product model to client-facing preview without engine calls, uploads, provider calls, database writes, admin integration, or document export.</p>
+      <div class="controls">
+        <label>
+          Fixture selector
+          <select id="fixtureSelect">
+            <option value="../test/fixtures/smart-import/flight-only.json">Flight only</option>
+            <option value="../test/fixtures/smart-import/hotel-only.json">Hotel only</option>
+            <option value="../test/fixtures/smart-import/flight-hotel-mixed.json">Flight + Hotel Mixed</option>
+            <option value="../test/fixtures/smart-import/unknown-partial-failure.json">Unknown / Partial Failure</option>
+          </select>
+        </label>
+        <button type="button" id="loadFixtureButton">Load Fixture</button>
+      </div>
+    </section>
+
+    <section class="panel error" id="errorPanel">
+      <h2>Sandbox Error</h2>
+      <p id="errorMessage">Fixture load failed</p>
+    </section>
+
+    <section class="panel">
+      <h2>Readiness Gate</h2>
+      <div id="readiness" class="readiness review">REVIEW</div>
+      <div id="gate" class="gate review-gate">
+        <strong id="gateTitle">Preview disabled</strong>
+        <div id="gateText">Load a fixture to evaluate proposal readiness.</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Blocking Issues</h2>
+      <div id="blockingIssuesContent">No blocking issues</div>
+    </section>
+
+    <section class="panel">
+      <h2>Client Preview</h2>
+      <div id="previewContent" class="disabled-preview">Proposal preview disabled until blocking issues are resolved.</div>
+    </section>
+
+    <section class="panel">
+      <h2>Warnings</h2>
+      <div id="warningsContent">No warnings</div>
+    </section>
+
+    <section class="panel">
+      <button type="button" id="debugToggle" class="ghost-button">Show Product Model</button>
+      <pre id="debugOutput"></pre>
+    </section>
+  </main>
+
+  <script src="smart-import-consumer-adapter.js"></script>
+  <script>
+    const adapter = window.GT63SmartImportConsumerAdapter;
+    const fixtureSelect = document.getElementById("fixtureSelect");
+    const loadFixtureButton = document.getElementById("loadFixtureButton");
+    const errorPanel = document.getElementById("errorPanel");
+    const errorMessage = document.getElementById("errorMessage");
+    const readiness = document.getElementById("readiness");
+    const gate = document.getElementById("gate");
+    const gateTitle = document.getElementById("gateTitle");
+    const gateText = document.getElementById("gateText");
+    const blockingIssuesContent = document.getElementById("blockingIssuesContent");
+    const previewContent = document.getElementById("previewContent");
+    const warningsContent = document.getElementById("warningsContent");
+    const debugToggle = document.getElementById("debugToggle");
+    const debugOutput = document.getElementById("debugOutput");
+    let currentProductModel = null;
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function formatPrice(value) {
+      if (value === null || value === undefined || value === "") {
+        return "Not specified";
+      }
+      const numberValue = Number(value);
+      if (Number.isFinite(numberValue)) {
+        return `${numberValue.toLocaleString("en-US")} EUR`;
+      }
+      return escapeHtml(value);
+    }
+
+    function showError(message) {
+      errorMessage.textContent = message;
+      errorPanel.style.display = "block";
+    }
+
+    function clearError() {
+      errorPanel.style.display = "none";
+      errorMessage.textContent = "";
+    }
+
+    function renderList(items, emptyText) {
+      if (!Array.isArray(items) || items.length === 0) {
+        return `<div class="muted">${escapeHtml(emptyText)}</div>`;
+      }
+      return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+    }
+
+    function segmentTitle(segment) {
+      const airline = segment.airline || "";
+      const flightNumber = segment.flightNumber || "";
+      return [airline, flightNumber].filter(Boolean).join(" ") || "Flight segment";
+    }
+
+    function renderSegments(title, segments) {
+      if (!Array.isArray(segments) || segments.length === 0) {
+        return "";
+      }
+      return `
+        <h3>${escapeHtml(title)}</h3>
+        ${segments.map((segment) => `
+          <div class="segment">
+            <div class="segment-title">${escapeHtml(segmentTitle(segment))}</div>
+            <div>${escapeHtml(segment.from || "Unknown")} &rarr; ${escapeHtml(segment.to || "Unknown")}</div>
+            <div>${escapeHtml(segment.departure || "Departure not specified")} &rarr; ${escapeHtml(segment.arrival || "Arrival not specified")}</div>
+            <div class="muted">Duration: ${escapeHtml(segment.duration || "Not specified")}</div>
+          </div>
+        `).join("")}
+      `;
+    }
+
+    function renderFlightCard(flight) {
+      if (!flight) {
+        return "";
+      }
+      return `
+        <article class="preview-card">
+          <h3>Flight Experience</h3>
+          <div class="summary-row"><span class="label">Airline</span><span>${escapeHtml(flight.airline || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Route</span><span>${escapeHtml(flight.route || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Outbound</span><span>${escapeHtml(flight.departure || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Inbound</span><span>${escapeHtml(flight.arrival || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Baggage</span><span>${escapeHtml(flight.baggage || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Price</span><span>${formatPrice(flight.price)}</span></div>
+          ${renderSegments("Outbound segments", flight.outboundSegments)}
+          ${renderSegments("Inbound segments", flight.inboundSegments)}
+        </article>
+      `;
+    }
+
+    function renderHotelCard(hotel) {
+      if (!hotel) {
+        return "";
+      }
+      const firstImage = Array.isArray(hotel.imageUrls) && hotel.imageUrls[0] ? hotel.imageUrls[0] : "";
+      return `
+        <article class="preview-card">
+          <h3>Hotel Stay</h3>
+          ${firstImage ? `<img class="hotel-image" src="${escapeHtml(firstImage)}" alt="">` : ""}
+          <div class="summary-row"><span class="label">Name</span><span>${escapeHtml(hotel.name || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Stars</span><span>${escapeHtml(hotel.stars || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Area</span><span>${escapeHtml(hotel.area || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Room</span><span>${escapeHtml(hotel.room || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Meal</span><span>${escapeHtml(hotel.meal || "Not specified")}</span></div>
+          <div class="summary-row"><span class="label">Price</span><span>${formatPrice(hotel.price)}</span></div>
+          <p>${escapeHtml(hotel.description || "No description")}</p>
+        </article>
+      `;
+    }
+
+    function previewTitle(model) {
+      if (model.hotel?.area) {
+        return model.hotel.area;
+      }
+      if (model.hotel?.name) {
+        return model.hotel.name;
+      }
+      if (model.flight?.route) {
+        return model.flight.route;
+      }
+      return "Travel Proposal";
+    }
+
+    function renderPreview(model) {
+      if (model.readiness !== "ready") {
+        previewContent.className = "disabled-preview";
+        previewContent.innerHTML = "Proposal preview disabled until blocking issues are resolved.";
+        return;
+      }
+
+      const warningsBlock = model.warnings.length
+        ? `<div class="warning-box"><strong>Operator note</strong><br>${model.warnings.map(escapeHtml).join("<br>")}</div>`
+        : "";
+      previewContent.className = "preview-shell";
+      previewContent.innerHTML = `
+        <section class="hero">
+          <div class="muted">GT63 client-facing preview sandbox</div>
+          <h2>${escapeHtml(previewTitle(model))}</h2>
+          <p>A structured proposal preview created from the product model.</p>
+        </section>
+        ${warningsBlock}
+        <section class="preview-grid">
+          ${renderFlightCard(model.flight)}
+          ${renderHotelCard(model.hotel)}
+        </section>
+      `;
+    }
+
+    function renderProductModel(model) {
+      const isReady = model.readiness === "ready";
+      readiness.textContent = isReady ? "READY" : "REVIEW";
+      readiness.className = `readiness ${isReady ? "ready" : "review"}`;
+      gate.className = `gate ${isReady ? "ready-gate" : "review-gate"}`;
+      gateTitle.textContent = isReady ? "Preview enabled" : "Preview disabled";
+      gateText.textContent = isReady
+        ? "This product model can continue to proposal preview."
+        : "Resolve blocking issues before previewing this proposal.";
+      blockingIssuesContent.innerHTML = renderList(model.blockingIssues, "No blocking issues");
+      warningsContent.innerHTML = renderList(model.warnings, "No warnings");
+      debugOutput.textContent = JSON.stringify(model, null, 2);
+      renderPreview(model);
+    }
+
+    async function loadFixture() {
+      clearError();
+      try {
+        const response = await fetch(fixtureSelect.value);
+        if (!response.ok) {
+          throw new Error(`Fixture load failed: ${response.status}`);
+        }
+        const contract = await response.json();
+        if (contract.contractVersion !== "1.0") {
+          throw new Error("Unsupported contract version");
+        }
+        if (!adapter || typeof adapter.adaptSmartImportForProduct !== "function") {
+          throw new Error("Adapter failed");
+        }
+        currentProductModel = adapter.adaptSmartImportForProduct(contract);
+        renderProductModel(currentProductModel);
+      } catch (error) {
+        showError(error.message || "Fixture load failed");
+      }
+    }
+
+    debugToggle.addEventListener("click", () => {
+      const isVisible = debugOutput.style.display === "block";
+      debugOutput.style.display = isVisible ? "none" : "block";
+      debugToggle.textContent = isVisible ? "Show Product Model" : "Hide Product Model";
+      if (!currentProductModel) {
+        debugOutput.textContent = "No product model loaded";
+      }
+    });
+
+    loadFixtureButton.addEventListener("click", loadFixture);
+  </script>
+</body>
+</html>

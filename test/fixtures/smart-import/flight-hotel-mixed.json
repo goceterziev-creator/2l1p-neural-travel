@@ -87,7 +87,7 @@
     }
   },
   "warnings": [
-    "Mixed screenshots were routed to both engines and require review."
+    "Mixed screenshots were routed to both engines. Final operator review is recommended."
   ],
   "evidence": {
     "archived": true,
