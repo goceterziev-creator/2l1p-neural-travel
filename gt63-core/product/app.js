@@ -224,6 +224,18 @@ function clearError() {
   nodes.errorPanel.classList.add("hidden");
 }
 
+function isRelativeEndpoint(endpoint) {
+  return endpoint.startsWith("/");
+}
+
+function liveEndpointValue() {
+  const endpoint = nodes.liveEndpoint.value.trim() || "/api/smart-import";
+  if (window.location.protocol === "file:" && isRelativeEndpoint(endpoint)) {
+    throw new Error("Live Smart Import needs a server URL. This shell is opened as a local file, so /api/smart-import cannot be reached. Use Fixture mode, or enter a full endpoint URL such as https://2l1p-neural-travel-production.up.railway.app/api/smart-import.");
+  }
+  return endpoint;
+}
+
 function syncProviderMode() {
   const live = nodes.providerMode.value === "live";
   nodes.fixtureField.classList.toggle("hidden", live);
@@ -241,7 +253,7 @@ async function loadProductModel() {
     if (!files.length) throw new Error("Select at least one screenshot first.");
     return productProvider.loadProductModel({
       provider: "live",
-      endpoint: nodes.liveEndpoint.value || "/api/smart-import",
+      endpoint: liveEndpointValue(),
       destination: nodes.destination.value || "",
       files
     });

@@ -114,6 +114,7 @@ async function main() {
   assert.match(appJs, /loadProductModel/, "product shell app should use Core Data Provider");
   assert.match(appJs, /provider: "fixture"/, "product shell app should support fixture provider");
   assert.match(appJs, /provider: "live"/, "product shell app should support live provider");
+  assert.match(appJs, /Live Smart Import needs a server URL/, "product shell app should explain file protocol live endpoint limits");
   assert.match(appJs, /readiness === "ready"/, "product shell app should gate preview by readiness");
   assert.match(appJs, /Preview disabled until readiness is READY/, "product shell app should disable preview when review is required");
   assert.ok(!appJs.match(/adaptSmartImportForProduct|contractVersion|classifications|sources|debug|metadata|universalIntakeDeprecated|Gemini|SerpAPI/i), "product shell app must not read engine or diagnostic fields");
