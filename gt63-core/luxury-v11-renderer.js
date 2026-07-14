@@ -45,12 +45,27 @@
   }
 
   function routeLine(segments = []) {
+    const display = typeof globalThis !== "undefined" ? globalThis.GT63FlightDisplayBg : null;
+    if (display?.routeFromSegments) return display.routeFromSegments(segments);
     if (!Array.isArray(segments) || !segments.length) return "";
     const codes = [segments[0].from, ...segments.map((segment) => segment.to)].filter(Boolean);
     return codes.join(" -> ");
   }
 
   function segmentCard(segment) {
+    const display = typeof globalThis !== "undefined" ? globalThis.GT63FlightDisplayBg : null;
+    if (display?.segmentView) {
+      const view = display.segmentView(segment);
+      return `
+        <article class="v11-segment">
+          <strong>${escapeHtml(view.title)}</strong>
+          <span>${escapeHtml(view.route)}</span>
+          <span>${escapeHtml(view.date)}</span>
+          <span>${escapeHtml(view.time)}</span>
+          <small>${escapeHtml(view.duration)}</small>
+        </article>
+      `;
+    }
     const title = [segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Flight segment";
     return `
       <article class="v11-segment">
@@ -132,6 +147,8 @@
     const subtitle = proposal.content?.heroSubtitle || "A curated travel brief prepared for review.";
     const travelDates = proposal.client?.travelDates || proposal.destination?.requested || "";
     const total = proposal.pricing?.totalAmount || flight.price || hotel.price;
+    const baseTotal = proposal.pricing?.baseAmount;
+    const marginPercent = proposal.pricing?.marginPercent;
     const image = proposalImage(proposal);
 
     return `
@@ -153,6 +170,7 @@
           <div class="v11-price-card">
             <span>Estimated investment</span>
             <strong>${escapeHtml(money(total, currency))}</strong>
+            ${baseTotal && marginPercent ? `<small>Base ${escapeHtml(money(baseTotal, currency))} + ${escapeHtml(marginPercent)}% margin</small>` : ""}
             <small>Prepared for operator review</small>
           </div>
         </section>

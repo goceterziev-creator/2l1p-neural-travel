@@ -40,7 +40,8 @@ async function main() {
     clientName: "GT63 Test Client",
     destination: "Maldives",
     travelDates: "15-22 March 2027",
-    guests: "2 adults"
+    guests: "2 adults",
+    marginPercent: 12.5
   });
 
   assert.equal(payload.clientName, "GT63 Test Client");
@@ -57,7 +58,7 @@ async function main() {
   assert.equal(payload.hotelName, "Patina Maldives");
   assert.ok(payload.hotelPrice > 0, "payload should include hotel price");
   assert.ok(Array.isArray(payload.hotelImages), "payload should expose hotelImages array");
-  assert.equal(payload.markupPercent, 5);
+  assert.equal(payload.markupPercent, 12.5);
   assert.equal(payload.validForDays, 1);
   assert.ok(!Object.keys(payload).includes("contractVersion"), "payload must not leak Smart Import contract fields");
   assert.ok(!Object.keys(payload).includes("debug"), "payload must not leak debug fields");

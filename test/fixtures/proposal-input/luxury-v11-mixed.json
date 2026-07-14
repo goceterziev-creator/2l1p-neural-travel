@@ -65,7 +65,10 @@
     "currency": "EUR",
     "flightAmount": 1475,
     "hotelAmount": 11200,
-    "totalAmount": 12675
+    "baseAmount": 12675,
+    "marginPercent": 5,
+    "marginAmount": 633.75,
+    "totalAmount": 13308.75
   },
   "content": {
     "heroTitle": "Maldives",

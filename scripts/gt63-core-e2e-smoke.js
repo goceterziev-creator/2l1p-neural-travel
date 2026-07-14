@@ -100,18 +100,23 @@ async function main() {
   const indexHtml = readProductFile("index.html");
   const appJs = readProductFile("app.js");
   const stylesCss = readProductFile("styles.css");
+  const flightDisplayJs = fs.readFileSync(path.join(__dirname, "..", "gt63-core", "flight-display-bg.js"), "utf8");
   const offerAdapterJs = fs.readFileSync(path.join(__dirname, "..", "gt63-core", "offer-engine-adapter.js"), "utf8");
+  const proposalAdapterJs = fs.readFileSync(path.join(__dirname, "..", "gt63-core", "proposal-input-adapter.js"), "utf8");
+  const luxuryRendererJs = fs.readFileSync(path.join(__dirname, "..", "gt63-core", "luxury-v11-renderer.js"), "utf8");
 
   assert.match(indexHtml, /GT63 Core/, "product shell should identify GT63 Core");
   assert.match(indexHtml, /Travel Proposal Intelligence Platform/, "product shell should expose product language");
   assert.match(indexHtml, /SYSTEM ONLINE/, "product shell should expose product status language");
   assert.match(indexHtml, /core-data-provider\.js/, "product shell should load Core Data Provider");
+  assert.match(indexHtml, /flight-display-bg\.js/, "product shell should load Bulgarian flight display adapter");
   assert.match(indexHtml, /proposal-input-adapter\.js/, "product shell should load proposal input adapter");
   assert.match(indexHtml, /offer-engine-adapter\.js/, "product shell should load Offer Engine adapter");
   assert.match(indexHtml, /luxury-v11-renderer\.js/, "product shell should load Luxury V11 renderer");
   assert.match(indexHtml, /app\.js/, "product shell should load product app");
   assert.match(indexHtml, /DEV/, "product shell should mark provider mode as development control");
   assert.match(indexHtml, /Start Smart Import/, "product shell should expose the start action");
+  assert.match(indexHtml, /Margin %/, "product shell should expose margin control");
   assert.match(indexHtml, /Continue to Preview/, "product shell should expose the preview action");
   assert.match(indexHtml, /Proposal Preview/, "product shell should expose preview area");
   assert.match(indexHtml, /Create Offer in 2L1P/, "product shell should expose Create Offer action");
@@ -121,6 +126,8 @@ async function main() {
   assert.match(appJs, /provider: "live"/, "product shell app should support live provider");
   assert.match(appJs, /buildProposalInputFromProductModel/, "product shell app should build V11 proposal input");
   assert.match(appJs, /buildOfferPayloadFromProductModel/, "product shell app should use Offer Engine adapter");
+  assert.match(appJs, /GT63FlightDisplayBg/, "product shell app should use Bulgarian flight display adapter");
+  assert.match(appJs, /marginPercent/, "product shell app should use margin percent context");
   assert.match(appJs, /renderLuxuryProposal/, "product shell app should render Luxury V11 preview");
   assert.match(appJs, /fetch\("\/api\/offers"/, "product shell app should create offers through existing Offer Engine API");
   assert.match(appJs, /\/gt63-core\/fixtures\/smart-import\//, "product shell app should support hosted fixture URLs");
@@ -132,7 +139,13 @@ async function main() {
 
   assert.match(offerAdapterJs, /flightAirline/, "offer adapter should map flight fields to Offer Engine payload");
   assert.match(offerAdapterJs, /hotelName/, "offer adapter should map hotel fields to Offer Engine payload");
+  assert.match(offerAdapterJs, /context\.marginPercent/, "offer adapter should pass operator margin percent to Offer Engine");
   assert.ok(!offerAdapterJs.match(/contractVersion|classifications|sources|debug|metadata|universalIntakeDeprecated/i), "offer adapter must not read engine contract internals");
+
+  assert.match(proposalAdapterJs, /marginPercent/, "proposal adapter should expose margin percent in preview pricing");
+  assert.match(flightDisplayJs, /Летище София/, "Bulgarian flight display should contain airport names");
+  assert.match(flightDisplayJs, /renderSegmentHtml/, "Bulgarian flight display should render segment HTML");
+  assert.match(luxuryRendererJs, /GT63FlightDisplayBg/, "luxury preview should use Bulgarian flight display when available");
 
   assert.match(stylesCss, /v11-proposal|v11-hero|preview-shell|gate-message/s, "product shell styles should cover the V11 product workflow");
 

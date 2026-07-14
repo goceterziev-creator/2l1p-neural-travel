@@ -65,7 +65,10 @@ assert.equal(mixed.flight.inboundSegments.length, 1, "mixed should preserve inbo
 assert.equal(mixed.hotel.name, "Patina Maldives", "mixed should include hotel");
 assert.equal(mixed.pricing.flightAmount, 1475, "mixed should expose flight amount");
 assert.equal(mixed.pricing.hotelAmount, 11200, "mixed should expose hotel amount");
-assert.equal(mixed.pricing.totalAmount, 12675, "mixed should expose total amount");
+assert.equal(mixed.pricing.baseAmount, 12675, "mixed should expose base amount");
+assert.equal(mixed.pricing.marginPercent, 5, "mixed should expose default margin percent");
+assert.equal(mixed.pricing.marginAmount, 633.75, "mixed should expose margin amount");
+assert.equal(mixed.pricing.totalAmount, 13308.75, "mixed should expose final amount with margin");
 assert.ok(mixed.content.highlights.some((item) => item.includes("Patina Maldives")), "mixed should produce proposal highlights");
 assert.ok(mixed.warnings.some((warning) => warning.includes("Final operator review is recommended")), "mixed should preserve non-blocking warning");
 

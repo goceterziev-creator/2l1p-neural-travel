@@ -16,6 +16,11 @@
     return Number.isFinite(number) && number > 0 ? number : 0;
   }
 
+  function percent(value, fallback = 5) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : fallback;
+  }
+
   function asArray(value) {
     return Array.isArray(value) ? value : [];
   }
@@ -115,7 +120,7 @@
       flightPrice,
       hotelPrice,
       transferPrice: 0,
-      markupPercent: 5,
+      markupPercent: percent(context.marginPercent),
       validForDays: 1
     };
   }

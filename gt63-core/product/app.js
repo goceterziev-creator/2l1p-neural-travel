@@ -1,6 +1,7 @@
 "use strict";
 
 const productProvider = window.GT63CoreDataProvider;
+const flightDisplayBg = window.GT63FlightDisplayBg;
 const offerEngineAdapter = window.GT63OfferEngineAdapter;
 const proposalInputAdapter = window.GT63ProposalInputAdapter;
 const luxuryRenderer = window.GT63LuxuryV11Renderer;
@@ -10,6 +11,7 @@ const nodes = {
   clientName: document.getElementById("clientName"),
   destination: document.getElementById("destination"),
   travelDates: document.getElementById("travelDates"),
+  marginPercent: document.getElementById("marginPercent"),
   screenshots: document.getElementById("screenshots"),
   providerMode: document.getElementById("providerMode"),
   fixtureField: document.getElementById("fixtureField"),
@@ -54,6 +56,21 @@ function money(value) {
   return `${amount.toLocaleString("en-US")} EUR`;
 }
 
+function marginPercent() {
+  const value = Number(nodes.marginPercent?.value);
+  return Number.isFinite(value) && value >= 0 ? value : 5;
+}
+
+function totalBasePrice(model) {
+  return Number(model?.flight?.price || 0) + Number(model?.hotel?.price || 0);
+}
+
+function finalPrice(model) {
+  const base = totalBasePrice(model);
+  if (!Number.isFinite(base) || base <= 0) return 0;
+  return base * (1 + marginPercent() / 100);
+}
+
 function routeFromSegments(segments) {
   if (!Array.isArray(segments) || !segments.length) return "";
   const codes = [segments[0].from, ...segments.map((segment) => segment.to)].filter(Boolean);
@@ -72,6 +89,9 @@ function segmentTitle(segment) {
 }
 
 function segmentHtml(segment) {
+  if (flightDisplayBg?.renderSegmentHtml) {
+    return flightDisplayBg.renderSegmentHtml(segment);
+  }
   return `
     <div class="segment">
       <div class="segment-title">${escapeHtml(segmentTitle(segment))}</div>
@@ -90,8 +110,8 @@ function renderFlight(flight) {
 
   const outboundSegments = Array.isArray(flight.outboundSegments) ? flight.outboundSegments : [];
   const inboundSegments = Array.isArray(flight.inboundSegments) ? flight.inboundSegments : [];
-  const outboundSummary = routeFromSegments(outboundSegments) || flight.departure || "-";
-  const inboundSummary = routeFromSegments(inboundSegments) || flight.arrival || "-";
+  const outboundSummary = flightDisplayBg?.routeFromSegments?.(outboundSegments) || routeFromSegments(outboundSegments) || flight.departure || "-";
+  const inboundSummary = flightDisplayBg?.routeFromSegments?.(inboundSegments) || routeFromSegments(inboundSegments) || flight.arrival || "-";
 
   nodes.flightReview.innerHTML = `
     <div class="summary">
@@ -139,7 +159,8 @@ function proposalContext() {
     travelDates: nodes.travelDates.value.trim(),
     travelers: "",
     guests: "",
-    clientPhone: ""
+    clientPhone: "",
+    marginPercent: marginPercent()
   };
 }
 
@@ -184,7 +205,7 @@ function renderModel(model) {
   renderPreview(model);
   nodes.offerResult.className = "disabled-preview";
   nodes.offerResult.textContent = model.readiness === "ready"
-    ? "Ready to create a draft offer in 2L1P."
+    ? `Ready to create a draft offer in 2L1P. Base: ${money(totalBasePrice(model))}. With margin ${marginPercent()}%: ${money(finalPrice(model))}.`
     : "Create Offer is available after readiness is READY.";
 }
 
@@ -322,4 +343,9 @@ nodes.createOfferButton.addEventListener("click", async () => {
 });
 
 nodes.providerMode.addEventListener("change", syncProviderMode);
+nodes.marginPercent.addEventListener("input", () => {
+  if (currentModel) {
+    renderModel(currentModel);
+  }
+});
 syncProviderMode();

@@ -46,6 +46,11 @@
     return Number.isFinite(number) && number > 0 ? number : null;
   }
 
+  function percent(value, fallback = 5) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : fallback;
+  }
+
   function segment(segment = {}) {
     return {
       airline: nullableText(segment.airline),
@@ -58,14 +63,20 @@
     };
   }
 
-  function totalPrice(flight, hotel) {
+  function totalPrice(flight, hotel, context = {}) {
     const flightAmount = amount(flight?.price);
     const hotelAmount = amount(hotel?.price);
-    const total = (flightAmount || 0) + (hotelAmount || 0);
+    const baseAmount = (flightAmount || 0) + (hotelAmount || 0);
+    const marginPercent = percent(context.marginPercent);
+    const marginAmount = baseAmount > 0 ? baseAmount * (marginPercent / 100) : 0;
+    const total = baseAmount + marginAmount;
     return {
       currency: "EUR",
       flightAmount,
       hotelAmount,
+      baseAmount: baseAmount > 0 ? baseAmount : null,
+      marginPercent,
+      marginAmount: marginAmount > 0 ? marginAmount : null,
       totalAmount: total > 0 ? total : null
     };
   }
@@ -183,7 +194,7 @@
       },
       flight,
       hotel,
-      pricing: totalPrice(productModel.flight, productModel.hotel),
+      pricing: totalPrice(productModel.flight, productModel.hotel, safeContext),
       content: buildContent(productModel, safeContext),
       source: {
         generatedFrom: "GT63_CORE_PRODUCT_MODEL",
