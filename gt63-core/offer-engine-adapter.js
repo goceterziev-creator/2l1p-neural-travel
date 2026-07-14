@@ -8,7 +8,8 @@
   root.GT63OfferEngineAdapter = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function createOfferEngineAdapter() {
   function cleanText(value) {
-    return String(value ?? "").trim();
+    const text = String(value ?? "").trim();
+    return /^(null|undefined)$/i.test(text) ? "" : text;
   }
 
   function amount(value) {
@@ -86,6 +87,38 @@
     ].map(cleanText).filter(Boolean);
   }
 
+  function cloneSegment(segment = {}) {
+    return {
+      from: cleanText(segment.from),
+      to: cleanText(segment.to),
+      departure: cleanText(segment.departure),
+      arrival: cleanText(segment.arrival),
+      duration: cleanText(segment.duration),
+      flightNumber: cleanText(segment.flightNumber),
+      airline: cleanText(segment.airline),
+      class: cleanText(segment.class),
+      transferBefore: cleanText(segment.transferBefore)
+    };
+  }
+
+  function buildOfferFlights(flight, flightPrice) {
+    if (!flight) return [];
+    const outboundSegments = asArray(flight.outboundSegments).map(cloneSegment);
+    const inboundSegments = asArray(flight.inboundSegments).map(cloneSegment);
+    return [{
+      airline: cleanText(flight.airline),
+      route: offerRoute(flight),
+      departure: firstText(flight.departure, segmentsSummary(outboundSegments)),
+      arrival: firstText(flight.arrival, segmentsSummary(inboundSegments)),
+      baggage: cleanText(flight.baggage),
+      notes: buildFlightNotes(flight, []),
+      price: flightPrice,
+      outboundSegments,
+      inboundSegments,
+      segments: [...outboundSegments, ...inboundSegments]
+    }];
+  }
+
   function buildOfferPayloadFromProductModel(model = {}, context = {}) {
     const flight = model.flight || null;
     const hotel = model.hotel || null;
@@ -93,6 +126,7 @@
     const travelDates = firstText(context.travelDates, flight?.departure, flight?.arrival);
     const flightPrice = amount(flight?.price);
     const hotelPrice = amount(hotel?.price);
+    const offerFlights = buildOfferFlights(flight, flightPrice);
 
     return {
       clientName: firstText(context.clientName, "GT63 Client"),
@@ -108,6 +142,10 @@
       flightArrival: firstText(flight?.arrival, segmentsSummary(flight?.inboundSegments)),
       flightBaggage: cleanText(flight?.baggage),
       flightNotes: buildFlightNotes(flight, model.warnings),
+      flightOutboundSegments: offerFlights[0]?.outboundSegments || [],
+      flightInboundSegments: offerFlights[0]?.inboundSegments || [],
+      flightSegments: offerFlights[0]?.segments || [],
+      flights: offerFlights,
       hotelName: cleanText(hotel?.name),
       hotelArea: firstText(hotel?.area, destination),
       hotelRoom: cleanText(hotel?.room),

@@ -55,6 +55,12 @@ async function main() {
   assert.ok(payload.flightDeparture, "payload should include flight departure");
   assert.ok(payload.flightArrival, "payload should include flight arrival");
   assert.ok(payload.flightPrice > 0, "payload should include flight price");
+  assert.ok(Array.isArray(payload.flights), "payload should include structured flights array");
+  assert.equal(payload.flights.length, 1, "payload should include one structured flight option");
+  assert.equal(payload.flights[0].outboundSegments.length, 1, "payload should preserve outbound segments");
+  assert.equal(payload.flights[0].inboundSegments.length, 1, "payload should preserve inbound segments");
+  assert.equal(payload.flightOutboundSegments.length, 1, "payload should expose legacy outbound segments");
+  assert.equal(payload.flightInboundSegments.length, 1, "payload should expose legacy inbound segments");
   assert.equal(payload.hotelName, "Patina Maldives");
   assert.ok(payload.hotelPrice > 0, "payload should include hotel price");
   assert.ok(Array.isArray(payload.hotelImages), "payload should expose hotelImages array");

@@ -138,6 +138,8 @@ async function main() {
   assert.ok(!appJs.match(/api\/clients|api\/activities|generate PDF|WhatsApp/i), "product shell app must not call unrelated product services");
 
   assert.match(offerAdapterJs, /flightAirline/, "offer adapter should map flight fields to Offer Engine payload");
+  assert.match(offerAdapterJs, /flights: offerFlights/, "offer adapter should pass structured flights to Offer Engine");
+  assert.match(offerAdapterJs, /flightOutboundSegments/, "offer adapter should pass outbound segments to Offer Engine");
   assert.match(offerAdapterJs, /hotelName/, "offer adapter should map hotel fields to Offer Engine payload");
   assert.match(offerAdapterJs, /context\.marginPercent/, "offer adapter should pass operator margin percent to Offer Engine");
   assert.ok(!offerAdapterJs.match(/contractVersion|classifications|sources|debug|metadata|universalIntakeDeprecated/i), "offer adapter must not read engine contract internals");

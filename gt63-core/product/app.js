@@ -47,7 +47,7 @@ function escapeHtml(value) {
 
 function valueOrFallback(value, fallback = "-") {
   const text = String(value ?? "").trim();
-  return text || fallback;
+  return text && !/^(null|undefined)$/i.test(text) ? text : fallback;
 }
 
 function money(value) {
