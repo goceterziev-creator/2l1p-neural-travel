@@ -5,6 +5,11 @@ const fs = require("fs");
 const path = require("path");
 
 const { adaptSmartImportForProduct } = require("../gt63-core/smart-import-consumer-adapter");
+const {
+  createFixtureProvider,
+  createLiveSmartImportProvider,
+  loadProductModel
+} = require("../gt63-core/core-data-provider");
 
 const fixtureDir = path.join(__dirname, "..", "test", "fixtures", "smart-import");
 const mockShellPath = path.join(__dirname, "..", "gt63-core", "mock-shell.html");
@@ -14,6 +19,16 @@ const expectedProductKeys = ["blockingIssues", "flight", "hotel", "readiness", "
 
 function readFixture(name) {
   return JSON.parse(fs.readFileSync(path.join(fixtureDir, name), "utf8"));
+}
+
+function createFetchResponse(payload, ok = true, status = 200) {
+  return {
+    ok,
+    status,
+    async json() {
+      return payload;
+    }
+  };
 }
 
 function assertProductModelShape(model, label) {
@@ -70,9 +85,48 @@ assert.deepStrictEqual(empty, {
   blockingIssues: ["No travel data extracted"]
 }, "empty or invalid contract should degrade to review without throwing");
 
+(async function runProviderRegression() {
+  const fixtureProvider = createFixtureProvider({
+    fetchImpl: async (fixtureUrl) => {
+      assert.equal(fixtureUrl, "fixture://mixed", "fixture provider should load the requested fixture URL");
+      return createFetchResponse(readFixture("flight-hotel-mixed.json"));
+    }
+  });
+  const fixtureModel = await fixtureProvider.loadProductModel({ fixtureUrl: "fixture://mixed" });
+  assertProductModelShape(fixtureModel, "fixture-provider");
+  assert.equal(fixtureModel.readiness, "ready", "fixture provider should return ready product model");
+  assert.equal(fixtureModel.flight.airline, "Emirates", "fixture provider should return flight data");
+  assert.equal(fixtureModel.hotel.name, "Patina Maldives", "fixture provider should return hotel data");
+
+  const liveProvider = createLiveSmartImportProvider({
+    endpoint: "https://engine.example.test/smart-import",
+    fetchImpl: async (endpoint, request) => {
+      assert.equal(endpoint, "https://engine.example.test/smart-import", "live provider should use configured endpoint");
+      assert.equal(request.method, "POST", "live provider should POST to the engine");
+      return createFetchResponse(readFixture("flight-only.json"));
+    }
+  });
+  const liveModel = await liveProvider.loadProductModel({ request: { intakeId: "demo" } });
+  assertProductModelShape(liveModel, "live-provider");
+  assert.equal(liveModel.readiness, "ready", "live provider should return ready product model");
+  assert.equal(liveModel.flight.route, "SOF -> MLE / MLE -> SOF", "live provider should adapt engine contract through product model");
+  assert.equal(liveModel.hotel, null, "live provider should preserve absent hotel data");
+
+  const defaultModel = await loadProductModel(
+    { provider: "fixture", fixtureUrl: "fixture://hotel" },
+    {
+      fetchImpl: async () => createFetchResponse(readFixture("hotel-only.json"))
+    }
+  );
+  assertProductModelShape(defaultModel, "default-provider");
+  assert.equal(defaultModel.hotel.name, "Conrad Maldives Rangali Island", "loadProductModel should use fixture provider by default");
+})().then(() => {
+
 const mockShellHtml = fs.readFileSync(mockShellPath, "utf8");
 assert.match(mockShellHtml, /GT63 Core Mock Shell/, "mock shell should exist");
 assert.match(mockShellHtml, /smart-import-consumer-adapter\.js/, "mock shell must use the existing adapter file");
+assert.match(mockShellHtml, /core-data-provider\.js/, "mock shell must use the Core Data Provider");
+assert.match(mockShellHtml, /loadProductModel/, "mock shell must load product model through the provider");
 for (const fixtureName of [
   "flight-only.json",
   "hotel-only.json",
@@ -86,6 +140,8 @@ assert.ok(!mockShellHtml.match(/\/api\/|Gemini request|SerpAPI request|multipart
 const mockReviewHtml = fs.readFileSync(mockReviewPath, "utf8");
 assert.match(mockReviewHtml, /GT63 Core Mock Review/, "mock review should exist");
 assert.match(mockReviewHtml, /smart-import-consumer-adapter\.js/, "mock review must use the existing adapter file");
+assert.match(mockReviewHtml, /core-data-provider\.js/, "mock review must use the Core Data Provider");
+assert.match(mockReviewHtml, /loadProductModel/, "mock review must load product model through the provider");
 assert.match(mockReviewHtml, /Flight Review/, "mock review must include flight review section");
 assert.match(mockReviewHtml, /Hotel Review/, "mock review must include hotel review section");
 assert.match(mockReviewHtml, /Warnings/, "mock review must include warnings section");
@@ -106,6 +162,8 @@ assert.ok(!mockReviewHtml.match(/fetch\(["']\/api|\/api\/|multipart\/form-data|F
 const mockProposalPreviewHtml = fs.readFileSync(mockProposalPreviewPath, "utf8");
 assert.match(mockProposalPreviewHtml, /GT63 Core Mock Proposal Preview/, "mock proposal preview should exist");
 assert.match(mockProposalPreviewHtml, /smart-import-consumer-adapter\.js/, "mock proposal preview must use the existing adapter file");
+assert.match(mockProposalPreviewHtml, /core-data-provider\.js/, "mock proposal preview must use the Core Data Provider");
+assert.match(mockProposalPreviewHtml, /loadProductModel/, "mock proposal preview must load product model through the provider");
 assert.match(mockProposalPreviewHtml, /Readiness Gate/, "mock proposal preview must include readiness gate");
 assert.match(mockProposalPreviewHtml, /Preview enabled/, "mock proposal preview must include ready state");
 assert.match(mockProposalPreviewHtml, /Preview disabled/, "mock proposal preview must include review state");
@@ -123,3 +181,7 @@ for (const fixtureName of [
 assert.ok(!mockProposalPreviewHtml.match(/fetch\(["']\/api|\/api\/|multipart\/form-data|FormData|api\/offers|api\/smart-import|\.pdf|WhatsApp/i), "mock proposal preview must not call production APIs, uploads, providers, PDF, WhatsApp or Offer Engine");
 
 console.log("SMART IMPORT CONSUMER ADAPTER REGRESSION PASS");
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

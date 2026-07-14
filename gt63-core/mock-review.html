@@ -269,6 +269,7 @@
   </main>
 
   <script src="smart-import-consumer-adapter.js"></script>
+  <script src="core-data-provider.js"></script>
   <script>
     const fixtureSelect = document.getElementById("fixtureSelect");
     const loadFixtureButton = document.getElementById("loadFixtureButton");
@@ -424,13 +425,12 @@
     async function loadFixture() {
       clearError();
       try {
-        const response = await fetch(fixtureSelect.value, { cache: "no-store" });
-        if (!response.ok) throw new Error(`Fixture load failed (${response.status})`);
-        const contract = await response.json();
-        if (contract.contractVersion !== "1.0") throw new Error("Unsupported contract version");
-        const adapter = window.GT63SmartImportConsumerAdapter;
-        if (!adapter || typeof adapter.adaptSmartImportForProduct !== "function") throw new Error("Adapter failed");
-        renderModel(adapter.adaptSmartImportForProduct(contract));
+        const provider = window.GT63CoreDataProvider;
+        if (!provider || typeof provider.loadProductModel !== "function") throw new Error("Core Data Provider failed");
+        renderModel(await provider.loadProductModel({
+          provider: "fixture",
+          fixtureUrl: fixtureSelect.value
+        }));
       } catch (error) {
         showError(error.message || "Fixture load failed");
       }
