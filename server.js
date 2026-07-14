@@ -57,6 +57,8 @@ const SOURCE_EVIDENCE_DIR = process.env.SOURCE_EVIDENCE_DIR
   : path.join(__dirname, "storage", "source-evidence");
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
+const GT63_CORE_DIR = path.join(__dirname, "gt63-core");
+const SMART_IMPORT_FIXTURE_DIR = path.join(__dirname, "test", "fixtures", "smart-import");
 console.log("SERVING FROM:", PUBLIC_DIR);
 if (BETA_AUTH_BYPASS) {
   console.warn("GT63 BETA AUTH BYPASS ENABLED: admin pages and APIs use bootstrap admin context without login.");
@@ -81,6 +83,12 @@ app.use((req, res, next) => {
   }
   next();
 });
+app.get("/gt63-core", requireAuthPage, (req, res) => res.redirect("/gt63-core/product/"));
+app.get(["/gt63-core/product", "/gt63-core/product/"], requireAuthPage, (req, res) => {
+  res.sendFile(path.join(GT63_CORE_DIR, "product", "index.html"));
+});
+app.use("/gt63-core/fixtures/smart-import", requireAuthPage, express.static(SMART_IMPORT_FIXTURE_DIR));
+app.use("/gt63-core", requireAuthPage, express.static(GT63_CORE_DIR));
 app.use(express.static(PUBLIC_DIR));
 
 ensureDb();

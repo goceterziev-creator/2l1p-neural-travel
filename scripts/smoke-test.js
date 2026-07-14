@@ -66,6 +66,20 @@ async function checkCoreEndpoints(cookie) {
   await checkEndpoint("/api/agency", cookie, (json) => assert(json.agency && json.summary, "/api/agency expected agency + summary"));
 }
 
+async function checkGt63CoreProductShell(cookie) {
+  const page = await request("/gt63-core/product/", {}, cookie);
+  assert(page.response.status === 200, `/gt63-core/product/ expected 200, got ${page.response.status}: ${page.text.slice(0, 200)}`);
+  assert(page.text.includes("Travel Proposal Intelligence Platform"), "GT63 Core product shell title missing");
+  assert(page.text.includes("core-data-provider.js"), "GT63 Core product shell provider script missing");
+
+  const fixture = await request("/gt63-core/fixtures/smart-import/flight-only.json", {}, cookie);
+  assert(fixture.response.status === 200, `/gt63-core/fixtures/smart-import/flight-only.json expected 200, got ${fixture.response.status}`);
+  assert(fixture.json?.contractVersion === "1.0", "GT63 Core fixture route expected Smart Import contract v1.0");
+
+  record("gt63 core product shell", "pass", { status: page.response.status });
+  console.log("ok /gt63-core/product/");
+}
+
 function checkSourceStability() {
   const server = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
   const renderCount = (server.match(/function renderOfferHtml\(/g) || []).length;
@@ -246,6 +260,7 @@ async function main() {
     checkDatabaseIntegrity();
     const cookie = await login();
     await checkCoreEndpoints(cookie);
+    await checkGt63CoreProductShell(cookie);
     if (WRITE_QA) await checkWarningPersistence(cookie);
     else {
       record("warning persistence", "skip");

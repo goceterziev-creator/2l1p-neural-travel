@@ -236,6 +236,14 @@ function liveEndpointValue() {
   return endpoint;
 }
 
+function selectedFixtureUrl() {
+  const fixtureUrl = nodes.fixtureSelect.value;
+  if (window.location.protocol !== "file:" && fixtureUrl.includes("/test/fixtures/smart-import/")) {
+    return `/gt63-core/fixtures/smart-import/${fixtureUrl.split("/").pop()}`;
+  }
+  return fixtureUrl;
+}
+
 function syncProviderMode() {
   const live = nodes.providerMode.value === "live";
   nodes.fixtureField.classList.toggle("hidden", live);
@@ -261,7 +269,7 @@ async function loadProductModel() {
 
   return productProvider.loadProductModel({
     provider: "fixture",
-    fixtureUrl: nodes.fixtureSelect.value
+    fixtureUrl: selectedFixtureUrl()
   });
 }
 
