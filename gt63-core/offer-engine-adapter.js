@@ -34,6 +34,24 @@
     return "";
   }
 
+  function isPhoneLike(value) {
+    const text = cleanText(value);
+    const digits = text.replace(/\D/g, "");
+    return digits.length >= 7 && digits.length >= Math.max(7, Math.round(text.length * 0.55));
+  }
+
+  function safeDestination(...values) {
+    for (const value of values) {
+      const text = cleanText(value);
+      if (!text) continue;
+      if (isPhoneLike(text)) continue;
+      if (/^[+\d\s().-]+$/.test(text)) continue;
+      if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(text)) continue;
+      return text;
+    }
+    return "Travel Proposal";
+  }
+
   function segmentRoute(segments) {
     const list = asArray(segments);
     if (!list.length) return "";
@@ -122,7 +140,7 @@
   function buildOfferPayloadFromProductModel(model = {}, context = {}) {
     const flight = model.flight || null;
     const hotel = model.hotel || null;
-    const destination = firstText(context.destination, hotel?.area, hotel?.name, flight?.route, "Travel Proposal");
+    const destination = safeDestination(context.destination, hotel?.area, hotel?.name, flight?.route);
     const travelDates = firstText(context.travelDates, flight?.departure, flight?.arrival);
     const flightPrice = amount(flight?.price);
     const hotelPrice = amount(hotel?.price);

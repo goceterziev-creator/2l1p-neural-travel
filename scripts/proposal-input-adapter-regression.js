@@ -108,4 +108,10 @@ assert.equal(extractedModel.flight.price, 1475, "original extracted model should
 assert.equal(reviewedProposal.flight.price, 1520, "preview input should use reviewed flight price");
 assert.equal(reviewedProposal.pricing.flightAmount, 1520, "preview pricing should use reviewed flight price");
 
+const phoneDestinationProposal = buildProposalInputFromProductModel(extractedModel, {
+  destination: "00359 894 84 28 82"
+});
+assert.notEqual(phoneDestinationProposal.destination.name, "00359 894 84 28 82", "phone-like destination must not become preview title");
+assert.equal(phoneDestinationProposal.destination.name, "Fari Islands, Maldives", "phone-like destination should fall back to hotel area");
+
 console.log("PROPOSAL INPUT ADAPTER REGRESSION PASS");

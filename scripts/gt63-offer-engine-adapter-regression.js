@@ -83,6 +83,18 @@ async function main() {
   assert.equal(reviewedModel.flight.price, 1520, "reviewed model should contain operator correction");
   assert.equal(reviewedPayload.flightPrice, 1520, "Offer Engine should receive reviewed flight price");
 
+  const phoneDestinationPayload = buildOfferPayloadFromProductModel(model, {
+    clientName: "GT63 Test Client",
+    clientPhone: "00359 894 84 28 82",
+    destination: "00359 894 84 28 82",
+    travelDates: "15-22 March 2027",
+    guests: "2 adults"
+  });
+
+  assert.equal(phoneDestinationPayload.clientPhone, "00359 894 84 28 82");
+  assert.notEqual(phoneDestinationPayload.destination, "00359 894 84 28 82", "phone-like destination must not become offer title");
+  assert.equal(phoneDestinationPayload.destination, "Fari Islands, Maldives", "phone-like destination should fall back to hotel area");
+
   console.log("GT63 OFFER ENGINE ADAPTER REGRESSION PASS");
 }
 

@@ -9,6 +9,7 @@ const luxuryRenderer = window.GT63LuxuryV11Renderer;
 const nodes = {
   form: document.getElementById("proposalForm"),
   clientName: document.getElementById("clientName"),
+  clientPhone: document.getElementById("clientPhone"),
   destination: document.getElementById("destination"),
   travelDates: document.getElementById("travelDates"),
   guests: document.getElementById("guests"),
@@ -58,6 +59,12 @@ function escapeHtml(value) {
 function valueOrFallback(value, fallback = "-") {
   const text = String(value ?? "").trim();
   return text && !/^(null|undefined)$/i.test(text) ? text : fallback;
+}
+
+function isPhoneLike(value) {
+  const text = String(value ?? "").trim();
+  const digits = text.replace(/\D/g, "");
+  return digits.length >= 7 && digits.length >= Math.max(7, Math.round(text.length * 0.55));
 }
 
 function editInput(path, value, label, type = "text") {
@@ -198,11 +205,11 @@ function renderHotel(hotel) {
 function proposalContext() {
   return {
     clientName: nodes.clientName.value.trim(),
+    clientPhone: nodes.clientPhone.value.trim(),
     destination: nodes.destination.value.trim(),
     travelDates: nodes.travelDates.value.trim(),
     travelers: nodes.guests.value.trim(),
     guests: nodes.guests.value.trim(),
-    clientPhone: "",
     marginPercent: marginPercent()
   };
 }
@@ -371,6 +378,9 @@ async function createOfferFromCurrentModel() {
     throw new Error("Offer Engine adapter unavailable.");
   }
 
+  if (isPhoneLike(nodes.destination.value)) {
+    nodes.destination.value = "";
+  }
   const payload = offerEngineAdapter.buildOfferPayloadFromProductModel(currentModel, proposalContext());
   const response = await fetch("/api/offers", {
     method: "POST",

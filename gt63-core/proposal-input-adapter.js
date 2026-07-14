@@ -41,6 +41,21 @@
     return text || null;
   }
 
+  function isPhoneLike(value) {
+    const text = cleanText(value);
+    const digits = text.replace(/\D/g, "");
+    return digits.length >= 7 && digits.length >= Math.max(7, Math.round(text.length * 0.55));
+  }
+
+  function nullableDestination(value) {
+    const text = cleanText(value);
+    if (!text) return null;
+    if (isPhoneLike(text)) return null;
+    if (/^[+\d\s().-]+$/.test(text)) return null;
+    if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(text)) return null;
+    return text;
+  }
+
   function amount(value) {
     const number = Number(value);
     return Number.isFinite(number) && number > 0 ? number : null;
@@ -82,10 +97,10 @@
   }
 
   function destinationName(model, context) {
-    return nullableText(context.destination)
-      || nullableText(model.hotel?.area)
-      || nullableText(model.hotel?.name)
-      || nullableText(model.flight?.route)
+    return nullableDestination(context.destination)
+      || nullableDestination(model.hotel?.area)
+      || nullableDestination(model.hotel?.name)
+      || nullableDestination(model.flight?.route)
       || "Travel Proposal";
   }
 
@@ -190,7 +205,7 @@
       },
       destination: {
         name: destinationName(productModel, safeContext),
-        requested: nullableText(safeContext.destination)
+        requested: nullableDestination(safeContext.destination)
       },
       flight,
       hotel,

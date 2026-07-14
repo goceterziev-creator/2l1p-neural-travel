@@ -116,6 +116,7 @@ async function main() {
   assert.match(indexHtml, /app\.js/, "product shell should load product app");
   assert.match(indexHtml, /DEV/, "product shell should mark provider mode as development control");
   assert.match(indexHtml, /Start Smart Import/, "product shell should expose the start action");
+  assert.match(indexHtml, /Client Phone/, "product shell should expose client phone control");
   assert.match(indexHtml, /Margin %/, "product shell should expose margin control");
   assert.match(indexHtml, /Guests/, "product shell should expose guests control");
   assert.match(indexHtml, /Apply Review Changes/, "product shell should expose review apply action");
@@ -130,6 +131,8 @@ async function main() {
   assert.match(appJs, /buildOfferPayloadFromProductModel/, "product shell app should use Offer Engine adapter");
   assert.match(appJs, /GT63FlightDisplayBg/, "product shell app should use Bulgarian flight display adapter");
   assert.match(appJs, /marginPercent/, "product shell app should use margin percent context");
+  assert.match(appJs, /clientPhone/, "product shell app should pass client phone context");
+  assert.match(appJs, /isPhoneLike/, "product shell app should guard against phone-like destination values");
   assert.match(appJs, /originalModel/, "product shell app should preserve original extracted model");
   assert.match(appJs, /reviewedModel/, "product shell app should create reviewed product model");
   assert.match(appJs, /data-review-path/, "product shell app should render editable review fields");
@@ -148,6 +151,7 @@ async function main() {
   assert.match(offerAdapterJs, /flightOutboundSegments/, "offer adapter should pass outbound segments to Offer Engine");
   assert.match(offerAdapterJs, /hotelName/, "offer adapter should map hotel fields to Offer Engine payload");
   assert.match(offerAdapterJs, /context\.marginPercent/, "offer adapter should pass operator margin percent to Offer Engine");
+  assert.match(offerAdapterJs, /safeDestination/, "offer adapter should sanitize destination candidates");
   assert.ok(!offerAdapterJs.match(/contractVersion|classifications|sources|debug|metadata|universalIntakeDeprecated/i), "offer adapter must not read engine contract internals");
 
   assert.match(proposalAdapterJs, /marginPercent/, "proposal adapter should expose margin percent in preview pricing");
