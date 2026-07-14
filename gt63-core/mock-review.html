@@ -94,6 +94,25 @@
       color: #8a5700;
     }
 
+    .action-card {
+      display: grid;
+      gap: 10px;
+      border-radius: 8px;
+      border: 1px solid #d7dee8;
+      padding: 14px;
+      background: #f8fafc;
+    }
+
+    .action-card.ready-action {
+      border-color: #b7e7c7;
+      background: #f1fbf5;
+    }
+
+    .action-card.review-action {
+      border-color: #f4d28e;
+      background: #fff8e9;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
@@ -215,6 +234,15 @@
     <section class="panel">
       <h2>Readiness</h2>
       <div id="readiness" class="readiness review">REVIEW</div>
+      <div id="nextAction" class="action-card review-action" style="margin-top:14px;">
+        <strong>Needs operator action</strong>
+        <div id="nextActionText">Load a fixture to evaluate readiness.</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Blocking Issues</h2>
+      <div id="blockingIssuesContent">No blocking issues</div>
     </section>
 
     <section class="grid">
@@ -248,6 +276,9 @@
     const flightContent = document.getElementById("flightContent");
     const hotelContent = document.getElementById("hotelContent");
     const warningsContent = document.getElementById("warningsContent");
+    const blockingIssuesContent = document.getElementById("blockingIssuesContent");
+    const nextAction = document.getElementById("nextAction");
+    const nextActionText = document.getElementById("nextActionText");
     const errorPanel = document.getElementById("errorPanel");
     const errorMessage = document.getElementById("errorMessage");
     const toggleDebugButton = document.getElementById("toggleDebugButton");
@@ -361,6 +392,23 @@
       warningsContent.innerHTML = `<ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>`;
     }
 
+    function renderBlockingIssues(blockingIssues) {
+      if (!blockingIssues.length) {
+        blockingIssuesContent.textContent = "No blocking issues";
+        return;
+      }
+      blockingIssuesContent.innerHTML = `<ul>${blockingIssues.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("")}</ul>`;
+    }
+
+    function renderNextAction(model) {
+      const ready = model.readiness === "ready";
+      nextAction.className = `action-card ${ready ? "ready-action" : "review-action"}`;
+      nextAction.querySelector("strong").textContent = ready ? "Continue to Proposal" : "Needs operator action";
+      nextActionText.textContent = ready
+        ? "This product model can continue to proposal preview."
+        : "Resolve blocking issues before continuing.";
+    }
+
     function renderModel(model) {
       currentProductModel = model;
       readiness.textContent = String(model.readiness || "review").toUpperCase();
@@ -368,6 +416,8 @@
       renderFlight(model.flight);
       renderHotel(model.hotel);
       renderWarnings(Array.isArray(model.warnings) ? model.warnings : []);
+      renderBlockingIssues(Array.isArray(model.blockingIssues) ? model.blockingIssues : []);
+      renderNextAction(model);
       debugOutput.textContent = JSON.stringify(model, null, 2);
     }
 

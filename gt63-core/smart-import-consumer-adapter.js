@@ -25,12 +25,28 @@
     const hasUnknownSource = classifications.some((item) => item?.sourceType === "unknown");
     const flight = hasContent(contract.offerFlight) ? contract.offerFlight : null;
     const hotel = hasContent(contract.offerHotel) ? contract.offerHotel : null;
+    const operatorReviewRequired = contract.requiresOperatorReview === true
+      || contract.operatorReviewRequired === true
+      || flight?.requiresOperatorReview === true
+      || hotel?.requiresOperatorReview === true;
+    const blockingIssues = [];
+
+    if (!flight && !hotel) {
+      blockingIssues.push("No travel data extracted");
+    }
+    if (hasUnknownSource) {
+      blockingIssues.push("Some screenshots could not be identified");
+    }
+    if (operatorReviewRequired) {
+      blockingIssues.push("Operator review required");
+    }
 
     return {
       flight,
       hotel,
       warnings,
-      readiness: warnings.length || hasUnknownSource || (!flight && !hotel) ? "review" : "ready"
+      readiness: blockingIssues.length ? "review" : "ready",
+      blockingIssues
     };
   }
 
