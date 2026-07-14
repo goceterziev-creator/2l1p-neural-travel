@@ -1,6 +1,8 @@
 "use strict";
 
 const productProvider = window.GT63CoreDataProvider;
+const proposalInputAdapter = window.GT63ProposalInputAdapter;
+const luxuryRenderer = window.GT63LuxuryV11Renderer;
 
 const nodes = {
   form: document.getElementById("proposalForm"),
@@ -127,37 +129,13 @@ function renderHotel(hotel) {
   `;
 }
 
-function previewTitle(model) {
-  if (model.hotel?.area) return model.hotel.area;
-  if (model.hotel?.name) return model.hotel.name;
-  if (model.flight?.route) return model.flight.route;
-  return "Travel Proposal";
-}
-
-function renderFlightPreview(flight) {
-  if (!flight) return "";
-  return `
-    <article class="preview-card">
-      <h3>Flight</h3>
-      <div>${escapeHtml(valueOrFallback(flight.airline))}</div>
-      <div>${escapeHtml(valueOrFallback(flight.route))}</div>
-      <div class="muted">${escapeHtml(valueOrFallback(flight.baggage, "No baggage data"))}</div>
-      <strong>${escapeHtml(money(flight.price))}</strong>
-    </article>
-  `;
-}
-
-function renderHotelPreview(hotel) {
-  if (!hotel) return "";
-  return `
-    <article class="preview-card">
-      <h3>Hotel</h3>
-      <div>${escapeHtml(valueOrFallback(hotel.name))}</div>
-      <div>${escapeHtml(valueOrFallback(hotel.room))}</div>
-      <div class="muted">${escapeHtml(valueOrFallback(hotel.meal, "No meal data"))}</div>
-      <strong>${escapeHtml(money(hotel.price))}</strong>
-    </article>
-  `;
+function proposalContext() {
+  return {
+    clientName: nodes.clientName.value.trim(),
+    destination: nodes.destination.value.trim(),
+    travelDates: nodes.travelDates.value.trim(),
+    travelers: ""
+  };
 }
 
 function renderPreview(model) {
@@ -167,29 +145,15 @@ function renderPreview(model) {
     return;
   }
 
-  const context = [
-    nodes.clientName.value.trim(),
-    nodes.destination.value.trim(),
-    nodes.travelDates.value.trim()
-  ].filter(Boolean).join(" | ");
-
-  const warnings = model.warnings.length
-    ? `<div class="warning-box"><strong>Operator note</strong><br>${model.warnings.map(escapeHtml).join("<br>")}</div>`
-    : "";
+  if (!proposalInputAdapter?.buildProposalInputFromProductModel || !luxuryRenderer?.renderLuxuryProposal) {
+    nodes.previewArea.className = "disabled-preview";
+    nodes.previewArea.textContent = "V11 proposal renderer unavailable.";
+    return;
+  }
 
   nodes.previewArea.className = "preview-shell";
-  nodes.previewArea.innerHTML = `
-    <section class="preview-hero">
-      <p class="eyebrow">Proposal Preview</p>
-      <h3>${escapeHtml(previewTitle(model))}</h3>
-      <p>${escapeHtml(context || "Client proposal preview")}</p>
-    </section>
-    ${warnings}
-    <section class="preview-grid">
-      ${renderFlightPreview(model.flight)}
-      ${renderHotelPreview(model.hotel)}
-    </section>
-  `;
+  const proposalInput = proposalInputAdapter.buildProposalInputFromProductModel(model, proposalContext());
+  nodes.previewArea.innerHTML = luxuryRenderer.renderLuxuryProposal(proposalInput);
 }
 
 function renderGate(model) {

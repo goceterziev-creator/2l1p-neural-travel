@@ -105,6 +105,8 @@ async function main() {
   assert.match(indexHtml, /Travel Proposal Intelligence Platform/, "product shell should expose product language");
   assert.match(indexHtml, /SYSTEM ONLINE/, "product shell should expose product status language");
   assert.match(indexHtml, /core-data-provider\.js/, "product shell should load Core Data Provider");
+  assert.match(indexHtml, /proposal-input-adapter\.js/, "product shell should load proposal input adapter");
+  assert.match(indexHtml, /luxury-v11-renderer\.js/, "product shell should load Luxury V11 renderer");
   assert.match(indexHtml, /app\.js/, "product shell should load product app");
   assert.match(indexHtml, /DEV/, "product shell should mark provider mode as development control");
   assert.match(indexHtml, /Start Smart Import/, "product shell should expose the start action");
@@ -114,6 +116,8 @@ async function main() {
   assert.match(appJs, /loadProductModel/, "product shell app should use Core Data Provider");
   assert.match(appJs, /provider: "fixture"/, "product shell app should support fixture provider");
   assert.match(appJs, /provider: "live"/, "product shell app should support live provider");
+  assert.match(appJs, /buildProposalInputFromProductModel/, "product shell app should build V11 proposal input");
+  assert.match(appJs, /renderLuxuryProposal/, "product shell app should render Luxury V11 preview");
   assert.match(appJs, /\/gt63-core\/fixtures\/smart-import\//, "product shell app should support hosted fixture URLs");
   assert.match(appJs, /Live Smart Import needs a server URL/, "product shell app should explain file protocol live endpoint limits");
   assert.match(appJs, /readiness === "ready"/, "product shell app should gate preview by readiness");
@@ -121,7 +125,7 @@ async function main() {
   assert.ok(!appJs.match(/adaptSmartImportForProduct|contractVersion|classifications|sources|debug|metadata|universalIntakeDeprecated|Gemini|SerpAPI/i), "product shell app must not read engine or diagnostic fields");
   assert.ok(!appJs.match(/api\/offers|api\/clients|api\/activities|generate PDF|WhatsApp/i), "product shell app must not call non-Core product services");
 
-  assert.match(stylesCss, /Travel Proposal Workspace|preview-shell|gate-message/s, "product shell styles should cover the product workflow");
+  assert.match(stylesCss, /v11-proposal|v11-hero|preview-shell|gate-message/s, "product shell styles should cover the V11 product workflow");
 
   console.log("GT63 CORE E2E SMOKE PASS");
 }
