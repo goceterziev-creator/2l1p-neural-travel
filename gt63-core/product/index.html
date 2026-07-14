@@ -47,6 +47,11 @@
         </label>
 
         <label>
+          Guests
+          <input id="guests" type="text" placeholder="2 adults">
+        </label>
+
+        <label>
           Margin %
           <input id="marginPercent" type="number" min="0" step="0.01" value="5">
         </label>
@@ -127,6 +132,10 @@
           <h3>Hotel</h3>
           <div id="hotelReview">No hotel data</div>
         </article>
+      </div>
+      <div class="review-actions">
+        <button id="applyReviewButton" class="secondary-action" type="button" disabled>Apply Review Changes</button>
+        <span id="reviewState" class="muted">Load data to create a review draft.</span>
       </div>
       <div class="signal-grid">
         <div>

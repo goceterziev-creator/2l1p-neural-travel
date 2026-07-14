@@ -405,6 +405,65 @@ button:focus-visible {
   padding-bottom: 0;
 }
 
+.editable-summary {
+  display: block;
+}
+
+.editable-field {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.editable-field span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.editable-field input,
+.editable-field textarea {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.42);
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  padding: 10px 12px;
+}
+
+.editable-field textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.editable-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.editable-segment {
+  display: grid;
+  gap: 10px;
+}
+
+.segment-preview {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.review-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
 .label {
   color: var(--muted);
   font-size: 12px;

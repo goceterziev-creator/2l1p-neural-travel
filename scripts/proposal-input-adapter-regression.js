@@ -98,4 +98,14 @@ assert.ok(review.blockingIssues.length >= 1, "review fixture should preserve blo
 assert.ok(review.flight, "review fixture should preserve partial successful flight data");
 assert.equal(review.hotel, null, "review fixture should not invent hotel");
 
+const extractedModel = adaptSmartImportForProduct(readFixture("flight-hotel-mixed.json"));
+const reviewedModel = JSON.parse(JSON.stringify(extractedModel));
+reviewedModel.flight.price = 1520;
+const reviewedProposal = buildProposalInputFromProductModel(reviewedModel, {
+  destination: "Maldives"
+});
+assert.equal(extractedModel.flight.price, 1475, "original extracted model should remain unchanged");
+assert.equal(reviewedProposal.flight.price, 1520, "preview input should use reviewed flight price");
+assert.equal(reviewedProposal.pricing.flightAmount, 1520, "preview pricing should use reviewed flight price");
+
 console.log("PROPOSAL INPUT ADAPTER REGRESSION PASS");

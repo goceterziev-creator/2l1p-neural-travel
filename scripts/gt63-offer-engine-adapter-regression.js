@@ -69,6 +69,20 @@ async function main() {
   assert.ok(!Object.keys(payload).includes("contractVersion"), "payload must not leak Smart Import contract fields");
   assert.ok(!Object.keys(payload).includes("debug"), "payload must not leak debug fields");
 
+  const originalModel = await loadModel("flight-hotel-mixed.json");
+  const reviewedModel = JSON.parse(JSON.stringify(originalModel));
+  reviewedModel.flight.price = 1520;
+  const reviewedPayload = buildOfferPayloadFromProductModel(reviewedModel, {
+    clientName: "GT63 Test Client",
+    destination: "Maldives",
+    travelDates: "15-22 March 2027",
+    guests: "2 adults"
+  });
+
+  assert.equal(originalModel.flight.price, 1475, "original extracted model should remain unchanged");
+  assert.equal(reviewedModel.flight.price, 1520, "reviewed model should contain operator correction");
+  assert.equal(reviewedPayload.flightPrice, 1520, "Offer Engine should receive reviewed flight price");
+
   console.log("GT63 OFFER ENGINE ADAPTER REGRESSION PASS");
 }
 

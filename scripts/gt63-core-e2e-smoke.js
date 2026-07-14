@@ -117,6 +117,8 @@ async function main() {
   assert.match(indexHtml, /DEV/, "product shell should mark provider mode as development control");
   assert.match(indexHtml, /Start Smart Import/, "product shell should expose the start action");
   assert.match(indexHtml, /Margin %/, "product shell should expose margin control");
+  assert.match(indexHtml, /Guests/, "product shell should expose guests control");
+  assert.match(indexHtml, /Apply Review Changes/, "product shell should expose review apply action");
   assert.match(indexHtml, /Continue to Preview/, "product shell should expose the preview action");
   assert.match(indexHtml, /Proposal Preview/, "product shell should expose preview area");
   assert.match(indexHtml, /Create Offer in 2L1P/, "product shell should expose Create Offer action");
@@ -128,6 +130,10 @@ async function main() {
   assert.match(appJs, /buildOfferPayloadFromProductModel/, "product shell app should use Offer Engine adapter");
   assert.match(appJs, /GT63FlightDisplayBg/, "product shell app should use Bulgarian flight display adapter");
   assert.match(appJs, /marginPercent/, "product shell app should use margin percent context");
+  assert.match(appJs, /originalModel/, "product shell app should preserve original extracted model");
+  assert.match(appJs, /reviewedModel/, "product shell app should create reviewed product model");
+  assert.match(appJs, /data-review-path/, "product shell app should render editable review fields");
+  assert.match(appJs, /applyReviewChanges/, "product shell app should apply operator corrections");
   assert.match(appJs, /renderLuxuryProposal/, "product shell app should render Luxury V11 preview");
   assert.match(appJs, /fetch\("\/api\/offers"/, "product shell app should create offers through existing Offer Engine API");
   assert.match(appJs, /\/gt63-core\/fixtures\/smart-import\//, "product shell app should support hosted fixture URLs");
