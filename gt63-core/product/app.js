@@ -194,11 +194,11 @@ function renderPreview(model) {
 
 function renderGate(model) {
   const ready = model.readiness === "ready";
-  nodes.readinessBadge.textContent = ready ? "READY" : "REVIEW";
+  nodes.readinessBadge.textContent = ready ? "READY FOR PROPOSAL" : "OPERATOR REVIEW REQUIRED";
   nodes.readinessBadge.className = `readiness ${ready ? "ready" : "review"}`;
   nodes.gateMessage.className = `gate-message ${ready ? "ready-message" : "review-message"}`;
   nodes.gateMessage.innerHTML = ready
-    ? "<strong>Continue to Preview</strong><span>This product model can continue.</span>"
+    ? "<strong>Continue to Preview</strong><span>This proposal is ready for the next step.</span>"
     : "<strong>Needs operator action</strong><span>Resolve blocking issues before preview.</span>";
   nodes.continueButton.disabled = !ready;
   nodes.currentStep.textContent = ready ? "Preview ready" : "Review required";

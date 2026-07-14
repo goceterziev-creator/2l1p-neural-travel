@@ -102,7 +102,8 @@ async function main() {
   const stylesCss = readProductFile("styles.css");
 
   assert.match(indexHtml, /GT63 Core/, "product shell should identify GT63 Core");
-  assert.match(indexHtml, /Travel Proposal Workspace/, "product shell should expose workspace language");
+  assert.match(indexHtml, /Travel Proposal Intelligence Platform/, "product shell should expose product language");
+  assert.match(indexHtml, /SYSTEM ONLINE/, "product shell should expose product status language");
   assert.match(indexHtml, /core-data-provider\.js/, "product shell should load Core Data Provider");
   assert.match(indexHtml, /app\.js/, "product shell should load product app");
   assert.match(indexHtml, /DEV/, "product shell should mark provider mode as development control");
