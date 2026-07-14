@@ -31,7 +31,9 @@ assert.match(html, /Emirates EK2229/, "renderer should render outbound flight se
 assert.match(html, /Etihad Airways EY377/, "renderer should render inbound flight segment");
 assert.match(html, /Hotel Selection/, "renderer should render hotel section");
 assert.match(html, /Patina Maldives/, "renderer should render hotel name");
+assert.match(html, /images\.unsplash\.com/, "renderer should render a usable visual fallback when fixture image is placeholder");
 assert.match(html, /READY/, "renderer should expose readiness status");
 assert.equal(/contractVersion|classifications|universalIntakeDeprecated|debug|sourceAuthority/.test(html), false, "renderer must not leak engine fields");
+assert.equal(/example\.com/.test(html), false, "renderer must not render placeholder image URLs");
 
 console.log("LUXURY V11 RENDERER REGRESSION PASS");

@@ -96,6 +96,15 @@
 
   function buildHotel(hotel) {
     if (!hotel) return null;
+    const imageUrls = [
+      ...asArray(hotel.imageUrls),
+      ...asArray(hotel.images),
+      hotel.image,
+      hotel.imageUrl,
+      hotel.photo,
+      hotel.thumbnail
+    ].map(cleanText).filter(Boolean);
+
     return {
       name: nullableText(hotel.name),
       stars: nullableText(hotel.stars),
@@ -106,7 +115,7 @@
       price: amount(hotel.price),
       currency: "EUR",
       description: nullableText(hotel.description),
-      imageUrls: asArray(hotel.imageUrls).map(cleanText).filter(Boolean)
+      imageUrls
     };
   }
 

@@ -77,6 +77,37 @@
     `;
   }
 
+  function isUsableImageUrl(value) {
+    const url = String(value || "").trim();
+    return /^https?:\/\//i.test(url) && !/example\.com/i.test(url);
+  }
+
+  function fallbackImage(input) {
+    const haystack = [
+      input.destination?.name,
+      input.destination?.requested,
+      input.hotel?.area,
+      input.hotel?.name,
+      input.content?.heroTitle
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    if (/maldives|maldive|мале|малдив/i.test(haystack)) {
+      return "https://images.unsplash.com/photo-1514282401047-d79a71a590e8?auto=format&fit=crop&w=1200&q=85";
+    }
+    if (/tokyo|japan|токио|япония/i.test(haystack)) {
+      return "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=1200&q=85";
+    }
+    if (/santiago|chile|сантяго|чили/i.test(haystack)) {
+      return "https://images.unsplash.com/photo-1531778272849-d1dd22444c06?auto=format&fit=crop&w=1200&q=85";
+    }
+    return "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=85";
+  }
+
+  function proposalImage(input) {
+    const hotelImages = Array.isArray(input.hotel?.imageUrls) ? input.hotel.imageUrls : [];
+    return hotelImages.find(isUsableImageUrl) || fallbackImage(input);
+  }
+
   function warningList(items = []) {
     if (!Array.isArray(items) || !items.length) return "";
     return `
@@ -87,10 +118,9 @@
     `;
   }
 
-  function hotelImage(hotel) {
-    const first = Array.isArray(hotel?.imageUrls) ? hotel.imageUrls.find(Boolean) : "";
-    if (!first) return "";
-    return `<img class="v11-hotel-image" src="${escapeHtml(first)}" alt="">`;
+  function hotelImage(input) {
+    const image = proposalImage(input);
+    return `<img class="v11-hotel-image" src="${escapeHtml(image)}" alt="">`;
   }
 
   function renderLuxuryProposal(input) {
@@ -102,6 +132,7 @@
     const subtitle = proposal.content?.heroSubtitle || "A curated travel brief prepared for review.";
     const travelDates = proposal.client?.travelDates || proposal.destination?.requested || "";
     const total = proposal.pricing?.totalAmount || flight.price || hotel.price;
+    const image = proposalImage(proposal);
 
     return `
       <article class="v11-proposal" aria-label="Luxury V11 proposal preview">
@@ -115,6 +146,9 @@
               <span>${escapeHtml(text(travelDates, "Dates to confirm"))}</span>
               <span>${escapeHtml(text(proposal.client?.travelers, "Travelers to confirm"))}</span>
             </div>
+          </div>
+          <div class="v11-hero-visual">
+            <img src="${escapeHtml(image)}" alt="">
           </div>
           <div class="v11-price-card">
             <span>Estimated investment</span>
@@ -139,7 +173,7 @@
           </div>
 
           <div class="v11-card v11-hotel-card">
-            ${hotelImage(hotel)}
+            ${hotelImage(proposal)}
             <p class="v11-kicker">Hotel Selection</p>
             <h4>${escapeHtml(text(hotel.name, "Hotel to confirm"))}</h4>
             <p>${escapeHtml(text(hotel.description, "Hotel details to confirm"))}</p>
