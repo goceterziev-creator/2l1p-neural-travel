@@ -1,0 +1,84 @@
+{
+  "proposalInputVersion": "1.0",
+  "mode": "GT63_LUXURY_PROPOSAL_INPUT",
+  "readiness": "ready",
+  "blockingIssues": [],
+  "warnings": [
+    "Mixed screenshots were routed to both engines. Final operator review is recommended."
+  ],
+  "client": {
+    "name": "G. Terziev",
+    "travelDates": "31 August - 15 September",
+    "travelers": "2"
+  },
+  "destination": {
+    "name": "Maldives",
+    "requested": "Maldives"
+  },
+  "flight": {
+    "airline": "Emirates",
+    "route": "SOF -> DXB -> MLE / MLE -> AUH -> SOF",
+    "outbound": "SOF -> MLE, 31 August, via DXB",
+    "inbound": "MLE -> SOF, 15 September, via AUH",
+    "baggage": "Checked baggage included",
+    "notes": "Multi-segment itinerary requires final confirmation.",
+    "price": 1475,
+    "currency": "EUR",
+    "outboundSegments": [
+      {
+        "airline": "Emirates",
+        "flightNumber": "EK2229",
+        "from": "SOF",
+        "to": "DXB",
+        "departure": "31 August 15:25",
+        "arrival": "31 August 21:25",
+        "duration": "5h"
+      }
+    ],
+    "inboundSegments": [
+      {
+        "airline": "Etihad Airways",
+        "flightNumber": "EY377",
+        "from": "MLE",
+        "to": "AUH",
+        "departure": "15 September 21:25",
+        "arrival": "16 September 00:25",
+        "duration": "4h"
+      }
+    ]
+  },
+  "hotel": {
+    "name": "Patina Maldives",
+    "stars": "5",
+    "area": "Fari Islands, Maldives",
+    "room": "One Bedroom Beach Pool Villa",
+    "meal": "Breakfast included",
+    "roomsLeft": "Not specified",
+    "price": 11200,
+    "currency": "EUR",
+    "description": "Premium island resort with private beach villas and lagoon access.",
+    "imageUrls": [
+      "https://example.com/patina-maldives-1.jpg"
+    ]
+  },
+  "pricing": {
+    "currency": "EUR",
+    "flightAmount": 1475,
+    "hotelAmount": 11200,
+    "totalAmount": 12675
+  },
+  "content": {
+    "heroTitle": "Maldives",
+    "heroSubtitle": "A curated private travel proposal for Maldives.",
+    "highlights": [
+      "Stay at Patina Maldives",
+      "Room: One Bedroom Beach Pool Villa",
+      "Flights: SOF -> DXB -> MLE / MLE -> AUH -> SOF"
+    ],
+    "primaryCta": "Review proposal"
+  },
+  "source": {
+    "generatedFrom": "GT63_CORE_PRODUCT_MODEL",
+    "rendererTarget": "LUXURY_V11"
+  }
+}

@@ -7,9 +7,11 @@ const CHECK_TARGETS = [
   "public/admin.js",
   "gt63-core/smart-import-consumer-adapter.js",
   "gt63-core/core-data-provider.js",
+  "gt63-core/proposal-input-adapter.js",
   "gt63-core/product/app.js",
   "scripts/v10-persistence-safety-check.js",
   "scripts/smart-import-consumer-adapter-regression.js",
+  "scripts/proposal-input-adapter-regression.js",
   "scripts/gt63-core-e2e-smoke.js",
   "scripts/v10-flight-ocr-regression.js",
   "scripts/smoke-test.js",
@@ -77,6 +79,7 @@ async function main() {
 
   try {
     await runNode(["scripts/smart-import-consumer-adapter-regression.js"]);
+    await runNode(["scripts/proposal-input-adapter-regression.js"]);
     await runNode(["scripts/gt63-core-e2e-smoke.js"]);
     await runNode(["scripts/v10-flight-ocr-regression.js"]);
     await runNode(["scripts/v10-persistence-safety-check.js"]);
