@@ -239,7 +239,7 @@ async function callOpenAiVision(caseInfo, images) {
 }
 
 async function callGeminiVision(caseInfo, images) {
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${process.env.VISION_SPIKE_GEMINI_MODEL || "gemini-1.5-flash"}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${process.env.VISION_SPIKE_GEMINI_MODEL || "gemini-2.0-flash"}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"

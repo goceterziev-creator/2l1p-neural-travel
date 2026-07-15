@@ -8214,9 +8214,22 @@ function extractJsonFromGeminiResponse(payload = {}) {
   }
 }
 
+const DEFAULT_GEMINI_VISION_MODEL = "gemini-2.5-flash";
+const DEFAULT_GEMINI_VISION_FALLBACK_MODEL = "gemini-2.0-flash";
+
+function normalizeGeminiVisionModel(model = "") {
+  const value = String(model || "").trim();
+  if (!value) return "";
+  if (value === "gemini-1.5-flash" || value === "models/gemini-1.5-flash") {
+    console.warn("GT63 GEMINI LEGACY MODEL IGNORED: gemini-1.5-flash is no longer used for vision intake. Falling back to gemini-2.0-flash.");
+    return DEFAULT_GEMINI_VISION_FALLBACK_MODEL;
+  }
+  return value.replace(/^models\//, "");
+}
+
 function uniqueGeminiModels(primary = "", fallback = "") {
   return [primary, fallback]
-    .map((model) => String(model || "").trim())
+    .map((model) => normalizeGeminiVisionModel(model))
     .filter(Boolean)
     .filter((model, index, list) => list.indexOf(model) === index);
 }
@@ -8244,8 +8257,8 @@ async function postGeminiVisionWithRetry({
   label = "Gemini Vision"
 } = {}) {
   const models = uniqueGeminiModels(
-    primaryModel || process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash",
-    fallbackModel || process.env.GEMINI_VISION_FALLBACK_MODEL || "gemini-1.5-flash"
+    primaryModel || process.env.GEMINI_VISION_MODEL || DEFAULT_GEMINI_VISION_MODEL,
+    fallbackModel || process.env.GEMINI_VISION_FALLBACK_MODEL || DEFAULT_GEMINI_VISION_FALLBACK_MODEL
   );
   let last = null;
 
@@ -8301,7 +8314,7 @@ async function extractFlightWithGeminiVision(files = [], { destination = "" } = 
     throw error;
   }
 
-  const model = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash";
+  const model = normalizeGeminiVisionModel(process.env.GEMINI_VISION_MODEL) || DEFAULT_GEMINI_VISION_MODEL;
   const prompt = [
     "You are extracting flight itinerary data from travel screenshots for GT63.",
     "Return JSON only. Do not add markdown. Do not guess invisible fields.",
@@ -8775,7 +8788,7 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "", 
     );
   }
   const intakeId = `INTAKE-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
-  const model = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash";
+  const model = normalizeGeminiVisionModel(process.env.GEMINI_VISION_MODEL) || DEFAULT_GEMINI_VISION_MODEL;
   const prompt = [
     "You are GT63 Universal Travel Intake.",
     "Analyze all provided travel screenshots together.",

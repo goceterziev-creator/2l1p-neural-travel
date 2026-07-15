@@ -146,6 +146,7 @@ assert.deepStrictEqual(
 assert.ok(!universalPayload.details.includes("SECRET"), "universal intake frontend details should redact API-key-like tokens");
 assert.equal(isTemporaryGeminiDemandError(503, "This model is currently experiencing high demand. Please try again later."), true, "Gemini high demand should be retryable");
 assert.deepStrictEqual(uniqueGeminiModels("gemini-2.5-flash", "gemini-2.5-flash"), ["gemini-2.5-flash"], "Gemini fallback model list should be unique");
+assert.deepStrictEqual(uniqueGeminiModels("gemini-1.5-flash", "gemini-2.5-flash"), ["gemini-2.0-flash", "gemini-2.5-flash"], "Gemini legacy 1.5 model should be replaced before retry");
 
 const smartImportContract = buildSmartImportResponse({
   intakeId: "SMART-contract-test",
