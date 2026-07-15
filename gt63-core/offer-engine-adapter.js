@@ -7,6 +7,10 @@
   }
   root.GT63OfferEngineAdapter = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function createOfferEngineAdapter() {
+  const flightDateSanitizer = typeof require === "function"
+    ? require("./flight-date-sanitizer")
+    : (typeof globalThis !== "undefined" ? globalThis.GT63FlightDateSanitizer : null);
+
   function cleanText(value) {
     const text = String(value ?? "").trim();
     return /^(null|undefined)$/i.test(text) ? "" : text;
@@ -164,9 +168,12 @@
   }
 
   function buildOfferPayloadFromProductModel(model = {}, context = {}) {
-    const flight = model.flight || null;
-    const hotel = selectedHotel(model);
-    const hotels = buildOfferHotels(model);
+    const safeModel = flightDateSanitizer?.sanitizeProductModelFlightDates
+      ? flightDateSanitizer.sanitizeProductModelFlightDates(model, context)
+      : model;
+    const flight = safeModel.flight || null;
+    const hotel = selectedHotel(safeModel);
+    const hotels = buildOfferHotels(safeModel);
     const destination = safeDestination(context.destination, hotel?.area, hotel?.name, flight?.route);
     const travelDates = firstText(context.travelDates, flight?.departure, flight?.arrival);
     const flightPrice = amount(flight?.price);
@@ -186,7 +193,7 @@
       flightDeparture: firstText(flight?.departure, segmentsSummary(flight?.outboundSegments)),
       flightArrival: firstText(flight?.arrival, segmentsSummary(flight?.inboundSegments)),
       flightBaggage: cleanText(flight?.baggage),
-      flightNotes: buildFlightNotes(flight, model.warnings),
+      flightNotes: buildFlightNotes(flight, safeModel.warnings),
       flightOutboundSegments: offerFlights[0]?.outboundSegments || [],
       flightInboundSegments: offerFlights[0]?.inboundSegments || [],
       flightSegments: offerFlights[0]?.segments || [],
@@ -200,7 +207,7 @@
       hotelImages: buildHotelImages(hotel),
       hotels,
       destinationDescription: `Curated proposal for ${destination}.`,
-      notes: asArray(model.warnings).join(" | "),
+      notes: asArray(safeModel.warnings).join(" | "),
       flightPrice,
       hotelPrice,
       transferPrice: 0,

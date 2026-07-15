@@ -125,6 +125,53 @@ assert.equal(multiHotelProposal.hotel.name, "Conrad Maldives Rangali Island", "p
 assert.equal(multiHotelProposal.hotelOptions.length, 2, "preview should preserve multiple hotel options");
 assert.equal(multiHotelProposal.pricing.hotelAmount, 14800, "preview pricing should use selected hotel price");
 
+const inferredYearProposal = buildProposalInputFromProductModel({
+  readiness: "ready",
+  warnings: [],
+  blockingIssues: [],
+  flight: {
+    airline: "Turkish Airlines",
+    route: "SOF -> SCL / SCL -> SOF",
+    departure: "SOF -> SCL, 2024-03-28T12:35",
+    arrival: "SCL -> SOF, 2024-04-08T11:15",
+    baggage: "2 checked bags",
+    notes: "Vision model inserted a year that was not visible in the screenshot.",
+    price: 1820.26,
+    outboundSegments: [
+      {
+        airline: "Turkish Airlines",
+        flightNumber: "TK 1128",
+        from: "SOF",
+        to: "IST",
+        departure: "2024-03-28T12:35",
+        arrival: "2024-03-28T14:05",
+        duration: "1h 30min"
+      }
+    ],
+    inboundSegments: [
+      {
+        airline: "Turkish Airlines",
+        flightNumber: "TK 216",
+        from: "SCL",
+        to: "IST",
+        departure: "2024-04-08T11:15",
+        arrival: "2024-04-09T11:15",
+        duration: "17h"
+      }
+    ]
+  },
+  hotel: null,
+  hotelOptions: []
+}, {
+  destination: "Santiago",
+  travelDates: "28.03.2027 - 08.04.2027",
+  travelers: "2"
+});
+const inferredYearProposalText = JSON.stringify(inferredYearProposal);
+assert.ok(!inferredYearProposalText.includes("2024"), "preview input must strip model-inferred years that conflict with reviewed travel dates");
+assert.ok(inferredYearProposalText.includes("28 March 12:35"), "preview input should preserve outbound day, month and time");
+assert.ok(inferredYearProposalText.includes("8 April 11:15"), "preview input should preserve inbound day, month and time");
+
 const phoneDestinationProposal = buildProposalInputFromProductModel(extractedModel, {
   destination: "00359 894 84 28 82"
 });

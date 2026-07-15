@@ -115,6 +115,65 @@ async function main() {
   assert.notEqual(phoneDestinationPayload.destination, "00359 894 84 28 82", "phone-like destination must not become offer title");
   assert.equal(phoneDestinationPayload.destination, "Fari Islands, Maldives", "phone-like destination should fall back to hotel area");
 
+  const inferredYearModel = {
+    readiness: "ready",
+    warnings: [],
+    blockingIssues: [],
+    flight: {
+      airline: "Turkish Airlines",
+      route: "SOF -> SCL / SCL -> SOF",
+      departure: "SOF -> SCL, 2024-03-28T12:35",
+      arrival: "SCL -> SOF, 2024-04-08T11:15",
+      baggage: "2 checked bags",
+      notes: "Vision model inserted a year that was not visible in the screenshot.",
+      price: 1820.26,
+      outboundSegments: [
+        {
+          airline: "Turkish Airlines",
+          flightNumber: "TK 1128",
+          from: "SOF",
+          to: "IST",
+          departure: "2024-03-28T12:35",
+          arrival: "2024-03-28T14:05",
+          duration: "1h 30min"
+        },
+        {
+          airline: "Turkish Airlines",
+          flightNumber: "TK 801",
+          from: "IST",
+          to: "PTY",
+          departure: "2024-03-29T09:40",
+          arrival: "2024-03-29T18:30",
+          duration: "16h 50min"
+        }
+      ],
+      inboundSegments: [
+        {
+          airline: "Turkish Airlines",
+          flightNumber: "TK 216",
+          from: "SCL",
+          to: "IST",
+          departure: "2024-04-08T11:15",
+          arrival: "2024-04-09T11:15",
+          duration: "17h"
+        }
+      ]
+    },
+    hotel: null,
+    hotelOptions: []
+  };
+  const inferredYearPayload = buildOfferPayloadFromProductModel(inferredYearModel, {
+    clientName: "GT63 Test Client",
+    destination: "Santiago",
+    travelDates: "28.03.2027 - 08.04.2027",
+    guests: "2 adults"
+  });
+
+  const inferredYearText = JSON.stringify(inferredYearPayload);
+  assert.ok(!inferredYearText.includes("2024"), "Offer payload must strip model-inferred years that conflict with reviewed travel dates");
+  assert.ok(inferredYearText.includes("28 March 12:35"), "Offer payload should preserve day, month and time after stripping inferred year");
+  assert.ok(inferredYearText.includes("8 April 11:15"), "Offer payload should preserve inbound day, month and time after stripping inferred year");
+
   console.log("GT63 OFFER ENGINE ADAPTER REGRESSION PASS");
 }
 

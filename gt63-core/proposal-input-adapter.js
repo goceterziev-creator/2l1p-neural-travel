@@ -7,6 +7,10 @@
   }
   root.GT63ProposalInputAdapter = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function createProposalInputAdapter() {
+  const flightDateSanitizer = typeof require === "function"
+    ? require("./flight-date-sanitizer")
+    : (typeof globalThis !== "undefined" ? globalThis.GT63FlightDateSanitizer : null);
+
   const PROPOSAL_INPUT_VERSION = "1.0";
   const MODE = "GT63_LUXURY_PROPOSAL_INPUT";
   const PROPOSAL_INPUT_KEYS = [
@@ -195,8 +199,11 @@
   }
 
   function buildProposalInputFromProductModel(model = {}, context = {}) {
-    const productModel = asObject(model);
     const safeContext = asObject(context);
+    const sanitizedModel = flightDateSanitizer?.sanitizeProductModelFlightDates
+      ? flightDateSanitizer.sanitizeProductModelFlightDates(model, safeContext)
+      : model;
+    const productModel = asObject(sanitizedModel);
     const flight = buildFlight(productModel.flight);
     const activeHotel = selectedHotel(productModel);
     const hotel = buildHotel(activeHotel);
