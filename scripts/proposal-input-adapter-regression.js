@@ -19,6 +19,7 @@ const expectedKeys = [
   "destination",
   "flight",
   "hotel",
+  "hotelOptions",
   "mode",
   "pricing",
   "proposalInputVersion",
@@ -63,6 +64,7 @@ assert.equal(mixed.flight.airline, "Emirates", "mixed should include flight");
 assert.equal(mixed.flight.outboundSegments.length, 1, "mixed should preserve outbound segments");
 assert.equal(mixed.flight.inboundSegments.length, 1, "mixed should preserve inbound segments");
 assert.equal(mixed.hotel.name, "Patina Maldives", "mixed should include hotel");
+assert.equal(mixed.hotelOptions.length, 1, "mixed should expose selected hotel as hotel option");
 assert.equal(mixed.pricing.flightAmount, 1475, "mixed should expose flight amount");
 assert.equal(mixed.pricing.hotelAmount, 11200, "mixed should expose hotel amount");
 assert.equal(mixed.pricing.baseAmount, 12675, "mixed should expose base amount");
@@ -89,6 +91,7 @@ assertCleanProposalInput(hotelOnly, "hotel-only");
 assert.equal(hotelOnly.readiness, "ready", "hotel-only should be ready");
 assert.equal(hotelOnly.flight, null, "hotel-only should not invent flight");
 assert.ok(hotelOnly.hotel, "hotel-only should include hotel");
+assert.equal(hotelOnly.hotelOptions.length, 1, "hotel-only should expose hotel option list");
 assert.equal(hotelOnly.destination.name, "Rangali Island, Maldives", "hotel-only should derive destination from hotel area");
 
 const review = proposalFromFixture("unknown-partial-failure.json");
@@ -97,6 +100,7 @@ assert.equal(review.readiness, "review", "review fixture should remain review");
 assert.ok(review.blockingIssues.length >= 1, "review fixture should preserve blocking issues");
 assert.ok(review.flight, "review fixture should preserve partial successful flight data");
 assert.equal(review.hotel, null, "review fixture should not invent hotel");
+assert.equal(review.hotelOptions.length, 0, "review fixture should not invent hotel options");
 
 const extractedModel = adaptSmartImportForProduct(readFixture("flight-hotel-mixed.json"));
 const reviewedModel = JSON.parse(JSON.stringify(extractedModel));
@@ -107,6 +111,19 @@ const reviewedProposal = buildProposalInputFromProductModel(reviewedModel, {
 assert.equal(extractedModel.flight.price, 1475, "original extracted model should remain unchanged");
 assert.equal(reviewedProposal.flight.price, 1520, "preview input should use reviewed flight price");
 assert.equal(reviewedProposal.pricing.flightAmount, 1520, "preview pricing should use reviewed flight price");
+
+const multiHotelModel = JSON.parse(JSON.stringify(extractedModel));
+multiHotelModel.hotelOptions = [
+  { ...multiHotelModel.hotel, name: "Patina Maldives", price: 11200, selected: false },
+  { ...multiHotelModel.hotel, name: "Conrad Maldives Rangali Island", price: 14800, selected: true }
+];
+multiHotelModel.hotel = multiHotelModel.hotelOptions[1];
+const multiHotelProposal = buildProposalInputFromProductModel(multiHotelModel, {
+  destination: "Maldives"
+});
+assert.equal(multiHotelProposal.hotel.name, "Conrad Maldives Rangali Island", "preview should use selected hotel option");
+assert.equal(multiHotelProposal.hotelOptions.length, 2, "preview should preserve multiple hotel options");
+assert.equal(multiHotelProposal.pricing.hotelAmount, 14800, "preview pricing should use selected hotel price");
 
 const phoneDestinationProposal = buildProposalInputFromProductModel(extractedModel, {
   destination: "00359 894 84 28 82"

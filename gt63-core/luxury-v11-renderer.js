@@ -138,10 +138,29 @@
     return `<img class="v11-hotel-image" src="${escapeHtml(image)}" alt="">`;
   }
 
+  function hotelOptionCard(hotel, index, currency) {
+    const selected = hotel?.selected || index === 0;
+    const imageUrls = Array.isArray(hotel?.imageUrls) ? hotel.imageUrls : [];
+    const image = imageUrls.find(isUsableImageUrl);
+    return `
+      <article class="v11-hotel-option ${selected ? "selected" : ""}">
+        ${image ? `<img src="${escapeHtml(image)}" alt="">` : ""}
+        <div>
+          <span>${selected ? "Selected hotel" : `Hotel option ${index + 1}`}</span>
+          <strong>${escapeHtml(text(hotel?.name, "Hotel to confirm"))}</strong>
+          <small>${escapeHtml(text(hotel?.area))}</small>
+          <small>${escapeHtml(text(hotel?.room))}</small>
+        </div>
+        <strong>${escapeHtml(money(hotel?.price, currency))}</strong>
+      </article>
+    `;
+  }
+
   function renderLuxuryProposal(input) {
     const proposal = assertLuxuryProposalInput(input);
     const flight = proposal.flight || {};
     const hotel = proposal.hotel || {};
+    const hotelOptions = Array.isArray(proposal.hotelOptions) ? proposal.hotelOptions : [];
     const currency = proposal.pricing?.currency || "EUR";
     const title = proposal.content?.heroTitle || proposal.destination?.name || "Private Travel Proposal";
     const subtitle = proposal.content?.heroSubtitle || "A curated travel brief prepared for review.";
@@ -201,6 +220,12 @@
               <div><span>Meal</span><strong>${escapeHtml(text(hotel.meal))}</strong></div>
               <div><span>Hotel Price</span><strong>${escapeHtml(money(hotel.price, currency))}</strong></div>
             </div>
+            ${hotelOptions.length > 1 ? `
+              <div class="v11-hotel-options">
+                <p class="v11-kicker">Alternative Hotel Options</p>
+                ${hotelOptions.map((option, index) => hotelOptionCard(option, index, currency)).join("")}
+              </div>
+            ` : ""}
           </div>
         </section>
 

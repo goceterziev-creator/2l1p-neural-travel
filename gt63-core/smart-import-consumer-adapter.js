@@ -24,7 +24,21 @@
     const classifications = asArray(contract.classifications);
     const hasUnknownSource = classifications.some((item) => item?.sourceType === "unknown");
     const flight = hasContent(contract.offerFlight) ? contract.offerFlight : null;
-    const hotel = hasContent(contract.offerHotel) ? contract.offerHotel : null;
+    const primaryHotel = hasContent(contract.offerHotel) ? contract.offerHotel : null;
+    const sourceHotelOptions = [
+      ...asArray(contract.offerHotelOptions),
+      ...asArray(contract.offerHotels),
+      ...asArray(contract.hotelOptions),
+      ...asArray(contract.hotels)
+    ].filter(hasContent);
+    const hotelOptions = (sourceHotelOptions.length ? sourceHotelOptions : (primaryHotel ? [primaryHotel] : []))
+      .map((hotel, index) => ({
+        ...hotel,
+        selected: sourceHotelOptions.some((item) => item?.selected)
+          ? hotel.selected === true
+          : index === 0
+      }));
+    const hotel = hotelOptions.find((item) => item.selected) || hotelOptions[0] || null;
     const operatorReviewRequired = contract.requiresOperatorReview === true
       || contract.operatorReviewRequired === true
       || flight?.requiresOperatorReview === true
@@ -44,6 +58,7 @@
     return {
       flight,
       hotel,
+      hotelOptions,
       warnings,
       readiness: blockingIssues.length ? "review" : "ready",
       blockingIssues

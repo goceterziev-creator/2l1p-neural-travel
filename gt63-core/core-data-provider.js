@@ -7,7 +7,7 @@
   }
   root.GT63CoreDataProvider = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function createCoreDataProvider(root) {
-  const PRODUCT_KEYS = ["blockingIssues", "flight", "hotel", "readiness", "warnings"];
+  const PRODUCT_KEYS = ["blockingIssues", "flight", "hotel", "hotelOptions", "readiness", "warnings"];
 
   function getAdapter() {
     if (root.GT63SmartImportConsumerAdapter?.adaptSmartImportForProduct) {

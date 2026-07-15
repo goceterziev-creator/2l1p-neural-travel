@@ -61,6 +61,22 @@
       "https://example.com/patina-maldives-1.jpg"
     ]
   },
+  "hotelOptions": [
+    {
+      "name": "Patina Maldives",
+      "stars": "5",
+      "area": "Fari Islands, Maldives",
+      "room": "One Bedroom Beach Pool Villa",
+      "meal": "Breakfast included",
+      "roomsLeft": "Not specified",
+      "price": 11200,
+      "currency": "EUR",
+      "description": "Premium island resort with private beach villas and lagoon access.",
+      "imageUrls": [
+        "https://example.com/patina-maldives-1.jpg"
+      ]
+    }
+  ],
   "pricing": {
     "currency": "EUR",
     "flightAmount": 1475,

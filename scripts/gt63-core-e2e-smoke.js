@@ -11,7 +11,7 @@ const {
 
 const fixtureDir = path.join(__dirname, "..", "test", "fixtures", "smart-import");
 const productDir = path.join(__dirname, "..", "gt63-core", "product");
-const expectedProductKeys = ["blockingIssues", "flight", "hotel", "readiness", "warnings"];
+const expectedProductKeys = ["blockingIssues", "flight", "hotel", "hotelOptions", "readiness", "warnings"];
 
 function readFixture(name) {
   return JSON.parse(fs.readFileSync(path.join(fixtureDir, name), "utf8"));

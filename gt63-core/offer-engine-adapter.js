@@ -137,9 +137,36 @@
     }];
   }
 
+  function selectedHotel(model = {}) {
+    const options = asArray(model.hotelOptions).filter(Boolean);
+    return options.find((hotel) => hotel?.selected) || model.hotel || options[0] || null;
+  }
+
+  function buildOfferHotels(model = {}) {
+    const selected = selectedHotel(model);
+    const options = asArray(model.hotelOptions).length ? asArray(model.hotelOptions) : (selected ? [selected] : []);
+    return options.map((hotel, index) => ({
+      name: cleanText(hotel?.name),
+      stars: cleanText(hotel?.stars),
+      area: cleanText(hotel?.area),
+      distance: cleanText(hotel?.distance),
+      room: cleanText(hotel?.room),
+      meal: cleanText(hotel?.meal),
+      price: amount(hotel?.price),
+      roomsLeft: cleanText(hotel?.roomsLeft),
+      description: cleanText(hotel?.description),
+      images: buildHotelImages(hotel),
+      selected: options.some((item) => item?.selected) ? hotel?.selected === true : index === 0
+    })).filter((hotel) => (
+      hotel.name || hotel.stars || hotel.area || hotel.distance || hotel.room || hotel.meal ||
+      hotel.price > 0 || hotel.roomsLeft || hotel.description || hotel.images.length
+    ));
+  }
+
   function buildOfferPayloadFromProductModel(model = {}, context = {}) {
     const flight = model.flight || null;
-    const hotel = model.hotel || null;
+    const hotel = selectedHotel(model);
+    const hotels = buildOfferHotels(model);
     const destination = safeDestination(context.destination, hotel?.area, hotel?.name, flight?.route);
     const travelDates = firstText(context.travelDates, flight?.departure, flight?.arrival);
     const flightPrice = amount(flight?.price);
@@ -171,6 +198,7 @@
       hotelRoomsLeft: cleanText(hotel?.roomsLeft),
       hotelDescription: cleanText(hotel?.description),
       hotelImages: buildHotelImages(hotel),
+      hotels,
       destinationDescription: `Curated proposal for ${destination}.`,
       notes: asArray(model.warnings).join(" | "),
       flightPrice,

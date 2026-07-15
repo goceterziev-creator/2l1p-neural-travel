@@ -16,6 +16,7 @@
     "destination",
     "flight",
     "hotel",
+    "hotelOptions",
     "mode",
     "pricing",
     "proposalInputVersion",
@@ -78,6 +79,11 @@
     };
   }
 
+  function selectedHotel(model = {}) {
+    const options = asArray(model.hotelOptions).filter(Boolean);
+    return options.find((hotel) => hotel?.selected) || model.hotel || options[0] || null;
+  }
+
   function totalPrice(flight, hotel, context = {}) {
     const flightAmount = amount(flight?.price);
     const hotelAmount = amount(hotel?.price);
@@ -97,9 +103,10 @@
   }
 
   function destinationName(model, context) {
+    const hotel = selectedHotel(model);
     return nullableDestination(context.destination)
-      || nullableDestination(model.hotel?.area)
-      || nullableDestination(model.hotel?.name)
+      || nullableDestination(hotel?.area)
+      || nullableDestination(hotel?.name)
       || nullableDestination(model.flight?.route)
       || "Travel Proposal";
   }
@@ -147,8 +154,9 @@
 
   function buildContent(model, context) {
     const title = destinationName(model, context);
-    const hotelName = nullableText(model.hotel?.name);
-    const room = nullableText(model.hotel?.room);
+    const hotel = selectedHotel(model);
+    const hotelName = nullableText(hotel?.name);
+    const room = nullableText(hotel?.room);
     const flightRoute = nullableText(model.flight?.route);
     const highlights = [
       hotelName ? `Stay at ${hotelName}` : null,
@@ -190,7 +198,11 @@
     const productModel = asObject(model);
     const safeContext = asObject(context);
     const flight = buildFlight(productModel.flight);
-    const hotel = buildHotel(productModel.hotel);
+    const activeHotel = selectedHotel(productModel);
+    const hotel = buildHotel(activeHotel);
+    const hotelOptions = (asArray(productModel.hotelOptions).length ? asArray(productModel.hotelOptions) : (activeHotel ? [activeHotel] : []))
+      .map(buildHotel)
+      .filter(Boolean);
 
     return assertProposalInput({
       proposalInputVersion: PROPOSAL_INPUT_VERSION,
@@ -209,7 +221,8 @@
       },
       flight,
       hotel,
-      pricing: totalPrice(productModel.flight, productModel.hotel, safeContext),
+      hotelOptions,
+      pricing: totalPrice(productModel.flight, activeHotel, safeContext),
       content: buildContent(productModel, safeContext),
       source: {
         generatedFrom: "GT63_CORE_PRODUCT_MODEL",

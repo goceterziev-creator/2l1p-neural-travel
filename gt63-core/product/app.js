@@ -34,6 +34,7 @@ const nodes = {
   flightReview: document.getElementById("flightReview"),
   hotelReview: document.getElementById("hotelReview"),
   applyReviewButton: document.getElementById("applyReviewButton"),
+  addHotelOptionButton: document.getElementById("addHotelOptionButton"),
   reviewState: document.getElementById("reviewState"),
   warningsReview: document.getElementById("warningsReview"),
   blockingReview: document.getElementById("blockingReview"),
@@ -102,7 +103,7 @@ function marginPercent() {
 }
 
 function totalBasePrice(model) {
-  return Number(model?.flight?.price || 0) + Number(model?.hotel?.price || 0);
+  return Number(model?.flight?.price || 0) + Number(selectedHotel(model)?.price || 0);
 }
 
 function finalPrice(model) {
@@ -113,11 +114,22 @@ function finalPrice(model) {
 
 function missionDestination(model) {
   const contextDestination = nodes.destination.value.trim();
+  const hotel = selectedHotel(model);
   if (contextDestination && !isPhoneLike(contextDestination)) return contextDestination;
-  if (model?.hotel?.area) return model.hotel.area;
-  if (model?.hotel?.name) return model.hotel.name;
+  if (hotel?.area) return hotel.area;
+  if (hotel?.name) return hotel.name;
   if (model?.flight?.route) return model.flight.route;
   return "";
+}
+
+function hotelOptions(model = {}) {
+  if (Array.isArray(model?.hotelOptions) && model.hotelOptions.length) return model.hotelOptions;
+  return model?.hotel ? [{ ...model.hotel, selected: true }] : [];
+}
+
+function selectedHotel(model = {}) {
+  const options = hotelOptions(model);
+  return options.find((hotel) => hotel?.selected) || model?.hotel || options[0] || null;
 }
 
 function routeFromSegments(segments) {
@@ -194,26 +206,40 @@ function renderFlight(flight) {
   `;
 }
 
-function renderHotel(hotel) {
-  if (!hotel) {
+function renderHotelOption(hotel, index, selected) {
+  const imageUrl = Array.isArray(hotel.imageUrls) && hotel.imageUrls.length ? hotel.imageUrls[0] : "";
+  return `
+    <article class="hotel-option-card ${selected ? "selected" : ""}">
+      <label class="hotel-option-selector">
+        <input type="radio" name="selectedHotelOption" value="${index}" ${selected ? "checked" : ""}>
+        <span>${selected ? "Selected hotel" : `Hotel option ${index + 1}`}</span>
+      </label>
+      ${imageUrl ? `<img class="hotel-image" src="${escapeHtml(imageUrl)}" alt="">` : ""}
+      <div class="summary">
+        <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.name`, hotel.name, "Name")}</div>
+        <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.stars`, hotel.stars, "Stars")}</div>
+        <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.area`, hotel.area, "Area")}</div>
+        <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.room`, hotel.room, "Room")}</div>
+        <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.meal`, hotel.meal, "Meal")}</div>
+        <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.roomsLeft`, hotel.roomsLeft, "Rooms left")}</div>
+        <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.price`, hotel.price, "Price", "number")}</div>
+        <div class="summary-row editable-summary">${editTextarea(`hotelOptions.${index}.description`, hotel.description, "Description")}</div>
+      </div>
+    </article>
+  `;
+}
+
+function renderHotels(model) {
+  const options = hotelOptions(model);
+  if (!options.length) {
     nodes.hotelReview.textContent = "No hotel data";
     return;
   }
 
-  const imageUrl = Array.isArray(hotel.imageUrls) && hotel.imageUrls.length ? hotel.imageUrls[0] : "";
-  nodes.hotelReview.innerHTML = `
-    ${imageUrl ? `<img class="hotel-image" src="${escapeHtml(imageUrl)}" alt="">` : ""}
-    <div class="summary">
-      <div class="summary-row editable-summary">${editInput("hotel.name", hotel.name, "Name")}</div>
-      <div class="summary-row"><span class="label">Stars</span><span>${escapeHtml(valueOrFallback(hotel.stars))}</span></div>
-      <div class="summary-row editable-summary">${editInput("hotel.area", hotel.area, "Area")}</div>
-      <div class="summary-row editable-summary">${editInput("hotel.room", hotel.room, "Room")}</div>
-      <div class="summary-row editable-summary">${editInput("hotel.meal", hotel.meal, "Meal")}</div>
-      <div class="summary-row editable-summary">${editInput("hotel.roomsLeft", hotel.roomsLeft, "Rooms left")}</div>
-      <div class="summary-row editable-summary">${editInput("hotel.price", hotel.price, "Price", "number")}</div>
-      <div class="summary-row editable-summary">${editTextarea("hotel.description", hotel.description, "Description")}</div>
-    </div>
-  `;
+  const selectedIndex = Math.max(0, options.findIndex((hotel) => hotel?.selected));
+  nodes.hotelReview.innerHTML = options
+    .map((hotel, index) => renderHotelOption(hotel, index, index === selectedIndex))
+    .join("");
 }
 
 function proposalContext() {
@@ -292,7 +318,7 @@ function renderReviewedModel(model) {
   currentModel = model;
   renderMission(model);
   renderFlight(model.flight);
-  renderHotel(model.hotel);
+  renderHotels(model);
   nodes.warningsReview.innerHTML = renderList(model.warnings, "No warnings");
   nodes.blockingReview.innerHTML = renderList(model.blockingIssues, "No blocking issues");
   renderGate(model);
@@ -302,6 +328,7 @@ function renderReviewedModel(model) {
     ? `Ready to create a draft offer in 2L1P. Base: ${money(totalBasePrice(model))}. With margin ${marginPercent()}%: ${money(finalPrice(model))}.`
     : "Create Offer is available after readiness is READY.";
   nodes.applyReviewButton.disabled = !originalModel;
+  nodes.addHotelOptionButton.disabled = !reviewedModel;
   renderReviewState();
 }
 
@@ -363,9 +390,39 @@ function applyReviewChanges() {
     const path = field.getAttribute("data-review-path");
     setPath(draft, path, coerceReviewValue(path, field.value));
   });
+  const selectedHotelInput = document.querySelector("input[name='selectedHotelOption']:checked");
+  const selectedIndex = selectedHotelInput ? Number(selectedHotelInput.value) : 0;
+  if (Array.isArray(draft.hotelOptions)) {
+    draft.hotelOptions = draft.hotelOptions.map((hotel, index) => ({
+      ...hotel,
+      selected: index === selectedIndex
+    }));
+    draft.hotel = draft.hotelOptions[selectedIndex] || draft.hotelOptions[0] || null;
+  }
   reviewedModel = draft;
   currentModel = reviewedModel;
   hasManualEdits = JSON.stringify(reviewedModel) !== JSON.stringify(originalModel);
+  renderReviewedModel(reviewedModel);
+}
+
+function addHotelOption() {
+  if (!reviewedModel) return;
+  const draft = deepClone(reviewedModel);
+  const base = selectedHotel(draft) || {};
+  const options = hotelOptions(draft);
+  draft.hotelOptions = [
+    ...options.map((hotel, index) => ({ ...hotel, selected: index === 0 && options.every((item) => !item.selected) ? true : hotel.selected === true })),
+    {
+      ...base,
+      name: base.name ? `${base.name} alternative` : "",
+      price: base.price || 0,
+      selected: false
+    }
+  ];
+  draft.hotel = selectedHotel(draft);
+  reviewedModel = draft;
+  currentModel = reviewedModel;
+  hasManualEdits = true;
   renderReviewedModel(reviewedModel);
 }
 
@@ -498,5 +555,6 @@ nodes.marginPercent.addEventListener("input", () => {
   nodes.guests
 ].forEach((node) => node.addEventListener("input", () => renderMission()));
 nodes.applyReviewButton.addEventListener("click", applyReviewChanges);
+nodes.addHotelOptionButton.addEventListener("click", addHotelOption);
 renderMission();
 syncProviderMode();

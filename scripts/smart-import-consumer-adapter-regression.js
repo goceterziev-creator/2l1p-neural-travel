@@ -15,7 +15,7 @@ const fixtureDir = path.join(__dirname, "..", "test", "fixtures", "smart-import"
 const mockShellPath = path.join(__dirname, "..", "gt63-core", "mock-shell.html");
 const mockReviewPath = path.join(__dirname, "..", "gt63-core", "mock-review.html");
 const mockProposalPreviewPath = path.join(__dirname, "..", "gt63-core", "mock-proposal-preview.html");
-const expectedProductKeys = ["blockingIssues", "flight", "hotel", "readiness", "warnings"];
+const expectedProductKeys = ["blockingIssues", "flight", "hotel", "hotelOptions", "readiness", "warnings"];
 
 function readFixture(name) {
   return JSON.parse(fs.readFileSync(path.join(fixtureDir, name), "utf8"));
@@ -32,7 +32,7 @@ function createFetchResponse(payload, ok = true, status = 200) {
 }
 
 function assertProductModelShape(model, label) {
-  assert.deepStrictEqual(Object.keys(model).sort(), expectedProductKeys, `${label} product model must expose only flight, hotel, warnings, readiness and blockingIssues`);
+  assert.deepStrictEqual(Object.keys(model).sort(), expectedProductKeys, `${label} product model must expose only GT63 product model keys`);
   assert.ok(["ready", "review"].includes(model.readiness), `${label} product model must expose product readiness`);
   assert.ok(Array.isArray(model.warnings), `${label} product model must expose warnings array`);
   assert.ok(Array.isArray(model.blockingIssues), `${label} product model must expose blockingIssues array`);
@@ -48,6 +48,7 @@ assert.equal(flightOnly.readiness, "ready", "flight-only fixture should be ready
 assert.deepStrictEqual(flightOnly.blockingIssues, [], "flight-only fixture should not expose blocking issues");
 assert.equal(flightOnly.flight.route, "SOF -> MLE / MLE -> SOF", "flight-only fixture should expose flight data");
 assert.equal(flightOnly.hotel, null, "flight-only fixture should not expose hotel data");
+assert.deepStrictEqual(flightOnly.hotelOptions, [], "flight-only fixture should expose empty hotel options");
 assert.deepStrictEqual(flightOnly.warnings, [], "flight-only fixture should not expose warnings");
 
 const hotelOnly = adaptSmartImportForProduct(readFixture("hotel-only.json"));
@@ -56,6 +57,8 @@ assert.equal(hotelOnly.readiness, "ready", "hotel-only fixture should be ready")
 assert.deepStrictEqual(hotelOnly.blockingIssues, [], "hotel-only fixture should not expose blocking issues");
 assert.equal(hotelOnly.flight, null, "hotel-only fixture should not expose flight data");
 assert.equal(hotelOnly.hotel.name, "Conrad Maldives Rangali Island", "hotel-only fixture should expose hotel data");
+assert.equal(hotelOnly.hotelOptions.length, 1, "hotel-only fixture should expose one hotel option");
+assert.equal(hotelOnly.hotelOptions[0].selected, true, "hotel-only fixture should mark first hotel option selected");
 assert.deepStrictEqual(hotelOnly.warnings, [], "hotel-only fixture should not expose warnings");
 
 const mixed = adaptSmartImportForProduct(readFixture("flight-hotel-mixed.json"));
@@ -64,6 +67,7 @@ assert.equal(mixed.readiness, "ready", "mixed fixture should stay ready when it 
 assert.deepStrictEqual(mixed.blockingIssues, [], "mixed fixture warning should not become a blocking issue");
 assert.equal(mixed.flight.airline, "Emirates", "mixed fixture should expose flight data");
 assert.equal(mixed.hotel.name, "Patina Maldives", "mixed fixture should expose hotel data");
+assert.equal(mixed.hotelOptions.length, 1, "mixed fixture should expose selected hotel option");
 assert.ok(mixed.warnings.some((warning) => warning.includes("Mixed screenshots")), "mixed fixture should preserve warning text");
 assert.ok(mixed.warnings.some((warning) => warning.includes("Final operator review is recommended")), "mixed fixture warning must recommend review without blocking preview");
 
@@ -73,6 +77,7 @@ assert.equal(unknown.readiness, "review", "unknown fixture should require review
 assert.ok(unknown.blockingIssues.some((issue) => issue.includes("could not be identified")), "unknown fixture should expose unknown source blocking issue");
 assert.equal(unknown.flight.route, "SOF -> BRI / BRI -> SOF", "unknown fixture should preserve successful partial flight data");
 assert.equal(unknown.hotel, null, "unknown fixture should not invent hotel data");
+assert.deepStrictEqual(unknown.hotelOptions, [], "unknown fixture should not invent hotel options");
 assert.ok(unknown.warnings.length >= 1, "unknown fixture should preserve actionable warnings");
 
 const empty = adaptSmartImportForProduct({});
@@ -80,6 +85,7 @@ assertProductModelShape(empty, "empty");
 assert.deepStrictEqual(empty, {
   flight: null,
   hotel: null,
+  hotelOptions: [],
   warnings: [],
   readiness: "review",
   blockingIssues: ["No travel data extracted"]

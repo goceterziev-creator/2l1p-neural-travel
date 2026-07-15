@@ -64,6 +64,8 @@ async function main() {
   assert.equal(payload.hotelName, "Patina Maldives");
   assert.ok(payload.hotelPrice > 0, "payload should include hotel price");
   assert.ok(Array.isArray(payload.hotelImages), "payload should expose hotelImages array");
+  assert.ok(Array.isArray(payload.hotels), "payload should expose hotel options array");
+  assert.equal(payload.hotels.length, 1, "payload should include one hotel option by default");
   assert.equal(payload.markupPercent, 12.5);
   assert.equal(payload.validForDays, 1);
   assert.ok(!Object.keys(payload).includes("contractVersion"), "payload must not leak Smart Import contract fields");
@@ -82,6 +84,24 @@ async function main() {
   assert.equal(originalModel.flight.price, 1475, "original extracted model should remain unchanged");
   assert.equal(reviewedModel.flight.price, 1520, "reviewed model should contain operator correction");
   assert.equal(reviewedPayload.flightPrice, 1520, "Offer Engine should receive reviewed flight price");
+
+  const multiHotelModel = JSON.parse(JSON.stringify(originalModel));
+  multiHotelModel.hotelOptions = [
+    { ...multiHotelModel.hotel, name: "Patina Maldives", price: 11200, selected: false },
+    { ...multiHotelModel.hotel, name: "Conrad Maldives Rangali Island", price: 14800, selected: true }
+  ];
+  multiHotelModel.hotel = multiHotelModel.hotelOptions[1];
+  const multiHotelPayload = buildOfferPayloadFromProductModel(multiHotelModel, {
+    clientName: "GT63 Test Client",
+    destination: "Maldives",
+    travelDates: "15-22 March 2027",
+    guests: "2 adults"
+  });
+
+  assert.equal(multiHotelPayload.hotelName, "Conrad Maldives Rangali Island", "Offer Engine should use selected hotel option");
+  assert.equal(multiHotelPayload.hotelPrice, 14800, "Offer Engine should price selected hotel option");
+  assert.equal(multiHotelPayload.hotels.length, 2, "Offer Engine should receive all hotel options");
+  assert.equal(multiHotelPayload.hotels[1].selected, true, "Offer Engine should preserve selected hotel flag");
 
   const phoneDestinationPayload = buildOfferPayloadFromProductModel(model, {
     clientName: "GT63 Test Client",
