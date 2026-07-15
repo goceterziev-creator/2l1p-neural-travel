@@ -181,6 +181,37 @@ h3 {
   padding: 22px;
 }
 
+.mission-card {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px;
+}
+
+.mission-card > div {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.mission-card strong {
+  display: block;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.mission-card .mission-ready {
+  color: var(--success);
+}
+
+.mission-card .mission-review {
+  color: var(--warning);
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.24fr) minmax(300px, 0.76fr);
@@ -819,6 +850,7 @@ ul {
   }
 
   .hero,
+  .mission-card,
   .workspace-grid,
   .review-grid,
   .signal-grid,

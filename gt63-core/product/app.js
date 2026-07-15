@@ -21,6 +21,11 @@ const nodes = {
   endpointField: document.getElementById("endpointField"),
   liveEndpoint: document.getElementById("liveEndpoint"),
   currentStep: document.getElementById("currentStep"),
+  missionClient: document.getElementById("missionClient"),
+  missionDestination: document.getElementById("missionDestination"),
+  missionStatus: document.getElementById("missionStatus"),
+  missionValue: document.getElementById("missionValue"),
+  missionAction: document.getElementById("missionAction"),
   readinessBadge: document.getElementById("readinessBadge"),
   gateMessage: document.getElementById("gateMessage"),
   continueButton: document.getElementById("continueButton"),
@@ -104,6 +109,15 @@ function finalPrice(model) {
   const base = totalBasePrice(model);
   if (!Number.isFinite(base) || base <= 0) return 0;
   return base * (1 + marginPercent() / 100);
+}
+
+function missionDestination(model) {
+  const contextDestination = nodes.destination.value.trim();
+  if (contextDestination && !isPhoneLike(contextDestination)) return contextDestination;
+  if (model?.hotel?.area) return model.hotel.area;
+  if (model?.hotel?.name) return model.hotel.name;
+  if (model?.flight?.route) return model.flight.route;
+  return "";
 }
 
 function routeFromSegments(segments) {
@@ -214,6 +228,26 @@ function proposalContext() {
   };
 }
 
+function renderMission(model = currentModel) {
+  const client = nodes.clientName.value.trim();
+  const destination = missionDestination(model);
+  const ready = model?.readiness === "ready";
+  const hasBlockingIssues = Array.isArray(model?.blockingIssues) && model.blockingIssues.length > 0;
+
+  nodes.missionClient.textContent = valueOrFallback(client, "No client");
+  nodes.missionDestination.textContent = valueOrFallback(destination, "No destination");
+  nodes.missionStatus.textContent = model ? (ready ? "READY" : "REVIEW") : "Not started";
+  nodes.missionStatus.className = model ? (ready ? "mission-ready" : "mission-review") : "";
+  nodes.missionValue.textContent = model ? money(finalPrice(model)) : "-";
+  nodes.missionAction.textContent = !model
+    ? "Start Smart Import"
+    : ready
+      ? "Review and Create Offer"
+      : hasBlockingIssues
+        ? "Resolve blocking issues"
+        : "Review extracted data";
+}
+
 function renderPreview(model) {
   if (model.readiness !== "ready") {
     nodes.previewArea.className = "disabled-preview";
@@ -256,6 +290,7 @@ function renderReviewState() {
 
 function renderReviewedModel(model) {
   currentModel = model;
+  renderMission(model);
   renderFlight(model.flight);
   renderHotel(model.hotel);
   nodes.warningsReview.innerHTML = renderList(model.warnings, "No warnings");
@@ -278,6 +313,7 @@ function renderModel(model) {
 }
 
 function showError(message) {
+  renderMission(currentModel);
   nodes.errorMessage.textContent = message;
   nodes.errorPanel.classList.remove("hidden");
 }
@@ -451,7 +487,16 @@ nodes.providerMode.addEventListener("change", syncProviderMode);
 nodes.marginPercent.addEventListener("input", () => {
   if (currentModel) {
     renderReviewedModel(currentModel);
+  } else {
+    renderMission();
   }
 });
+[
+  nodes.clientName,
+  nodes.destination,
+  nodes.travelDates,
+  nodes.guests
+].forEach((node) => node.addEventListener("input", () => renderMission()));
 nodes.applyReviewButton.addEventListener("click", applyReviewChanges);
+renderMission();
 syncProviderMode();
