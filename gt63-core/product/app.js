@@ -1,6 +1,7 @@
 "use strict";
 
 const productProvider = window.GT63CoreDataProvider;
+const reviewDraftApi = window.GT63ReviewDraft;
 const flightDisplayBg = window.GT63FlightDisplayBg;
 const offerEngineAdapter = window.GT63OfferEngineAdapter;
 const proposalInputAdapter = window.GT63ProposalInputAdapter;
@@ -44,9 +45,26 @@ const nodes = {
 };
 
 let currentModel = null;
-let originalModel = null;
-let reviewedModel = null;
-let hasManualEdits = false;
+let reviewDraft = null;
+
+function originalModel() {
+  return reviewDraft?.originalModel || null;
+}
+
+function reviewedModel() {
+  return reviewDraft?.reviewedModel || null;
+}
+
+function hasManualEdits() {
+  return Boolean(reviewDraft?.hasManualEdits);
+}
+
+function activeProductModel() {
+  if (reviewDraftApi?.activeProductModel && reviewDraft) {
+    return reviewDraftApi.activeProductModel(reviewDraft);
+  }
+  return currentModel;
+}
 
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value ?? null));
@@ -307,9 +325,11 @@ function renderGate(model) {
 
 function renderReviewState() {
   if (!nodes.reviewState) return;
-  nodes.reviewState.textContent = hasManualEdits
-    ? "Manual edits applied. Preview and Create Offer use the reviewed model."
-    : originalModel
+  nodes.reviewState.textContent = reviewDraft?.status === "approved"
+    ? hasManualEdits()
+      ? "Approved model created. Preview and Create Offer use operator corrections."
+      : "Approved model created. Preview and Create Offer use the reviewed model."
+    : originalModel()
       ? "Review draft created. Original extraction is preserved."
       : "Load data to create a review draft.";
 }
@@ -327,16 +347,22 @@ function renderReviewedModel(model) {
   nodes.offerResult.textContent = model.readiness === "ready"
     ? `Ready to create a draft offer in 2L1P. Base: ${money(totalBasePrice(model))}. With margin ${marginPercent()}%: ${money(finalPrice(model))}.`
     : "Create Offer is available after readiness is READY.";
-  nodes.applyReviewButton.disabled = !originalModel;
-  nodes.addHotelOptionButton.disabled = !reviewedModel;
+  nodes.applyReviewButton.disabled = !originalModel();
+  nodes.addHotelOptionButton.disabled = !reviewedModel();
   renderReviewState();
 }
 
 function renderModel(model) {
-  originalModel = deepClone(model);
-  reviewedModel = deepClone(model);
-  hasManualEdits = false;
-  renderReviewedModel(reviewedModel);
+  reviewDraft = reviewDraftApi?.createReviewDraft
+    ? reviewDraftApi.createReviewDraft(model)
+    : {
+      originalModel: deepClone(model),
+      reviewedModel: deepClone(model),
+      approvedModel: null,
+      hasManualEdits: false,
+      status: "draft"
+    };
+  renderReviewedModel(reviewedModel());
 }
 
 function showError(message) {
@@ -384,8 +410,8 @@ function setPath(target, path, value) {
 }
 
 function applyReviewChanges() {
-  if (!reviewedModel) return;
-  const draft = deepClone(reviewedModel);
+  if (!reviewedModel()) return;
+  const draft = deepClone(reviewedModel());
   document.querySelectorAll("[data-review-path]").forEach((field) => {
     const path = field.getAttribute("data-review-path");
     setPath(draft, path, coerceReviewValue(path, field.value));
@@ -399,15 +425,22 @@ function applyReviewChanges() {
     }));
     draft.hotel = draft.hotelOptions[selectedIndex] || draft.hotelOptions[0] || null;
   }
-  reviewedModel = draft;
-  currentModel = reviewedModel;
-  hasManualEdits = JSON.stringify(reviewedModel) !== JSON.stringify(originalModel);
-  renderReviewedModel(reviewedModel);
+  reviewDraft = reviewDraftApi?.approveReviewedModel
+    ? reviewDraftApi.approveReviewedModel(reviewDraft, draft)
+    : {
+      originalModel: originalModel(),
+      reviewedModel: draft,
+      approvedModel: deepClone(draft),
+      hasManualEdits: JSON.stringify(draft) !== JSON.stringify(originalModel()),
+      status: "approved"
+    };
+  currentModel = activeProductModel();
+  renderReviewedModel(currentModel);
 }
 
 function addHotelOption() {
-  if (!reviewedModel) return;
-  const draft = deepClone(reviewedModel);
+  if (!reviewedModel()) return;
+  const draft = deepClone(reviewedModel());
   const base = selectedHotel(draft) || {};
   const options = hotelOptions(draft);
   draft.hotelOptions = [
@@ -420,10 +453,17 @@ function addHotelOption() {
     }
   ];
   draft.hotel = selectedHotel(draft);
-  reviewedModel = draft;
-  currentModel = reviewedModel;
-  hasManualEdits = true;
-  renderReviewedModel(reviewedModel);
+  reviewDraft = reviewDraftApi?.updateReviewedModel
+    ? reviewDraftApi.updateReviewedModel(reviewDraft, draft)
+    : {
+      originalModel: originalModel(),
+      reviewedModel: draft,
+      approvedModel: null,
+      hasManualEdits: true,
+      status: "draft"
+    };
+  currentModel = reviewedModel();
+  renderReviewedModel(currentModel);
 }
 
 function selectedFixtureUrl() {
@@ -464,7 +504,8 @@ async function loadProductModel() {
 }
 
 async function createOfferFromCurrentModel() {
-  if (!currentModel || currentModel.readiness !== "ready") {
+  const model = activeProductModel();
+  if (!model || model.readiness !== "ready") {
     throw new Error("Create Offer requires READY readiness.");
   }
   if (!offerEngineAdapter?.buildOfferPayloadFromProductModel) {
@@ -474,7 +515,7 @@ async function createOfferFromCurrentModel() {
   if (isPhoneLike(nodes.destination.value)) {
     nodes.destination.value = "";
   }
-  const payload = offerEngineAdapter.buildOfferPayloadFromProductModel(currentModel, proposalContext());
+  const payload = offerEngineAdapter.buildOfferPayloadFromProductModel(model, proposalContext());
   const response = await fetch("/api/offers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -521,7 +562,8 @@ nodes.form.addEventListener("submit", async (event) => {
 });
 
 nodes.continueButton.addEventListener("click", () => {
-  if (!currentModel || currentModel.readiness !== "ready") return;
+  const model = activeProductModel();
+  if (!model || model.readiness !== "ready") return;
   document.querySelector(".preview-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
@@ -536,7 +578,8 @@ nodes.createOfferButton.addEventListener("click", async () => {
     nodes.offerResult.className = "error-panel";
     nodes.offerResult.textContent = error.message || "Create Offer failed.";
   } finally {
-    nodes.createOfferButton.disabled = !currentModel || currentModel.readiness !== "ready";
+    const model = activeProductModel();
+    nodes.createOfferButton.disabled = !model || model.readiness !== "ready";
   }
 });
 

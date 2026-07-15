@@ -7,6 +7,7 @@ const CHECK_TARGETS = [
   "public/admin.js",
   "gt63-core/smart-import-consumer-adapter.js",
   "gt63-core/core-data-provider.js",
+  "gt63-core/review-draft.js",
   "gt63-core/flight-display-bg.js",
   "gt63-core/offer-engine-adapter.js",
   "gt63-core/proposal-input-adapter.js",
@@ -16,6 +17,7 @@ const CHECK_TARGETS = [
   "scripts/smart-import-consumer-adapter-regression.js",
   "scripts/gt63-offer-engine-adapter-regression.js",
   "scripts/proposal-input-adapter-regression.js",
+  "scripts/gt63-review-draft-regression.js",
   "scripts/luxury-v11-renderer-regression.js",
   "scripts/gt63-core-e2e-smoke.js",
   "scripts/v10-flight-ocr-regression.js",
@@ -86,6 +88,7 @@ async function main() {
     await runNode(["scripts/smart-import-consumer-adapter-regression.js"]);
     await runNode(["scripts/gt63-offer-engine-adapter-regression.js"]);
     await runNode(["scripts/proposal-input-adapter-regression.js"]);
+    await runNode(["scripts/gt63-review-draft-regression.js"]);
     await runNode(["scripts/luxury-v11-renderer-regression.js"]);
     await runNode(["scripts/gt63-core-e2e-smoke.js"]);
     await runNode(["scripts/v10-flight-ocr-regression.js"]);
