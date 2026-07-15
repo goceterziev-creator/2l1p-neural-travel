@@ -44,6 +44,7 @@ const {
   isTemporaryGeminiDemandError,
   normalizeUniversalIntakeError,
   parseConnectingFlightCheckout,
+  shouldFallbackToOpenAiFlight,
   uniqueGeminiModels,
   universalIntakeError,
   buildFlightOcrConfidence,
@@ -147,6 +148,9 @@ assert.ok(!universalPayload.details.includes("SECRET"), "universal intake fronte
 assert.equal(isTemporaryGeminiDemandError(503, "This model is currently experiencing high demand. Please try again later."), true, "Gemini high demand should be retryable");
 assert.deepStrictEqual(uniqueGeminiModels("gemini-2.5-flash", "gemini-2.5-flash"), ["gemini-2.5-flash"], "Gemini fallback model list should be unique");
 assert.deepStrictEqual(uniqueGeminiModels("gemini-1.5-flash", "gemini-2.5-flash"), ["gemini-2.0-flash", "gemini-2.5-flash"], "Gemini legacy 1.5 model should be replaced before retry");
+assert.equal(shouldFallbackToOpenAiFlight(new Error("Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash")), true, "Gemini quota limit should trigger OpenAI flight fallback");
+assert.equal(shouldFallbackToOpenAiFlight(new Error("This model models/gemini-2.5-flash is no longer available to new users.")), true, "Gemini unavailable model should trigger OpenAI flight fallback");
+assert.equal(shouldFallbackToOpenAiFlight(new Error("Uploaded image is empty")), false, "Image validation errors should not trigger provider fallback");
 
 const smartImportContract = buildSmartImportResponse({
   intakeId: "SMART-contract-test",

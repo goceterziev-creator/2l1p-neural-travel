@@ -8195,6 +8195,9 @@ function geminiCanonicalToFlight(gemini = {}) {
     transferTimes,
     segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments])
   };
+  flight.sourceAuthority = {
+    flightPrimary: "gemini-vision"
+  };
   flight.displayBg = {
     itineraryText: renderClientFlightItineraryBg(flight)
   };
@@ -8362,10 +8365,105 @@ async function extractFlightWithGeminiVision(files = [], { destination = "" } = 
   const canonical = validateGeminiFlightJson(extractJsonFromGeminiResponse(payload));
   return {
     model: gemini.model || model,
+    provider: "gemini-vision",
     canonical,
     flight: geminiCanonicalToFlight(canonical),
     rawResponse: payload
   };
+}
+
+async function extractFlightWithOpenAiVision(files = [], { destination = "" } = {}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    const error = new Error("Missing OPENAI_API_KEY. Add it in Railway Variables to enable OpenAI flight extraction fallback.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const prompt = [
+    "You are extracting flight itinerary data from travel screenshots for GT63.",
+    "Return JSON only. Do not add markdown. Do not guess invisible fields.",
+    "Use IATA airport codes when visible. Use ISO-like YYYY-MM-DDTHH:MM when dates are visible enough; otherwise keep the visible text.",
+    "Extract outbound and inbound segments, price, currency, baggage, passengers, and visible dates.",
+    "Return exactly these top-level keys: outbound, inbound, price, currency, baggage, passengers, dates.",
+    "Segment keys: from, to, departure, arrival, airline, flightNumber, duration.",
+    destination ? `Expected destination context: ${destination}` : ""
+  ].filter(Boolean).join("\n");
+
+  const content = [
+    { type: "input_text", text: prompt },
+    ...safeArray(files).slice(0, 4).map((file) => ({
+      type: "input_image",
+      image_url: `data:${file.mimetype || "image/png"};base64,${Buffer.from(file.buffer).toString("base64")}`
+    }))
+  ];
+
+  const model = process.env.OPENAI_VISION_MODEL || "gpt-4.1-mini";
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      input: [
+        {
+          role: "user",
+          content
+        }
+      ],
+      temperature: 0
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload?.error?.message || `OpenAI Vision request failed with HTTP ${response.status}`);
+    error.statusCode = response.status;
+    error.details = payload;
+    throw error;
+  }
+
+  const outputText =
+    payload?.output?.flatMap((item) => item.content || [])?.find((item) => item.type === "output_text")?.text ||
+    payload?.output_text ||
+    "{}";
+  const canonical = validateGeminiFlightJson(extractJsonObject(outputText));
+  const flight = geminiCanonicalToFlight(canonical);
+  flight.sourceAuthority = {
+    flightPrimary: "openai-vision"
+  };
+  flight.notes = String(flight.notes || "").replace("Gemini Vision Test result.", "OpenAI Vision fallback result.");
+  return {
+    model,
+    provider: "openai-vision",
+    canonical,
+    flight,
+    rawResponse: payload
+  };
+}
+
+function shouldFallbackToOpenAiFlight(error = {}) {
+  const message = String(error.message || "");
+  return /quota|rate limit|limit: 0|no longer available|not found|unsupported|high demand|overloaded|unavailable/i.test(message);
+}
+
+async function extractFlightWithAiVision(files = [], options = {}) {
+  const provider = String(process.env.AI_FLIGHT_PROVIDER || process.env.FLIGHT_VISION_PROVIDER || "auto").toLowerCase();
+  if (provider === "openai") return extractFlightWithOpenAiVision(files, options);
+  if (provider === "gemini") return extractFlightWithGeminiVision(files, options);
+
+  try {
+    return await extractFlightWithGeminiVision(files, options);
+  } catch (error) {
+    if (!process.env.OPENAI_API_KEY || !shouldFallbackToOpenAiFlight(error)) throw error;
+    console.warn(`GT63 FLIGHT VISION FALLBACK: Gemini failed (${sanitizeUniversalIntakeDetails(error.message)}). Trying OpenAI Vision.`);
+    const result = await extractFlightWithOpenAiVision(files, options);
+    result.fallbackFrom = "gemini";
+    result.fallbackReason = error.message;
+    return result;
+  }
 }
 
 const GEMINI_UNIVERSAL_TRAVEL_SCHEMA = {
@@ -9831,7 +9929,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
     const warnings = [];
     if (flightFiles.length) {
       try {
-        flightResult = await extractFlightWithGeminiVision(flightFiles, { destination });
+        flightResult = await extractFlightWithAiVision(flightFiles, { destination });
         offerFlight = flightResult.flight || {};
       } catch (error) {
         warnings.push(`Flight extraction failed: ${error.message}`);
@@ -10732,6 +10830,7 @@ module.exports = {
   universalIntakeError,
   buildSmartImportResponse,
   isTemporaryGeminiDemandError,
+  shouldFallbackToOpenAiFlight,
   uniqueGeminiModels,
   buildFlightOcrConfidence,
   archiveRegressionCaseSafe,
