@@ -8101,6 +8101,124 @@ function normalizeGeminiIata(value = "") {
   return match ? match[0] : "";
 }
 
+function firstVisionValue(...values) {
+  for (const value of values) {
+    if (value === 0) return value;
+    if (value === false) return value;
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return value;
+  }
+  return "";
+}
+
+function joinVisionDateTime(date = "", time = "") {
+  return [date, time].map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+}
+
+function normalizeVisionSegment(segment = {}) {
+  const departureDateTime = firstVisionValue(
+    segment.departure,
+    segment.departureDateTime,
+    segment.departure_datetime,
+    joinVisionDateTime(segment.departureDate, segment.departureTime),
+    joinVisionDateTime(segment.date, segment.departureTime)
+  );
+  const arrivalDateTime = firstVisionValue(
+    segment.arrival,
+    segment.arrivalDateTime,
+    segment.arrival_datetime,
+    joinVisionDateTime(segment.arrivalDate, segment.arrivalTime),
+    joinVisionDateTime(segment.date, segment.arrivalTime)
+  );
+  return {
+    from: firstVisionValue(
+      segment.from,
+      segment.departureAirport,
+      segment.departureAirportCode,
+      segment.departureIata,
+      segment.origin,
+      segment.originAirport,
+      segment.originAirportCode,
+      segment.originIata
+    ),
+    to: firstVisionValue(
+      segment.to,
+      segment.arrivalAirport,
+      segment.arrivalAirportCode,
+      segment.arrivalIata,
+      segment.destination,
+      segment.destinationAirport,
+      segment.destinationAirportCode,
+      segment.destinationIata
+    ),
+    departure: departureDateTime,
+    arrival: arrivalDateTime,
+    airline: firstVisionValue(segment.airline, segment.carrier, segment.marketingAirline),
+    flightNumber: firstVisionValue(segment.flightNumber, segment.flight_number, segment.flightNo, segment.number),
+    duration: firstVisionValue(segment.duration, segment.flightDuration),
+    transferBefore: firstVisionValue(segment.transferBefore, segment.layoverBefore, segment.connectionBefore)
+  };
+}
+
+function getVisionSegmentGroup(value = {}, groupName = "outbound") {
+  const group = value?.[groupName];
+  if (Array.isArray(group)) return { segments: group };
+  const directSegments = safeArray(group?.segments);
+  if (directSegments.length) return group;
+  const aliases = groupName === "outbound"
+    ? ["outboundSegments", "outbound_segments", "departureSegments", "departingSegments"]
+    : ["inboundSegments", "inbound_segments", "returnSegments", "return_segments"];
+  for (const alias of aliases) {
+    if (safeArray(value?.[alias]).length) return { ...(group || {}), segments: value[alias] };
+  }
+  return group || {};
+}
+
+function normalizeVisionFlightJson(value = {}) {
+  const source = value.flight || value.itinerary || value.trip || value;
+  const outbound = getVisionSegmentGroup(source, "outbound");
+  const inbound = getVisionSegmentGroup(source, "inbound");
+  return {
+    ...source,
+    outbound: {
+      ...outbound,
+      segments: safeArray(outbound?.segments).map(normalizeVisionSegment)
+    },
+    inbound: {
+      ...inbound,
+      segments: safeArray(inbound?.segments).map(normalizeVisionSegment)
+    },
+    price: firstVisionValue(source.price?.amount, source.totalPrice?.amount, source.total?.amount, source.price, source.totalPrice, source.total),
+    currency: firstVisionValue(source.price?.currency, source.totalPrice?.currency, source.currency),
+    baggage: firstVisionValue(source.baggage, source.baggageSummary),
+    passengers: firstVisionValue(source.passengers, source.travellers, source.travelers),
+    dates: safeArray(source.dates)
+  };
+}
+
+function parseVisionPrice(value = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  let cleaned = String(value ?? "")
+    .replace(/[^\d,.\-]/g, "")
+    .trim();
+  if (!cleaned) return 0;
+  const lastComma = cleaned.lastIndexOf(",");
+  const lastDot = cleaned.lastIndexOf(".");
+  if (lastComma !== -1 && lastDot !== -1) {
+    const decimal = lastComma > lastDot ? "," : ".";
+    const thousands = decimal === "," ? "." : ",";
+    cleaned = cleaned.replace(new RegExp(`\\${thousands}`, "g"), "");
+    if (decimal === ",") cleaned = cleaned.replace(",", ".");
+  } else if (lastComma !== -1) {
+    const decimals = cleaned.length - lastComma - 1;
+    cleaned = decimals > 0 && decimals <= 2
+      ? cleaned.replace(",", ".")
+      : cleaned.replace(/,/g, "");
+  }
+  return Number(cleaned) || 0;
+}
+
 function safeGeminiSegments(group = {}) {
   return safeArray(group?.segments).map((segment) => ({
     from: normalizeGeminiIata(segment.from),
@@ -8115,9 +8233,10 @@ function safeGeminiSegments(group = {}) {
 }
 
 function validateGeminiFlightJson(value = {}) {
+  value = normalizeVisionFlightJson(value);
   const outboundSegments = safeGeminiSegments(value.outbound);
   const inboundSegments = safeGeminiSegments(value.inbound);
-  const price = Number(String(value.price ?? 0).replace(/[^\d.,-]/g, "").replace(",", ".")) || 0;
+  const price = parseVisionPrice(value.price);
   const dates = safeArray(value.dates).map((item) => String(item || "").trim()).filter(Boolean);
   return {
     outbound: {
@@ -8385,8 +8504,11 @@ async function extractFlightWithOpenAiVision(files = [], { destination = "" } = 
     "Return JSON only. Do not add markdown. Do not guess invisible fields.",
     "Use IATA airport codes when visible. Use ISO-like YYYY-MM-DDTHH:MM when dates are visible enough; otherwise keep the visible text.",
     "Extract outbound and inbound segments, price, currency, baggage, passengers, and visible dates.",
+    "Do not extract hotel details. If no flight is visible, return the same schema with empty segment arrays.",
     "Return exactly these top-level keys: outbound, inbound, price, currency, baggage, passengers, dates.",
-    "Segment keys: from, to, departure, arrival, airline, flightNumber, duration.",
+    "Each outbound and inbound object must contain a segments array.",
+    "Segment keys must be exactly: from, to, departure, arrival, airline, flightNumber, duration.",
+    "Do not use keys like departureAirport, arrivalAirport, departureTime, arrivalTime, outboundSegments, or returnSegments.",
     destination ? `Expected destination context: ${destination}` : ""
   ].filter(Boolean).join("\n");
 
@@ -10823,6 +10945,8 @@ module.exports = {
   parseConnectingFlightCheckout,
   parseDirectRoundTripTicket,
   parseWizzCheckout,
+  normalizeVisionFlightJson,
+  parseVisionPrice,
   normalizeOffer,
   buildValidationWarnings,
   buildFlightDateSourceTrace,

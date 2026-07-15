@@ -34,9 +34,11 @@ const {
   mergeMultiImageFlightSegments,
   normalizeOffer,
   normalizeAirportAliases,
+  normalizeVisionFlightJson,
   findAirport,
   parseBookingLastminuteFlightModal,
   parseDirectRoundTripTicket,
+  parseVisionPrice,
   parseWizzCheckout,
   readRegressionCaseDetail,
   summarizeRegressionLibrary,
@@ -151,6 +153,36 @@ assert.deepStrictEqual(uniqueGeminiModels("gemini-1.5-flash", "gemini-2.5-flash"
 assert.equal(shouldFallbackToOpenAiFlight(new Error("Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash")), true, "Gemini quota limit should trigger OpenAI flight fallback");
 assert.equal(shouldFallbackToOpenAiFlight(new Error("This model models/gemini-2.5-flash is no longer available to new users.")), true, "Gemini unavailable model should trigger OpenAI flight fallback");
 assert.equal(shouldFallbackToOpenAiFlight(new Error("Uploaded image is empty")), false, "Image validation errors should not trigger provider fallback");
+const openAiFlightShape = normalizeVisionFlightJson({
+  outboundSegments: [{
+    departureAirport: "SOF",
+    arrivalAirport: "IST",
+    departureDate: "28 March",
+    departureTime: "15:50",
+    arrivalDate: "28 March",
+    arrivalTime: "17:20",
+    flight_number: "TK 1032",
+    carrier: "Turkish Airlines"
+  }],
+  returnSegments: [{
+    originAirportCode: "SCL",
+    destinationAirportCode: "IST",
+    departure_datetime: "8 April 11:15",
+    arrival_datetime: "9 April 11:15",
+    flightNo: "TK 216",
+    airline: "Turkish Airlines"
+  }],
+  totalPrice: { amount: "3,474.94", currency: "EUR" },
+  baggageSummary: "2 checked bags"
+});
+assert.equal(openAiFlightShape.outbound.segments[0].from, "SOF", "OpenAI segment aliases should normalize departure airport to from");
+assert.equal(openAiFlightShape.outbound.segments[0].to, "IST", "OpenAI segment aliases should normalize arrival airport to to");
+assert.equal(openAiFlightShape.outbound.segments[0].flightNumber, "TK 1032", "OpenAI flight number aliases should normalize");
+assert.equal(openAiFlightShape.inbound.segments[0].from, "SCL", "OpenAI return segment aliases should normalize to inbound segments");
+assert.equal(openAiFlightShape.price, "3,474.94", "OpenAI price alias should normalize before validation");
+assert.equal(openAiFlightShape.currency, "EUR", "OpenAI currency alias should normalize");
+assert.equal(parseVisionPrice("3,474.94"), 3474.94, "OpenAI flight price parser should support comma thousands and dot decimals");
+assert.equal(parseVisionPrice("3.474,94 EUR"), 3474.94, "OpenAI flight price parser should support dot thousands and comma decimals");
 
 const smartImportContract = buildSmartImportResponse({
   intakeId: "SMART-contract-test",
