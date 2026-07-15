@@ -79,3 +79,48 @@ Source priority draft:
 
 GT63 rule:
 USE THE STRONGEST SCREENSHOT SOURCE PER FIELD.
+
+## Future Idea - Roamy Stay Program Engine
+
+Status:
+PARKED
+
+Reason:
+GT63 offers can become more valuable if they include a day-by-day stay program in the Roamy style: hidden gems, local discoveries, quieter premium experiences, and less obvious places worth visiting.
+
+Do not implement inside the GT63 extraction or offer engine yet.
+
+Future architecture:
+
+- GT63 Product Model
+- Roamy Adapter
+- Roamy Stay Program Engine
+- Stay Program JSON
+- GT63 Proposal Renderer
+
+Input draft:
+
+- destination
+- travel dates
+- nights
+- travelers
+- hotel area
+- travel style
+
+Output draft:
+
+- title
+- day-by-day plan
+- hidden gems
+- local food / culture / walk ideas
+- practical notes
+
+Do not implement until:
+
+- current GT63 Core corrections are stable
+- editable review fields are reliable
+- client proposals consistently render flight and hotel data cleanly
+- Roamy can be tested with fixtures before live generation
+
+GT63 rule:
+CUSTOMER VALUE FIRST, BUT DO NOT MERGE PRODUCT ENGINES TOO EARLY.

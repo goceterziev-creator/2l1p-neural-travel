@@ -106,7 +106,10 @@
   }
 
   function extractTime(value) {
-    const match = clean(value).match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+    const text = clean(value);
+    const iso = text.match(/T(\d{2}):(\d{2})/);
+    if (iso) return `${iso[1]}:${iso[2]}`;
+    const match = text.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
     return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
   }
 
@@ -120,6 +123,22 @@
       return `${Number(iso[3])} ${monthsBg[Number(iso[2]) - 1]} ${iso[1]}`;
     }
 
+    const numeric = text.match(/\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?(?=$|[T\s,.;])/);
+    if (numeric) {
+      const monthsBg = [
+        MONTHS.january, MONTHS.february, MONTHS.march, MONTHS.april, MONTHS.may, MONTHS.june,
+        MONTHS.july, MONTHS.august, MONTHS.september, MONTHS.october, MONTHS.november, MONTHS.december
+      ];
+      let day = Number(numeric[1]);
+      let month = Number(numeric[2]);
+      if (day <= 12 && month > 12) {
+        day = Number(numeric[2]);
+        month = Number(numeric[1]);
+      }
+      if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+        return [day, monthsBg[month - 1], numeric[3]].filter(Boolean).join(" ");
+      }
+    }
     const monthName = text.match(/\b(\d{1,2})\s+([A-Za-z]+)(?:\s+(\d{4}))?/);
     if (monthName) {
       const month = MONTHS[monthName[2].toLowerCase()];

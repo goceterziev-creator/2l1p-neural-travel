@@ -95,7 +95,7 @@ function normalizeTravelDate(value = "", options = {}) {
     return result;
   }
 
-  match = raw.match(/\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\b/);
+  match = raw.match(/\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?(?=$|[T\s,.;])/);
   if (match) {
     let day = match[1];
     let month = match[2];

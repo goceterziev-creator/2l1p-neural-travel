@@ -11,6 +11,7 @@ const {
 const {
   renderClientFlightItineraryBg
 } = require("../server/renderers/flight-display-bg");
+const coreFlightDisplayBg = require("../gt63-core/flight-display-bg");
 
 ["SOF", "PMO", "JFK", "ZRH", "VIE", "MLE", "HND", "NRT", "PTY", "SCL", "MUC", "KIX", "ITM"].forEach((code) => {
   const airport = resolveAirport(code);
@@ -56,6 +57,9 @@ assert.strictEqual(formatDateBg("16 July"), "16 юли");
 
 assert.strictEqual(formatDateBg("15 September 2026"), "15 септември 2026 г.");
 
+const partialIsoLikeDate = formatDateBg("09-08T16:40");
+assert.ok(partialIsoLikeDate.includes("9"), "partial ISO-like Gemini dates should keep the day");
+assert.ok(!partialIsoLikeDate.includes("09-08T"), "partial ISO-like Gemini dates should not render raw technical text");
 const manual = normalizeTravelDate("16 July", { reviewedYear: 2026 });
 assert.strictEqual(manual.year, 2026);
 assert.strictEqual(manual.reviewed, true);
@@ -280,4 +284,47 @@ assert.ok(tokyoRendered.includes("Летище Осака Итами"), "client 
 assert.ok(!tokyoRendered.includes("SOF → MUC"), "client renderer should not show raw MUC route row");
 assert.ok(!tokyoRendered.includes("ITM → HND"), "client renderer should not show raw ITM route row");
 
+const romeLikeRendered = renderClientFlightItineraryBg({
+  outboundSegments: [
+    {
+      airline: "Wizz Air",
+      flightNumber: "W6 4315",
+      from: "SOF",
+      to: "FCO",
+      departure: "09-08T16:40",
+      arrival: "09-08T17:25",
+      duration: "1h 45min"
+    }
+  ],
+  inboundSegments: [
+    {
+      airline: "Wizz Air",
+      flightNumber: "W6 4316",
+      from: "FCO",
+      to: "SOF",
+      departure: "11-08T18:10",
+      arrival: "11-08T20:55",
+      duration: "1h 45min"
+    }
+  ]
+});
+
+assert.ok(romeLikeRendered.includes("16:40"), "client renderer should keep departure time for partial ISO-like dates");
+assert.ok(romeLikeRendered.includes("17:25"), "client renderer should keep arrival time for partial ISO-like dates");
+assert.ok(!romeLikeRendered.includes("09-08T"), "client renderer must not expose raw partial ISO-like dates");
+assert.ok(!romeLikeRendered.includes("11-08T"), "client renderer must not expose raw inbound partial ISO-like dates");
+
+const coreRomeSegment = coreFlightDisplayBg.segmentView({
+  airline: "Wizz Air",
+  flightNumber: "W6 4315",
+  from: "SOF",
+  to: "FCO",
+  departure: "09-08T16:40",
+  arrival: "09-08T17:25",
+  duration: "1h 45min"
+});
+assert.ok(coreRomeSegment.date.includes("9"), "GT63 Core renderer should keep the day for partial ISO-like dates");
+assert.ok(!coreRomeSegment.date.includes("09-08T"), "GT63 Core renderer should not show raw partial ISO-like date text");
+assert.ok(coreRomeSegment.time.includes("16:40"), "GT63 Core renderer should keep departure time for partial ISO-like dates");
+assert.ok(coreRomeSegment.time.includes("17:25"), "GT63 Core renderer should keep arrival time for partial ISO-like dates");
 console.log("V10 Bulgarian flight display regression PASS");
