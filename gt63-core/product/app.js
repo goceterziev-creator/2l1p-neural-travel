@@ -35,6 +35,8 @@ const nodes = {
   flightReview: document.getElementById("flightReview"),
   hotelReview: document.getElementById("hotelReview"),
   applyReviewButton: document.getElementById("applyReviewButton"),
+  editAgainButton: document.getElementById("editAgainButton"),
+  resetReviewButton: document.getElementById("resetReviewButton"),
   addHotelOptionButton: document.getElementById("addHotelOptionButton"),
   reviewState: document.getElementById("reviewState"),
   warningsReview: document.getElementById("warningsReview"),
@@ -325,12 +327,15 @@ function renderGate(model) {
 
 function renderReviewState() {
   if (!nodes.reviewState) return;
-  nodes.reviewState.textContent = reviewDraft?.status === "approved"
+  const approved = reviewDraft?.status === "approved";
+  const loaded = Boolean(originalModel());
+  nodes.reviewState.className = `review-state ${approved ? "approved" : loaded ? "draft" : "muted"}`;
+  nodes.reviewState.textContent = approved
     ? hasManualEdits()
-      ? "Approved model created. Preview and Create Offer use operator corrections."
-      : "Approved model created. Preview and Create Offer use the reviewed model."
-    : originalModel()
-      ? "Review draft created. Original extraction is preserved."
+      ? "Approved with manual edits. Preview and Create Offer use operator corrections."
+      : "Approved. Preview and Create Offer use the reviewed model."
+    : loaded
+      ? "Draft review active. Original extraction is preserved until you approve changes."
       : "Load data to create a review draft.";
 }
 
@@ -348,6 +353,8 @@ function renderReviewedModel(model) {
     ? `Ready to create a draft offer in 2L1P. Base: ${money(totalBasePrice(model))}. With margin ${marginPercent()}%: ${money(finalPrice(model))}.`
     : "Create Offer is available after readiness is READY.";
   nodes.applyReviewButton.disabled = !originalModel();
+  nodes.editAgainButton.disabled = !reviewDraft?.approvedModel;
+  nodes.resetReviewButton.disabled = !originalModel();
   nodes.addHotelOptionButton.disabled = !reviewedModel();
   renderReviewState();
 }
@@ -435,6 +442,37 @@ function applyReviewChanges() {
       status: "approved"
     };
   currentModel = activeProductModel();
+  renderReviewedModel(currentModel);
+}
+
+function editApprovedModelAgain() {
+  if (!reviewDraft?.approvedModel) return;
+  reviewDraft = reviewDraftApi?.updateReviewedModel
+    ? reviewDraftApi.updateReviewedModel(reviewDraft, reviewDraft.approvedModel)
+    : {
+      originalModel: originalModel(),
+      reviewedModel: deepClone(reviewDraft.approvedModel),
+      approvedModel: null,
+      hasManualEdits: JSON.stringify(reviewDraft.approvedModel) !== JSON.stringify(originalModel()),
+      status: "draft"
+    };
+  currentModel = reviewedModel();
+  renderReviewedModel(currentModel);
+}
+
+function resetReviewToExtracted() {
+  const extracted = originalModel();
+  if (!extracted) return;
+  reviewDraft = reviewDraftApi?.createReviewDraft
+    ? reviewDraftApi.createReviewDraft(extracted)
+    : {
+      originalModel: deepClone(extracted),
+      reviewedModel: deepClone(extracted),
+      approvedModel: null,
+      hasManualEdits: false,
+      status: "draft"
+    };
+  currentModel = reviewedModel();
   renderReviewedModel(currentModel);
 }
 
@@ -598,6 +636,8 @@ nodes.marginPercent.addEventListener("input", () => {
   nodes.guests
 ].forEach((node) => node.addEventListener("input", () => renderMission()));
 nodes.applyReviewButton.addEventListener("click", applyReviewChanges);
+nodes.editAgainButton.addEventListener("click", editApprovedModelAgain);
+nodes.resetReviewButton.addEventListener("click", resetReviewToExtracted);
 nodes.addHotelOptionButton.addEventListener("click", addHotelOption);
 renderMission();
 syncProviderMode();

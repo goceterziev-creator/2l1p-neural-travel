@@ -113,4 +113,18 @@ assert.equal(offerPayload.flightPrice, 1520, "Offer Engine should receive approv
 assert.equal(offerPayload.flightBaggage, "1 checked bag included", "Offer Engine should receive approved baggage");
 assert.equal(offerPayload.hotelPrice, 11800, "Offer Engine should receive approved hotel price");
 
+const editAgainDraft = updateReviewedModel(approvedDraft, approvedDraft.approvedModel);
+assertReviewDraft(editAgainDraft);
+assert.equal(editAgainDraft.status, "draft", "editing an approved model should return to draft review");
+assert.equal(editAgainDraft.approvedModel, null, "editing again should clear the previously approved model");
+assert.equal(editAgainDraft.reviewedModel.flight.price, 1520, "editing again should start from the last approved correction");
+assert.equal(editAgainDraft.originalModel.flight.price, 1475, "editing again must still preserve the original extraction");
+
+const resetDraft = createReviewDraft(editAgainDraft.originalModel);
+assertReviewDraft(resetDraft);
+assert.equal(resetDraft.status, "draft", "reset should return to draft state");
+assert.equal(resetDraft.hasManualEdits, false, "reset should clear manual edit marker");
+assert.equal(resetDraft.reviewedModel.flight.price, 1475, "reset should restore extracted flight price");
+assert.equal(resetDraft.reviewedModel.hotelOptions[0].price, 11200, "reset should restore extracted hotel price");
+
 console.log("GT63 REVIEW DRAFT REGRESSION PASS");

@@ -122,7 +122,9 @@ async function main() {
   assert.match(indexHtml, /Mission Card/, "product shell should expose the operator mission card");
   assert.match(indexHtml, /missionClient/, "product shell should expose mission client state");
   assert.match(indexHtml, /missionAction/, "product shell should expose mission next action state");
-  assert.match(indexHtml, /Apply Review Changes/, "product shell should expose review apply action");
+  assert.match(indexHtml, /Approve Review Changes/, "product shell should expose review approval action");
+  assert.match(indexHtml, /Edit Again/, "product shell should expose approved draft edit action");
+  assert.match(indexHtml, /Reset to Extracted/, "product shell should expose reset-to-extracted action");
   assert.match(indexHtml, /Continue to Preview/, "product shell should expose the preview action");
   assert.match(indexHtml, /Proposal Preview/, "product shell should expose preview area");
   assert.match(indexHtml, /Create Offer in 2L1P/, "product shell should expose Create Offer action");
@@ -142,6 +144,8 @@ async function main() {
   assert.match(appJs, /missionDestination/, "product shell app should keep mission destination safe");
   assert.match(appJs, /data-review-path/, "product shell app should render editable review fields");
   assert.match(appJs, /applyReviewChanges/, "product shell app should apply operator corrections");
+  assert.match(appJs, /editApprovedModelAgain/, "product shell app should allow editing approved models again");
+  assert.match(appJs, /resetReviewToExtracted/, "product shell app should allow resetting review draft to extracted data");
   assert.match(appJs, /renderLuxuryProposal/, "product shell app should render Luxury V11 preview");
   assert.match(appJs, /fetch\("\/api\/offers"/, "product shell app should create offers through existing Offer Engine API");
   assert.match(appJs, /\/gt63-core\/fixtures\/smart-import\//, "product shell app should support hosted fixture URLs");
