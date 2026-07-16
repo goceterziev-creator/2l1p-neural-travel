@@ -118,6 +118,8 @@ async function main() {
   assert.match(indexHtml, /Start Smart Import/, "product shell should expose the start action");
   assert.match(indexHtml, /Client Phone/, "product shell should expose client phone control");
   assert.match(indexHtml, /Margin %/, "product shell should expose margin control");
+  assert.match(indexHtml, /Client Price Breakdown/, "product shell should expose client price breakdown");
+  assert.match(indexHtml, /pricingFinal/, "product shell should expose final price state");
   assert.match(indexHtml, /Guests/, "product shell should expose guests control");
   assert.match(indexHtml, /Mission Card/, "product shell should expose the operator mission card");
   assert.match(indexHtml, /missionClient/, "product shell should expose mission client state");
@@ -136,6 +138,8 @@ async function main() {
   assert.match(appJs, /buildOfferPayloadFromProductModel/, "product shell app should use Offer Engine adapter");
   assert.match(appJs, /GT63FlightDisplayBg/, "product shell app should use Bulgarian flight display adapter");
   assert.match(appJs, /marginPercent/, "product shell app should use margin percent context");
+  assert.match(appJs, /marginAmount/, "product shell app should calculate margin amount for operator display");
+  assert.match(appJs, /renderPricing/, "product shell app should render pricing breakdown");
   assert.match(appJs, /clientPhone/, "product shell app should pass client phone context");
   assert.match(appJs, /isPhoneLike/, "product shell app should guard against phone-like destination values");
   assert.match(appJs, /originalModel/, "product shell app should preserve original extracted model");
@@ -172,7 +176,7 @@ async function main() {
   assert.match(flightDisplayJs, /renderSegmentHtml/, "Bulgarian flight display should render segment HTML");
   assert.match(luxuryRendererJs, /GT63FlightDisplayBg/, "luxury preview should use Bulgarian flight display when available");
 
-  assert.match(stylesCss, /mission-card|v11-proposal|v11-hero|preview-shell|gate-message/s, "product shell styles should cover the V11 product workflow");
+  assert.match(stylesCss, /mission-card|pricing-card|pricing-grid|v11-proposal|v11-hero|preview-shell|gate-message/s, "product shell styles should cover the V11 product workflow");
   assert.match(stylesCss, /inline-action|inline-danger|review-subsection-heading/s, "product shell styles should cover structural review controls");
 
   console.log("GT63 CORE E2E SMOKE PASS");

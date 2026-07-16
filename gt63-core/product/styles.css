@@ -212,6 +212,57 @@ h3 {
   color: var(--warning);
 }
 
+.pricing-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.pricing-card-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+}
+
+.pricing-card-heading h2 {
+  margin-bottom: 0;
+}
+
+.pricing-card-heading > strong {
+  color: #fff;
+  font-size: clamp(24px, 4vw, 38px);
+  letter-spacing: -0.03em;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pricing-grid > div {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.pricing-grid span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.pricing-grid strong {
+  color: var(--text);
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.24fr) minmax(300px, 0.76fr);
@@ -982,6 +1033,7 @@ ul {
   .workspace-grid,
   .review-grid,
   .signal-grid,
+  .pricing-grid,
   .preview-grid,
   .v11-hero,
   .v11-content-grid,

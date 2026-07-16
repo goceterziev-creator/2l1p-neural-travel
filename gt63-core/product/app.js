@@ -27,6 +27,11 @@ const nodes = {
   missionStatus: document.getElementById("missionStatus"),
   missionValue: document.getElementById("missionValue"),
   missionAction: document.getElementById("missionAction"),
+  pricingFinal: document.getElementById("pricingFinal"),
+  pricingFlight: document.getElementById("pricingFlight"),
+  pricingHotel: document.getElementById("pricingHotel"),
+  pricingBase: document.getElementById("pricingBase"),
+  pricingMargin: document.getElementById("pricingMargin"),
   readinessBadge: document.getElementById("readinessBadge"),
   gateMessage: document.getElementById("gateMessage"),
   continueButton: document.getElementById("continueButton"),
@@ -130,6 +135,26 @@ function finalPrice(model) {
   const base = totalBasePrice(model);
   if (!Number.isFinite(base) || base <= 0) return 0;
   return base * (1 + marginPercent() / 100);
+}
+
+function marginAmount(model) {
+  const base = totalBasePrice(model);
+  if (!Number.isFinite(base) || base <= 0) return 0;
+  return base * (marginPercent() / 100);
+}
+
+function renderPricing(model = currentModel) {
+  const flightPrice = Number(model?.flight?.price || 0);
+  const hotelPrice = Number(selectedHotel(model)?.price || 0);
+  const base = totalBasePrice(model);
+  const margin = marginAmount(model);
+  const final = finalPrice(model);
+
+  nodes.pricingFlight.textContent = money(flightPrice);
+  nodes.pricingHotel.textContent = money(hotelPrice);
+  nodes.pricingBase.textContent = money(base);
+  nodes.pricingMargin.textContent = margin > 0 ? `${money(margin)} (${marginPercent()}%)` : `0 EUR (${marginPercent()}%)`;
+  nodes.pricingFinal.textContent = money(final);
 }
 
 function missionDestination(model) {
@@ -310,6 +335,7 @@ function renderMission(model = currentModel) {
       : hasBlockingIssues
         ? "Resolve blocking issues"
         : "Review extracted data";
+  renderPricing(model);
 }
 
 function renderPreview(model) {
