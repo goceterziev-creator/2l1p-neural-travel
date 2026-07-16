@@ -169,12 +169,18 @@ function segmentTitle(segment) {
   return [segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Flight segment";
 }
 
-function segmentHtml(segment, pathPrefix = "") {
+function segmentHtml(segment, pathPrefix = "", direction = "", index = 0) {
+  const removeButton = direction
+    ? `<button class="inline-danger" type="button" data-review-action="remove-segment" data-segment-direction="${escapeHtml(direction)}" data-segment-index="${escapeHtml(index)}">Remove segment</button>`
+    : "";
   if (flightDisplayBg?.renderSegmentHtml) {
     const view = flightDisplayBg.segmentView ? flightDisplayBg.segmentView(segment) : null;
     return `
       <div class="segment editable-segment">
-        <div class="segment-title">${escapeHtml(view?.title || segmentTitle(segment))}</div>
+        <div class="segment-header">
+          <div class="segment-title">${escapeHtml(view?.title || segmentTitle(segment))}</div>
+          ${removeButton}
+        </div>
         <div class="editable-grid">
           ${editInput(`${pathPrefix}.airline`, segment.airline, "Airline")}
           ${editInput(`${pathPrefix}.flightNumber`, segment.flightNumber, "Flight no.")}
@@ -190,7 +196,10 @@ function segmentHtml(segment, pathPrefix = "") {
   }
   return `
     <div class="segment">
-      <div class="segment-title">${escapeHtml(segmentTitle(segment))}</div>
+      <div class="segment-header">
+        <div class="segment-title">${escapeHtml(segmentTitle(segment))}</div>
+        ${removeButton}
+      </div>
       <div>${escapeHtml(valueOrFallback(segment.from))} &rarr; ${escapeHtml(valueOrFallback(segment.to))}</div>
       <div>${escapeHtml(valueOrFallback(segment.departure))} &rarr; ${escapeHtml(valueOrFallback(segment.arrival))}</div>
       <div class="muted">Duration: ${escapeHtml(valueOrFallback(segment.duration))}</div>
@@ -219,21 +228,30 @@ function renderFlight(flight) {
       <div class="summary-row editable-summary">${editInput("flight.price", flight.price, "Price", "number")}</div>
       <div class="summary-row editable-summary">${editTextarea("flight.notes", flight.notes, "Notes")}</div>
     </div>
-    <h3>Outbound segments</h3>
-    ${outboundSegments.length ? outboundSegments.map((segment, index) => segmentHtml(segment, `flight.outboundSegments.${index}`)).join("") : "<p>No outbound segments</p>"}
-    <h3>Inbound segments</h3>
-    ${inboundSegments.length ? inboundSegments.map((segment, index) => segmentHtml(segment, `flight.inboundSegments.${index}`)).join("") : "<p>No inbound segments</p>"}
+    <div class="review-subsection-heading">
+      <h3>Outbound segments</h3>
+      <button class="inline-action" type="button" data-review-action="add-segment" data-segment-direction="outbound">Add outbound segment</button>
+    </div>
+    ${outboundSegments.length ? outboundSegments.map((segment, index) => segmentHtml(segment, `flight.outboundSegments.${index}`, "outbound", index)).join("") : "<p>No outbound segments</p>"}
+    <div class="review-subsection-heading">
+      <h3>Inbound segments</h3>
+      <button class="inline-action" type="button" data-review-action="add-segment" data-segment-direction="inbound">Add inbound segment</button>
+    </div>
+    ${inboundSegments.length ? inboundSegments.map((segment, index) => segmentHtml(segment, `flight.inboundSegments.${index}`, "inbound", index)).join("") : "<p>No inbound segments</p>"}
   `;
 }
 
-function renderHotelOption(hotel, index, selected) {
+function renderHotelOption(hotel, index, selected, removable) {
   const imageUrl = Array.isArray(hotel.imageUrls) && hotel.imageUrls.length ? hotel.imageUrls[0] : "";
   return `
     <article class="hotel-option-card ${selected ? "selected" : ""}">
-      <label class="hotel-option-selector">
-        <input type="radio" name="selectedHotelOption" value="${index}" ${selected ? "checked" : ""}>
-        <span>${selected ? "Selected hotel" : `Hotel option ${index + 1}`}</span>
-      </label>
+      <div class="hotel-option-header">
+        <label class="hotel-option-selector">
+          <input type="radio" name="selectedHotelOption" value="${index}" ${selected ? "checked" : ""}>
+          <span>${selected ? "Selected hotel" : `Hotel option ${index + 1}`}</span>
+        </label>
+        ${removable ? `<button class="inline-danger" type="button" data-review-action="remove-hotel-option" data-hotel-index="${escapeHtml(index)}">Remove hotel</button>` : ""}
+      </div>
       ${imageUrl ? `<img class="hotel-image" src="${escapeHtml(imageUrl)}" alt="">` : ""}
       <div class="summary">
         <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.name`, hotel.name, "Name")}</div>
@@ -258,7 +276,7 @@ function renderHotels(model) {
 
   const selectedIndex = Math.max(0, options.findIndex((hotel) => hotel?.selected));
   nodes.hotelReview.innerHTML = options
-    .map((hotel, index) => renderHotelOption(hotel, index, index === selectedIndex))
+    .map((hotel, index) => renderHotelOption(hotel, index, index === selectedIndex, options.length > 1))
     .join("");
 }
 
@@ -416,7 +434,7 @@ function setPath(target, path, value) {
   cursor[parts[parts.length - 1]] = value;
 }
 
-function applyReviewChanges() {
+function draftFromReviewFields() {
   if (!reviewedModel()) return;
   const draft = deepClone(reviewedModel());
   document.querySelectorAll("[data-review-path]").forEach((field) => {
@@ -432,6 +450,26 @@ function applyReviewChanges() {
     }));
     draft.hotel = draft.hotelOptions[selectedIndex] || draft.hotelOptions[0] || null;
   }
+  return draft;
+}
+
+function saveDraftModel(draft) {
+  reviewDraft = reviewDraftApi?.updateReviewedModel
+    ? reviewDraftApi.updateReviewedModel(reviewDraft, draft)
+    : {
+      originalModel: originalModel(),
+      reviewedModel: draft,
+      approvedModel: null,
+      hasManualEdits: JSON.stringify(draft) !== JSON.stringify(originalModel()),
+      status: "draft"
+    };
+  currentModel = reviewedModel();
+  renderReviewedModel(currentModel);
+}
+
+function applyReviewChanges() {
+  const draft = draftFromReviewFields();
+  if (!draft) return;
   reviewDraft = reviewDraftApi?.approveReviewedModel
     ? reviewDraftApi.approveReviewedModel(reviewDraft, draft)
     : {
@@ -477,8 +515,8 @@ function resetReviewToExtracted() {
 }
 
 function addHotelOption() {
-  if (!reviewedModel()) return;
-  const draft = deepClone(reviewedModel());
+  const draft = draftFromReviewFields();
+  if (!draft) return;
   const base = selectedHotel(draft) || {};
   const options = hotelOptions(draft);
   draft.hotelOptions = [
@@ -491,17 +529,71 @@ function addHotelOption() {
     }
   ];
   draft.hotel = selectedHotel(draft);
-  reviewDraft = reviewDraftApi?.updateReviewedModel
-    ? reviewDraftApi.updateReviewedModel(reviewDraft, draft)
-    : {
-      originalModel: originalModel(),
-      reviewedModel: draft,
-      approvedModel: null,
-      hasManualEdits: true,
-      status: "draft"
-    };
-  currentModel = reviewedModel();
-  renderReviewedModel(currentModel);
+  saveDraftModel(draft);
+}
+
+function removeHotelOption(index) {
+  const draft = draftFromReviewFields();
+  if (!draft) return;
+  const options = hotelOptions(draft);
+  if (options.length <= 1) return;
+  const nextOptions = options.filter((_, optionIndex) => optionIndex !== index);
+  const hasSelected = nextOptions.some((hotel) => hotel?.selected);
+  draft.hotelOptions = nextOptions.map((hotel, optionIndex) => ({
+    ...hotel,
+    selected: hasSelected ? hotel.selected === true : optionIndex === 0
+  }));
+  draft.hotel = selectedHotel(draft);
+  saveDraftModel(draft);
+}
+
+function emptySegment(seed = {}) {
+  return {
+    airline: seed.airline || reviewedModel()?.flight?.airline || "",
+    flightNumber: "",
+    from: seed.to || "",
+    to: "",
+    departure: "",
+    arrival: "",
+    duration: ""
+  };
+}
+
+function segmentListKey(direction) {
+  return direction === "inbound" ? "inboundSegments" : "outboundSegments";
+}
+
+function addFlightSegment(direction) {
+  const draft = draftFromReviewFields();
+  if (!draft?.flight) return;
+  const key = segmentListKey(direction);
+  const segments = Array.isArray(draft.flight[key]) ? draft.flight[key] : [];
+  draft.flight[key] = [...segments, emptySegment(segments[segments.length - 1])];
+  saveDraftModel(draft);
+}
+
+function removeFlightSegment(direction, index) {
+  const draft = draftFromReviewFields();
+  if (!draft?.flight) return;
+  const key = segmentListKey(direction);
+  const segments = Array.isArray(draft.flight[key]) ? draft.flight[key] : [];
+  draft.flight[key] = segments.filter((_, segmentIndex) => segmentIndex !== index);
+  saveDraftModel(draft);
+}
+
+function handleReviewAction(event) {
+  const button = event.target.closest("[data-review-action]");
+  if (!button) return;
+  const action = button.getAttribute("data-review-action");
+  if (action === "add-segment") {
+    addFlightSegment(button.getAttribute("data-segment-direction"));
+  }
+  if (action === "remove-segment") {
+    removeFlightSegment(button.getAttribute("data-segment-direction"), Number(button.getAttribute("data-segment-index")));
+  }
+  if (action === "remove-hotel-option") {
+    removeHotelOption(Number(button.getAttribute("data-hotel-index")));
+  }
 }
 
 function selectedFixtureUrl() {
@@ -639,5 +731,6 @@ nodes.applyReviewButton.addEventListener("click", applyReviewChanges);
 nodes.editAgainButton.addEventListener("click", editApprovedModelAgain);
 nodes.resetReviewButton.addEventListener("click", resetReviewToExtracted);
 nodes.addHotelOptionButton.addEventListener("click", addHotelOption);
+document.addEventListener("click", handleReviewAction);
 renderMission();
 syncProviderMode();

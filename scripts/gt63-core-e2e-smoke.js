@@ -146,6 +146,10 @@ async function main() {
   assert.match(appJs, /applyReviewChanges/, "product shell app should apply operator corrections");
   assert.match(appJs, /editApprovedModelAgain/, "product shell app should allow editing approved models again");
   assert.match(appJs, /resetReviewToExtracted/, "product shell app should allow resetting review draft to extracted data");
+  assert.match(appJs, /addFlightSegment/, "product shell app should allow adding flight segments");
+  assert.match(appJs, /removeFlightSegment/, "product shell app should allow removing flight segments");
+  assert.match(appJs, /removeHotelOption/, "product shell app should allow removing hotel options");
+  assert.match(appJs, /draftFromReviewFields/, "product shell app should preserve current review edits before structural changes");
   assert.match(appJs, /renderLuxuryProposal/, "product shell app should render Luxury V11 preview");
   assert.match(appJs, /fetch\("\/api\/offers"/, "product shell app should create offers through existing Offer Engine API");
   assert.match(appJs, /\/gt63-core\/fixtures\/smart-import\//, "product shell app should support hosted fixture URLs");
@@ -169,6 +173,7 @@ async function main() {
   assert.match(luxuryRendererJs, /GT63FlightDisplayBg/, "luxury preview should use Bulgarian flight display when available");
 
   assert.match(stylesCss, /mission-card|v11-proposal|v11-hero|preview-shell|gate-message/s, "product shell styles should cover the V11 product workflow");
+  assert.match(stylesCss, /inline-action|inline-danger|review-subsection-heading/s, "product shell styles should cover structural review controls");
 
   console.log("GT63 CORE E2E SMOKE PASS");
 }

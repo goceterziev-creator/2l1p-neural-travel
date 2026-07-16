@@ -488,6 +488,23 @@ button:focus-visible {
   gap: 10px;
 }
 
+.review-subsection-heading,
+.segment-header,
+.hotel-option-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.review-subsection-heading {
+  margin-top: 18px;
+}
+
+.review-subsection-heading h3 {
+  margin-bottom: 0;
+}
+
 .segment-preview {
   color: var(--muted);
   font-size: 12px;
@@ -584,6 +601,31 @@ button:focus-visible {
   margin-bottom: 12px;
   color: #dbeafe;
   font-weight: 800;
+}
+
+.hotel-option-header .hotel-option-selector {
+  margin-bottom: 0;
+}
+
+.inline-action,
+.inline-danger {
+  min-height: 32px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.inline-action {
+  border-color: rgba(6, 182, 212, 0.28);
+  background: rgba(6, 182, 212, 0.08);
+  color: #a5f3fc;
+}
+
+.inline-danger {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
 }
 
 .preview-shell {
