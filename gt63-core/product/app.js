@@ -5,7 +5,7 @@ const reviewDraftApi = window.GT63ReviewDraft;
 const flightDisplayBg = window.GT63FlightDisplayBg;
 const offerEngineAdapter = window.GT63OfferEngineAdapter;
 const proposalInputAdapter = window.GT63ProposalInputAdapter;
-const luxuryRenderer = window.GT63LuxuryV11Renderer;
+const proposalRendererRegistry = window.GT63ProposalRendererRegistry;
 const templateResolver = window.GT63ProposalTemplateResolver;
 
 const nodes = {
@@ -556,15 +556,15 @@ function renderPreview(model) {
     return;
   }
 
-  if (!proposalInputAdapter?.buildProposalInputFromProductModel || !luxuryRenderer?.renderLuxuryProposal) {
+  if (!proposalInputAdapter?.buildProposalInputFromProductModel || !proposalRendererRegistry?.renderProposal) {
     nodes.previewArea.className = "disabled-preview";
-    nodes.previewArea.textContent = "V11 proposal renderer unavailable.";
+    nodes.previewArea.textContent = "Proposal renderer registry unavailable.";
     return;
   }
 
   nodes.previewArea.className = "preview-shell";
   const proposalInput = proposalInputAdapter.buildProposalInputFromProductModel(model, proposalContext());
-  nodes.previewArea.innerHTML = luxuryRenderer.renderLuxuryProposal(proposalInput);
+  nodes.previewArea.innerHTML = proposalRendererRegistry.renderProposal(proposalInput);
 }
 
 function renderGate(model) {

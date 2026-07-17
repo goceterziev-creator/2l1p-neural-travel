@@ -24,6 +24,7 @@
     "mode",
     "pricing",
     "proposalInputVersion",
+    "proposalTemplate",
     "readiness",
     "source",
     "warnings"
@@ -178,6 +179,20 @@
     };
   }
 
+  function buildProposalTemplate(model) {
+    const template = asObject(model.proposalTemplate);
+    const selected = nullableText(template.selected) || nullableText(template.recommended) || "cathedral";
+    const recommended = nullableText(template.recommended) || selected;
+    const source = nullableText(template.source) || (selected === recommended ? "resolver" : "agent_override");
+
+    return {
+      recommended,
+      selected,
+      source,
+      reason: nullableText(template.reason)
+    };
+  }
+
   function assertProposalInput(input) {
     const keys = Object.keys(input || {}).sort();
     if (JSON.stringify(keys) !== JSON.stringify(PROPOSAL_INPUT_KEYS)) {
@@ -230,6 +245,7 @@
       hotel,
       hotelOptions,
       pricing: totalPrice(productModel.flight, activeHotel, safeContext),
+      proposalTemplate: buildProposalTemplate(productModel),
       content: buildContent(productModel, safeContext),
       source: {
         generatedFrom: "GT63_CORE_PRODUCT_MODEL",

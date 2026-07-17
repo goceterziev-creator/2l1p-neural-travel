@@ -86,6 +86,12 @@
     "marginAmount": 633.75,
     "totalAmount": 13308.75
   },
+  "proposalTemplate": {
+    "recommended": "cathedral",
+    "selected": "cathedral",
+    "source": "resolver",
+    "reason": null
+  },
   "content": {
     "heroTitle": "Maldives",
     "heroSubtitle": "A curated private travel proposal for Maldives.",

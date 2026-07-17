@@ -113,6 +113,8 @@ async function main() {
   assert.match(indexHtml, /proposal-input-adapter\.js/, "product shell should load proposal input adapter");
   assert.match(indexHtml, /offer-engine-adapter\.js/, "product shell should load Offer Engine adapter");
   assert.match(indexHtml, /luxury-v11-renderer\.js/, "product shell should load Luxury V11 renderer");
+  assert.match(indexHtml, /renderers\/multi-hotel\.js/, "product shell should load Multi-Hotel renderer");
+  assert.match(indexHtml, /proposal-renderer-registry\.js/, "product shell should load proposal renderer registry");
   assert.match(indexHtml, /app\.js/, "product shell should load product app");
   assert.match(indexHtml, /DEV/, "product shell should mark provider mode as development control");
   assert.match(indexHtml, /Start Smart Import/, "product shell should expose the start action");
@@ -161,7 +163,8 @@ async function main() {
   assert.match(appJs, /removeFlightSegment/, "product shell app should allow removing flight segments");
   assert.match(appJs, /removeHotelOption/, "product shell app should allow removing hotel options");
   assert.match(appJs, /draftFromReviewFields/, "product shell app should preserve current review edits before structural changes");
-  assert.match(appJs, /renderLuxuryProposal/, "product shell app should render Luxury V11 preview");
+  assert.match(appJs, /GT63ProposalRendererRegistry/, "product shell app should use proposal renderer registry");
+  assert.match(appJs, /renderProposal/, "product shell app should render preview through the registry");
   assert.match(appJs, /fetch\("\/api\/offers"/, "product shell app should create offers through existing Offer Engine API");
   assert.match(appJs, /\/gt63-core\/fixtures\/smart-import\//, "product shell app should support hosted fixture URLs");
   assert.match(appJs, /Live Smart Import needs a server URL/, "product shell app should explain file protocol live endpoint limits");

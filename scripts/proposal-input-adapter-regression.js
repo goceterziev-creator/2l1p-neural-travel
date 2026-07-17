@@ -23,6 +23,7 @@ const expectedKeys = [
   "mode",
   "pricing",
   "proposalInputVersion",
+  "proposalTemplate",
   "readiness",
   "source",
   "warnings"
@@ -71,6 +72,12 @@ assert.equal(mixed.pricing.baseAmount, 12675, "mixed should expose base amount")
 assert.equal(mixed.pricing.marginPercent, 5, "mixed should expose default margin percent");
 assert.equal(mixed.pricing.marginAmount, 633.75, "mixed should expose margin amount");
 assert.equal(mixed.pricing.totalAmount, 13308.75, "mixed should expose final amount with margin");
+assert.deepStrictEqual(mixed.proposalTemplate, {
+  recommended: "cathedral",
+  selected: "cathedral",
+  source: "resolver",
+  reason: null
+}, "mixed should expose a default proposal template contract");
 assert.ok(mixed.content.highlights.some((item) => item.includes("Patina Maldives")), "mixed should produce proposal highlights");
 assert.ok(mixed.warnings.some((warning) => warning.includes("Final operator review is recommended")), "mixed should preserve non-blocking warning");
 
@@ -118,12 +125,20 @@ multiHotelModel.hotelOptions = [
   { ...multiHotelModel.hotel, name: "Conrad Maldives Rangali Island", price: 14800, selected: true }
 ];
 multiHotelModel.hotel = multiHotelModel.hotelOptions[1];
+multiHotelModel.proposalTemplate = {
+  recommended: "multi-hotel",
+  selected: "multi-hotel",
+  source: "resolver",
+  reason: "2 accommodation options detected."
+};
 const multiHotelProposal = buildProposalInputFromProductModel(multiHotelModel, {
   destination: "Maldives"
 });
 assert.equal(multiHotelProposal.hotel.name, "Conrad Maldives Rangali Island", "preview should use selected hotel option");
 assert.equal(multiHotelProposal.hotelOptions.length, 2, "preview should preserve multiple hotel options");
 assert.equal(multiHotelProposal.pricing.hotelAmount, 14800, "preview pricing should use selected hotel price");
+assert.equal(multiHotelProposal.proposalTemplate.selected, "multi-hotel", "preview input should preserve selected template");
+assert.equal(multiHotelProposal.proposalTemplate.source, "resolver", "preview input should preserve template source");
 
 const inferredYearProposal = buildProposalInputFromProductModel({
   readiness: "ready",
