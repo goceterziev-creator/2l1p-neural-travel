@@ -9785,6 +9785,61 @@ function mergeImportedHotelRecords(records = []) {
   };
 }
 
+function importedHotelOptionKey(hotel = {}) {
+  return [
+    hotel.name,
+    hotel.area,
+    hotel.room,
+    hotel.price
+  ].map((part) => normalizeSearchText(part)).filter(Boolean).join("|");
+}
+
+function uniqueImportedHotelOptions(options = []) {
+  const seen = new Set();
+  return safeArray(options).filter((hotel) => {
+    if (!hotel || typeof hotel !== "object") return false;
+    const key = importedHotelOptionKey(hotel) || `hotel-${seen.size}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildHotelGeminiHints(hotel = {}) {
+  return {
+    name: hotel.name || "",
+    area: hotel.area || "",
+    room: hotel.room || "",
+    meal: hotel.meal || "",
+    price: Number(hotel.price || 0),
+    currency: hotel.currency || "EUR",
+    description: hotel.description || ""
+  };
+}
+
+async function buildSmartImportHotelOption(hotel = {}, parsed = {}, destination = "", index = 0) {
+  const option = enrichHotelImportFallbacks(hotel, parsed, destination || "");
+  const imageUrls = await findHotelImagesWithSerpApi(
+    option.name,
+    option.area || destination || "",
+    3
+  );
+  const existingImages = safeArray(option.images || option.imageUrls);
+  const mergedImages = uniqueHotelImages([...imageUrls, ...existingImages], 3);
+  if (mergedImages.length) {
+    option.images = mergedImages;
+    option.imageUrls = mergedImages;
+  }
+  option.sourceAuthority = universalHotelSourceAuthority({
+    hasSerpApiKey: Boolean(process.env.SERPAPI_KEY),
+    imageCount: mergedImages.length,
+    hotelName: option.name
+  });
+  option.geminiHints = buildHotelGeminiHints(option);
+  option.selected = index === 0;
+  return option;
+}
+
 async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true } = {}) {
   const parsedHotels = [];
   const rawParsedHotels = [];
@@ -9830,33 +9885,15 @@ Rules:
     ));
   }
 
-  const hotel = enrichHotelImportFallbacks(
+  const hotelOptions = uniqueImportedHotelOptions(await Promise.all(parsedHotels.map((hotel, index) => (
+    buildSmartImportHotelOption(hotel, rawParsedHotels[index] || {}, destination || "", index)
+  ))));
+  const hotel = hotelOptions[0] || await buildSmartImportHotelOption(
     mergeImportedHotelRecords(parsedHotels),
-    parsedHotels[0] || {},
-    destination || ""
+    rawParsedHotels[0] || parsedHotels[0] || {},
+    destination || "",
+    0
   );
-  const imageUrls = await findHotelImagesWithSerpApi(
-    hotel.name,
-    hotel.area || destination || "",
-    3
-  );
-  if (imageUrls.length) {
-    hotel.images = imageUrls;
-  }
-  hotel.sourceAuthority = universalHotelSourceAuthority({
-    hasSerpApiKey: Boolean(process.env.SERPAPI_KEY),
-    imageCount: imageUrls.length,
-    hotelName: hotel.name
-  });
-  hotel.geminiHints = {
-    name: hotel.name || "",
-    area: hotel.area || "",
-    room: hotel.room || "",
-    meal: hotel.meal || "",
-    price: Number(hotel.price || 0),
-    currency: hotel.currency || "EUR",
-    description: hotel.description || ""
-  };
 
   const metadata = normalizeHotelProfileMetadata(hotel, rawParsedHotels[0] || {});
   const operatorWarnings = metadata.missingFields.includes("hotel.price")
@@ -9869,7 +9906,7 @@ Rules:
       files: imageFiles,
       rawOcrText: JSON.stringify(rawParsedHotels, null, 2),
       parsedOutput: hotel,
-      trace: { rawParsedHotels, metadata },
+      trace: { rawParsedHotels, hotelOptions, metadata },
       metadata,
       decision: operatorWarnings.length ? "REVIEW" : "PASS",
       route: "",
@@ -9881,6 +9918,7 @@ Rules:
 
   return {
     hotel,
+    hotelOptions,
     metadata,
     source: metadata.source,
     missingFields: metadata.missingFields,
@@ -9937,6 +9975,7 @@ function buildSmartImportResponse({
   classifications = [],
   offerFlight = {},
   offerHotel = {},
+  offerHotelOptions = [],
   warnings = [],
   evidence = {},
   flightResult = null,
@@ -9951,6 +9990,7 @@ function buildSmartImportResponse({
     classifications: safeArray(classifications),
     offerFlight: offerFlight && typeof offerFlight === "object" ? offerFlight : {},
     offerHotel: offerHotel && typeof offerHotel === "object" ? offerHotel : {},
+    offerHotelOptions: safeArray(offerHotelOptions).filter((hotel) => hotel && typeof hotel === "object"),
     warnings: safeArray(warnings),
     evidence: evidence && typeof evidence === "object" ? evidence : {},
     universalIntakeDeprecated: true,
@@ -9958,7 +9998,8 @@ function buildSmartImportResponse({
     hotel: hotelResult ? {
       metadata: hotelResult.metadata || {},
       missingFields: safeArray(hotelResult.missingFields),
-      hints: safeArray(hotelResult.rawParsedHotels)
+      hints: safeArray(hotelResult.rawParsedHotels),
+      optionCount: safeArray(hotelResult.hotelOptions).length
     } : null,
     debug: {
       flightModel: flightResult?.model || "",
@@ -10059,11 +10100,13 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
     }
 
     let offerHotel = {};
+    let offerHotelOptions = [];
     let hotelResult = null;
     if (hotelFiles.length) {
       try {
         hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false });
         offerHotel = hotelResult.hotel || {};
+        offerHotelOptions = safeArray(hotelResult.hotelOptions);
         warnings.push(...safeArray(hotelResult.operatorWarnings));
       } catch (error) {
         warnings.push(`Hotel extraction failed: ${error.message}`);
@@ -10083,6 +10126,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       classifications,
       offerFlight,
       offerHotel,
+      offerHotelOptions,
       warnings,
       evidence,
       flightResult,

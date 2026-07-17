@@ -267,7 +267,12 @@ function renderFlight(flight) {
 }
 
 function renderHotelOption(hotel, index, selected, removable) {
-  const imageUrl = Array.isArray(hotel.imageUrls) && hotel.imageUrls.length ? hotel.imageUrls[0] : "";
+  const hotelImages = Array.isArray(hotel.imageUrls) && hotel.imageUrls.length
+    ? hotel.imageUrls
+    : Array.isArray(hotel.images)
+      ? hotel.images
+      : [];
+  const imageUrl = hotelImages[0] || "";
   return `
     <article class="hotel-option-card ${selected ? "selected" : ""}">
       <div class="hotel-option-header">

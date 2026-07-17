@@ -47,6 +47,7 @@
     "price": 219.36
   },
   "offerHotel": {},
+  "offerHotelOptions": [],
   "warnings": [
     "Some screenshots could not be identified. Choose Flight, Hotel, or Skip manually.",
     "Hotel extraction failed: no hotel source detected."

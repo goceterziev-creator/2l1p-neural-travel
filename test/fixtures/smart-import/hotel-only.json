@@ -42,6 +42,28 @@
       "warnings": []
     }
   },
+  "offerHotelOptions": [
+    {
+      "name": "Conrad Maldives Rangali Island",
+      "stars": "5",
+      "area": "Rangali Island, Maldives",
+      "room": "Beach Villa",
+      "meal": "Breakfast included",
+      "roomsLeft": "Not specified",
+      "price": 8900,
+      "description": "Luxury island resort with beach villas, overwater dining and spa facilities.",
+      "imageUrls": [
+        "https://example.com/conrad-maldives-1.jpg",
+        "https://example.com/conrad-maldives-2.jpg"
+      ],
+      "sourceAuthority": {
+        "source": "serpapi",
+        "imageCount": 2,
+        "warnings": []
+      },
+      "selected": true
+    }
+  ],
   "warnings": [],
   "evidence": {
     "archived": true,

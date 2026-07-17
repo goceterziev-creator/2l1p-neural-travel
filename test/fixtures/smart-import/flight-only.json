@@ -44,6 +44,7 @@
     "inboundSegments": []
   },
   "offerHotel": {},
+  "offerHotelOptions": [],
   "warnings": [],
   "evidence": {
     "archived": true,
