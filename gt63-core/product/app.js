@@ -317,6 +317,56 @@ function proposalContext() {
   };
 }
 
+function offerReadinessIssues(model = activeProductModel()) {
+  const issues = [];
+  const context = proposalContext();
+
+  if (!model || model.readiness !== "ready") {
+    issues.push("Product model must be READY before creating an offer.");
+  }
+
+  if (!context.clientName) {
+    issues.push("Client name is required before creating an offer.");
+  }
+
+  if (!context.destination || isPhoneLike(context.destination)) {
+    issues.push("Destination is required before creating an offer.");
+  }
+
+  if (!context.travelDates) {
+    issues.push("Travel dates are required before creating an offer.");
+  }
+
+  if (reviewDraft?.status !== "approved") {
+    issues.push("Review changes must be approved before creating an offer.");
+  }
+
+  return issues;
+}
+
+function renderOfferReadiness(model = activeProductModel()) {
+  const issues = offerReadinessIssues(model);
+  nodes.createOfferButton.disabled = issues.length > 0;
+
+  if (!model) {
+    nodes.offerResult.className = "disabled-preview";
+    nodes.offerResult.textContent = "Create Offer is available after import, review approval, and required client context.";
+    return;
+  }
+
+  if (issues.length > 0) {
+    nodes.offerResult.className = "disabled-preview";
+    nodes.offerResult.innerHTML = `
+      <strong>Offer not ready</strong>
+      ${renderList(issues, "No blocking issues")}
+    `;
+    return;
+  }
+
+  nodes.offerResult.className = "disabled-preview";
+  nodes.offerResult.textContent = `Ready to create a draft offer in 2L1P. Base: ${money(totalBasePrice(model))}. With margin ${marginPercent()}%: ${money(finalPrice(model))}.`;
+}
+
 function renderMission(model = currentModel) {
   const client = nodes.clientName.value.trim();
   const destination = missionDestination(model);
@@ -365,7 +415,6 @@ function renderGate(model) {
     ? "<strong>Continue to Preview</strong><span>This proposal is ready for the next step.</span>"
     : "<strong>Needs operator action</strong><span>Resolve blocking issues before preview.</span>";
   nodes.continueButton.disabled = !ready;
-  nodes.createOfferButton.disabled = !ready;
   nodes.currentStep.textContent = ready ? "Preview ready" : "Review required";
 }
 
@@ -392,10 +441,7 @@ function renderReviewedModel(model) {
   nodes.blockingReview.innerHTML = renderList(model.blockingIssues, "No blocking issues");
   renderGate(model);
   renderPreview(model);
-  nodes.offerResult.className = "disabled-preview";
-  nodes.offerResult.textContent = model.readiness === "ready"
-    ? `Ready to create a draft offer in 2L1P. Base: ${money(totalBasePrice(model))}. With margin ${marginPercent()}%: ${money(finalPrice(model))}.`
-    : "Create Offer is available after readiness is READY.";
+  renderOfferReadiness(model);
   nodes.applyReviewButton.disabled = !originalModel();
   nodes.editAgainButton.disabled = !reviewDraft?.approvedModel;
   nodes.resetReviewButton.disabled = !originalModel();
@@ -664,13 +710,14 @@ async function createOfferFromCurrentModel() {
   if (!model || model.readiness !== "ready") {
     throw new Error("Create Offer requires READY readiness.");
   }
+  const issues = offerReadinessIssues(model);
+  if (issues.length > 0) {
+    throw new Error(`Offer is not ready: ${issues.join(" ")}`);
+  }
   if (!offerEngineAdapter?.buildOfferPayloadFromProductModel) {
     throw new Error("Offer Engine adapter unavailable.");
   }
 
-  if (isPhoneLike(nodes.destination.value)) {
-    nodes.destination.value = "";
-  }
   const payload = offerEngineAdapter.buildOfferPayloadFromProductModel(model, proposalContext());
   const response = await fetch("/api/offers", {
     method: "POST",
@@ -724,18 +771,24 @@ nodes.continueButton.addEventListener("click", () => {
 });
 
 nodes.createOfferButton.addEventListener("click", async () => {
+  let created = false;
   try {
     nodes.createOfferButton.disabled = true;
     nodes.offerResult.className = "disabled-preview";
     nodes.offerResult.textContent = "Creating offer in 2L1P...";
     const offer = await createOfferFromCurrentModel();
     renderCreatedOffer(offer);
+    created = true;
   } catch (error) {
     nodes.offerResult.className = "error-panel";
     nodes.offerResult.textContent = error.message || "Create Offer failed.";
   } finally {
     const model = activeProductModel();
-    nodes.createOfferButton.disabled = !model || model.readiness !== "ready";
+    if (created) {
+      nodes.createOfferButton.disabled = offerReadinessIssues(model).length > 0;
+    } else {
+      renderOfferReadiness(model);
+    }
   }
 });
 
@@ -745,6 +798,7 @@ nodes.marginPercent.addEventListener("input", () => {
     renderReviewedModel(currentModel);
   } else {
     renderMission();
+    renderOfferReadiness();
   }
 });
 [
@@ -752,7 +806,11 @@ nodes.marginPercent.addEventListener("input", () => {
   nodes.destination,
   nodes.travelDates,
   nodes.guests
-].forEach((node) => node.addEventListener("input", () => renderMission()));
+].forEach((node) => node.addEventListener("input", () => {
+  const model = activeProductModel() || currentModel;
+  renderMission(model);
+  renderOfferReadiness(model);
+}));
 nodes.applyReviewButton.addEventListener("click", applyReviewChanges);
 nodes.editAgainButton.addEventListener("click", editApprovedModelAgain);
 nodes.resetReviewButton.addEventListener("click", resetReviewToExtracted);

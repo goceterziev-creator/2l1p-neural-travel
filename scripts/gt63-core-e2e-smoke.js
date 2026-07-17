@@ -146,6 +146,9 @@ async function main() {
   assert.match(appJs, /reviewedModel/, "product shell app should create reviewed product model");
   assert.match(appJs, /renderMission/, "product shell app should render the operator mission card");
   assert.match(appJs, /missionDestination/, "product shell app should keep mission destination safe");
+  assert.match(appJs, /offerReadinessIssues/, "product shell app should guard final offer creation");
+  assert.match(appJs, /Client name is required before creating an offer/, "product shell app should require client context before Create Offer");
+  assert.match(appJs, /Review changes must be approved before creating an offer/, "product shell app should require approved review before Create Offer");
   assert.match(appJs, /data-review-path/, "product shell app should render editable review fields");
   assert.match(appJs, /applyReviewChanges/, "product shell app should apply operator corrections");
   assert.match(appJs, /editApprovedModelAgain/, "product shell app should allow editing approved models again");
@@ -160,6 +163,7 @@ async function main() {
   assert.match(appJs, /Live Smart Import needs a server URL/, "product shell app should explain file protocol live endpoint limits");
   assert.match(appJs, /readiness === "ready"/, "product shell app should gate preview by readiness");
   assert.match(appJs, /Preview disabled until readiness is READY/, "product shell app should disable preview when review is required");
+  assert.ok(!appJs.match(/nodes\.destination\.value = ""/), "product shell app must not silently clear invalid destination values");
   assert.ok(!appJs.match(/adaptSmartImportForProduct|contractVersion|classifications|sources|debug|metadata|universalIntakeDeprecated|Gemini|SerpAPI/i), "product shell app must not read engine or diagnostic fields");
   assert.ok(!appJs.match(/api\/clients|api\/activities|generate PDF|WhatsApp/i), "product shell app must not call unrelated product services");
 
