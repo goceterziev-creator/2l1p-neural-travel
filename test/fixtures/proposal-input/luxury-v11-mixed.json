@@ -57,6 +57,7 @@
     "price": 11200,
     "currency": "EUR",
     "description": "Premium island resort with private beach villas and lagoon access.",
+    "url": null,
     "imageUrls": [
       "https://example.com/patina-maldives-1.jpg"
     ]
@@ -72,6 +73,7 @@
       "price": 11200,
       "currency": "EUR",
       "description": "Premium island resort with private beach villas and lagoon access.",
+      "url": null,
       "imageUrls": [
         "https://example.com/patina-maldives-1.jpg"
       ]

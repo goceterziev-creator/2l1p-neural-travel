@@ -107,6 +107,11 @@
     const label = `Hotel option ${index + 1}`;
     const image = firstHotelImage(hotel, input);
     const selected = hotel.selected || index === 0;
+    const hotelUrl = String(hotel.url || hotel.link || hotel.bookingUrl || "").trim();
+    const optionPrice = money(hotel.price, currency);
+    const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
+    const preferMessage = encodeURIComponent(`Предпочитам ${text(hotel.name, label)} - ${optionPrice}`);
+    const preferUrl = `https://wa.me/${whatsappPhone}?text=${preferMessage}`;
 
     return `
       <article class="v11-hotel-option ${selected ? "selected" : ""}">
@@ -117,8 +122,12 @@
           <small>${escapeHtml(text(hotel.area))}</small>
           <small>${escapeHtml(text(hotel.room))}</small>
           <small>${escapeHtml(text(hotel.meal))}</small>
+          <div class="v11-option-actions">
+            ${hotelUrl ? `<a href="${escapeHtml(hotelUrl)}" target="_blank" rel="noreferrer">Виж хотела</a>` : ""}
+            <a href="${escapeHtml(preferUrl)}" target="_blank" rel="noreferrer">Предпочитам този хотел</a>
+          </div>
         </div>
-        <strong>${escapeHtml(money(hotel.price, currency))}</strong>
+        <strong>${escapeHtml(optionPrice)}</strong>
       </article>
     `;
   }
@@ -129,6 +138,19 @@
       <section class="v11-note">
         <strong>Operator note</strong>
         <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </section>
+    `;
+  }
+
+  function transferBlock(input = {}) {
+    const transfer = input.transfer || {};
+    const status = text(transfer.status || transfer.included || transfer.note, "За потвърждение");
+    const route = text(transfer.route || transfer.description, "Летище → място за настаняване → летище");
+    return `
+      <section class="v11-card v11-transfer-card">
+        <p class="v11-kicker">Transfer</p>
+        <h4>${escapeHtml(route)}</h4>
+        <p>${escapeHtml(status)}</p>
       </section>
     `;
   }
@@ -194,6 +216,8 @@
             </div>
           </div>
         </section>
+
+        ${transferBlock(input)}
 
         <section class="v11-closing">
           <div>

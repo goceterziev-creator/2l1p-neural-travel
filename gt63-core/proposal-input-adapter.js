@@ -153,6 +153,7 @@
       price: amount(hotel.price),
       currency: "EUR",
       description: nullableText(hotel.description),
+      url: nullableText(hotel.url || hotel.link || hotel.bookingUrl),
       imageUrls
     };
   }

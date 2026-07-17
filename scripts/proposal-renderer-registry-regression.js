@@ -18,7 +18,7 @@ const productModel = adaptSmartImportForProduct(fixture);
 
 const multiHotelModel = JSON.parse(JSON.stringify(productModel));
 multiHotelModel.hotelOptions = [
-  { ...multiHotelModel.hotel, name: "Hotel Alpha", price: 1000, selected: true },
+  { ...multiHotelModel.hotel, name: "Hotel Alpha", price: 1000, selected: true, url: "https://example.test/hotel-alpha" },
   { ...multiHotelModel.hotel, name: "Hotel Beta", price: 1200, selected: false },
   { ...multiHotelModel.hotel, name: "Hotel Gamma", price: 900, selected: false }
 ];
@@ -47,6 +47,9 @@ assert.match(multiHotelHtml, /Hotel option 1/, "multi-hotel renderer should use 
 assert.match(multiHotelHtml, /Hotel option 2/, "multi-hotel renderer should render second hotel option");
 assert.match(multiHotelHtml, /Hotel option 3/, "multi-hotel renderer should render third hotel option");
 assert.match(multiHotelHtml, /3 accommodation options/, "multi-hotel renderer should explain option count factually");
+assert.match(multiHotelHtml, /Виж хотела/, "multi-hotel renderer should show hotel link action when URL exists");
+assert.match(multiHotelHtml, /Предпочитам този хотел/, "multi-hotel renderer should show client preference action");
+assert.match(multiHotelHtml, /Transfer/, "multi-hotel renderer should include transfer information");
 assert.equal(/Premium|Balanced|Best price|Балансирана|Премиум|Най-добра цена/.test(multiHotelHtml), false, "multi-hotel renderer must not invent qualitative hotel labels");
 assert.equal(/contractVersion|classifications|universalIntakeDeprecated|debug|sourceAuthority/.test(multiHotelHtml), false, "registry render must not leak engine fields");
 

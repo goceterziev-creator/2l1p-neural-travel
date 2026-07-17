@@ -159,6 +159,7 @@
       price: amount(hotel?.price),
       roomsLeft: cleanText(hotel?.roomsLeft),
       description: cleanText(hotel?.description),
+      url: firstText(hotel?.url, hotel?.link, hotel?.bookingUrl),
       images: buildHotelImages(hotel),
       selected: options.some((item) => item?.selected) ? hotel?.selected === true : index === 0
     })).filter((hotel) => (
@@ -206,6 +207,7 @@
       hotelDescription: cleanText(hotel?.description),
       hotelImages: buildHotelImages(hotel),
       hotels,
+      proposalTemplate: safeModel.proposalTemplate || null,
       destinationDescription: `Curated proposal for ${destination}.`,
       notes: asArray(safeModel.warnings).join(" | "),
       flightPrice,

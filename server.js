@@ -18,6 +18,11 @@ const {
 const {
   normalizeTravelDate
 } = require("./server/travel-normalizers/date-normalizer");
+const gt63FlightDisplayBg = require("./gt63-core/flight-display-bg");
+globalThis.GT63FlightDisplayBg = gt63FlightDisplayBg;
+globalThis.GT63LuxuryV11Renderer = require("./gt63-core/luxury-v11-renderer");
+globalThis.GT63MultiHotelRenderer = require("./gt63-core/renderers/multi-hotel");
+const gt63ProposalRendererRegistry = require("./gt63-core/proposal-renderer-registry");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -1707,6 +1712,39 @@ function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
   });
 }
 
+function cloneJsonSafe(value) {
+  if (!value || typeof value !== "object") return null;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return null;
+  }
+}
+
+function normalizeProposalTemplateMetadata(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const selected = String(source.selected || source.recommended || "").trim();
+  const recommended = String(source.recommended || selected || "").trim();
+  if (!selected && !recommended) return null;
+  return {
+    recommended: recommended || selected,
+    selected: selected || recommended,
+    source: String(source.source || (selected && recommended && selected !== recommended ? "agent_override" : "resolver")).trim(),
+    reason: source.reason == null ? null : String(source.reason).trim()
+  };
+}
+
+function normalizeProposalInputForOffer(value = {}) {
+  const input = cloneJsonSafe(value);
+  if (!input || input.proposalInputVersion !== "1.0" || input.mode !== "GT63_LUXURY_PROPOSAL_INPUT") {
+    return null;
+  }
+  if (!normalizeProposalTemplateMetadata(input.proposalTemplate)) {
+    return null;
+  }
+  return input;
+}
+
 function normalizeOffer(body = {}) {
 const inputFlights = uniqueOfferFlights(Array.isArray(body.flights) ? body.flights : []);
 const inputHotels = Array.isArray(body.hotels) ? body.hotels : [];
@@ -1721,6 +1759,8 @@ const selectedHotelInput =
   null;
 const selectedHotelInputIndex = inputHotels.findIndex((h) => h.selected);
 const hasSelectedHotelInput = selectedHotelInputIndex >= 0;
+const proposalInput = normalizeProposalInputForOffer(body.proposalInput);
+const proposalTemplate = normalizeProposalTemplateMetadata(body.proposalTemplate || proposalInput?.proposalTemplate);
 
 const calculatedHotelPrice = selectedHotelInput
   ? toNumber(selectedHotelInput.price, 0)
@@ -1786,6 +1826,7 @@ const hotels = inputHotels.length
       price: toNumber(h.price, 0),
       roomsLeft: h.roomsLeft || "",
       description: h.description || "",
+      url: h.url || h.link || h.bookingUrl || "",
       images: uniqueHotelImages(h.images || [], 6, usedInputHotelImageKeys),
       selected: hasSelectedHotelInput ? index === selectedHotelInputIndex : index === 0
     })).filter(h =>
@@ -1802,6 +1843,7 @@ const hotels = inputHotels.length
         price: hotelPrice,
         roomsLeft: body.hotelRoomsLeft || "",
         description: body.hotelDescription || "",
+        url: body.hotelUrl || "",
         images: hotelImages,
         selected: true
       }
@@ -1836,6 +1878,8 @@ const hotels = inputHotels.length
     clientViewed: Boolean(body.clientViewed),
     bookedAt: body.bookedAt || null,
     clicks: toNumber(body.clicks, 0),
+    proposalTemplate,
+    proposalInput,
     flights,
     hotels
   };
@@ -5846,7 +5890,71 @@ function enrichHotelImportFallbacks(hotel = {}, parsed = {}, destination = "") {
   return enriched;
 }
 
+function escapeGt63RegistryHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[char]));
+}
+
+function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
+  const proposalInput = normalizeProposalInputForOffer(offer.proposalInput);
+  if (!proposalInput || !offer.proposalTemplate?.selected) return "";
+
+  const input = cloneJsonSafe(proposalInput);
+  if (!input) return "";
+  input.contact = {
+    ...(input.contact || {}),
+    whatsappPhone: AGENCY_WHATSAPP_PHONE
+  };
+
+  const title = input.content?.heroTitle || input.destination?.name || offer.destination || "AYA Travel";
+  const stylesPath = path.join(GT63_CORE_DIR, "product", "styles.css");
+  let styles = "";
+  try {
+    styles = fs.readFileSync(stylesPath, "utf8");
+  } catch {
+    styles = "";
+  }
+
+  const body = gt63ProposalRendererRegistry.renderProposal(input);
+  const template = input.proposalTemplate?.selected || "cathedral";
+  const clientLink = `${LIVE_BASE_URL}/api/offers/view/${offer.id}`;
+  const pdfLink = `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`;
+
+  return `<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeGt63RegistryHtml(title)} - AYA Travel</title>
+  <style>${styles}</style>
+  <style>
+    body { background: #e5e7eb; }
+    .shell { max-width: 1040px; padding: 18px; }
+    .gt63-client-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+    .gt63-client-actions a { border: 1px solid rgba(148, 163, 184, 0.38); border-radius: 999px; color: #e5e7eb; padding: 8px 12px; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main class="shell" data-proposal-template="${escapeGt63RegistryHtml(template)}">
+    <nav class="gt63-client-actions" aria-label="Client actions">
+      <a href="${escapeGt63RegistryHtml(pdfLink)}">PDF</a>
+      <a href="https://wa.me/${escapeGt63RegistryHtml(AGENCY_WHATSAPP_PHONE)}?text=${encodeURIComponent(clientLink)}" target="_blank" rel="noreferrer">WhatsApp</a>
+    </nav>
+    ${body}
+  </main>
+</body>
+</html>`;
+}
+
 async function renderOfferHtml(offer, options = {}) {
+  const registryHtml = renderGt63RegistryOfferHtml(offer, options);
+  if (registryHtml) return registryHtml;
+
   const { forPdf = false, showWarnings = true, qaMode = false } = options;
   const flights = getFlights(offer).map((flight) => withBulgarianFlightDisplay(flight));
   const hotels = getHotels(offer);

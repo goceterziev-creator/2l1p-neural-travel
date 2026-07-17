@@ -87,10 +87,16 @@ async function main() {
 
   const multiHotelModel = JSON.parse(JSON.stringify(originalModel));
   multiHotelModel.hotelOptions = [
-    { ...multiHotelModel.hotel, name: "Patina Maldives", price: 11200, selected: false },
-    { ...multiHotelModel.hotel, name: "Conrad Maldives Rangali Island", price: 14800, selected: true }
+    { ...multiHotelModel.hotel, name: "Patina Maldives", price: 11200, selected: false, url: "https://example.test/patina" },
+    { ...multiHotelModel.hotel, name: "Conrad Maldives Rangali Island", price: 14800, selected: true, url: "https://example.test/conrad" }
   ];
   multiHotelModel.hotel = multiHotelModel.hotelOptions[1];
+  multiHotelModel.proposalTemplate = {
+    recommended: "multi-hotel",
+    selected: "multi-hotel",
+    source: "resolver",
+    reason: "2 accommodation options detected."
+  };
   const multiHotelPayload = buildOfferPayloadFromProductModel(multiHotelModel, {
     clientName: "GT63 Test Client",
     destination: "Maldives",
@@ -102,6 +108,8 @@ async function main() {
   assert.equal(multiHotelPayload.hotelPrice, 14800, "Offer Engine should price selected hotel option");
   assert.equal(multiHotelPayload.hotels.length, 2, "Offer Engine should receive all hotel options");
   assert.equal(multiHotelPayload.hotels[1].selected, true, "Offer Engine should preserve selected hotel flag");
+  assert.equal(multiHotelPayload.hotels[1].url, "https://example.test/conrad", "Offer Engine should preserve hotel links");
+  assert.equal(multiHotelPayload.proposalTemplate.selected, "multi-hotel", "Offer Engine should receive selected proposal template");
 
   const phoneDestinationPayload = buildOfferPayloadFromProductModel(model, {
     clientName: "GT63 Test Client",

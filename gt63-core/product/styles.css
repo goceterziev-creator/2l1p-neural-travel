@@ -948,6 +948,23 @@ button:focus-visible {
   gap: 3px;
 }
 
+.v11-option-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.v11-option-actions a {
+  border: 1px solid rgba(6, 182, 212, 0.42);
+  border-radius: 999px;
+  color: var(--cyan);
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 7px 10px;
+  text-decoration: none;
+}
+
 .v11-closing {
   display: flex;
   justify-content: space-between;

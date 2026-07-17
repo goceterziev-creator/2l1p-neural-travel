@@ -883,7 +883,12 @@ async function createOfferFromCurrentModel() {
     throw new Error("Offer Engine adapter unavailable.");
   }
 
-  const payload = offerEngineAdapter.buildOfferPayloadFromProductModel(model, proposalContext());
+  const context = proposalContext();
+  const payload = offerEngineAdapter.buildOfferPayloadFromProductModel(model, context);
+  if (proposalInputAdapter?.buildProposalInputFromProductModel) {
+    payload.proposalInput = proposalInputAdapter.buildProposalInputFromProductModel(model, context);
+    payload.proposalTemplate = payload.proposalInput.proposalTemplate || payload.proposalTemplate || null;
+  }
   const response = await fetch("/api/offers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
