@@ -428,6 +428,7 @@ function renderHotelOption(hotel, index, selected, removable) {
         <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.meal`, hotel.meal, "Meal")}</div>
         <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.roomsLeft`, hotel.roomsLeft, "Rooms left")}</div>
         <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.price`, hotel.price, "Price", "number")}</div>
+        <div class="summary-row editable-summary">${editInput(`hotelOptions.${index}.url`, hotel.url, "Hotel website")}</div>
         <div class="summary-row editable-summary">${editTextarea(`hotelOptions.${index}.description`, hotel.description, "Description")}</div>
       </div>
     </article>

@@ -159,7 +159,15 @@
       price: amount(hotel?.price),
       roomsLeft: cleanText(hotel?.roomsLeft),
       description: cleanText(hotel?.description),
-      url: firstText(hotel?.url, hotel?.link, hotel?.bookingUrl),
+      url: firstText(
+        hotel?.url,
+        hotel?.link,
+        hotel?.bookingUrl,
+        hotel?.bookingLink,
+        hotel?.websiteUrl,
+        hotel?.website,
+        hotel?.sourceUrl
+      ),
       images: buildHotelImages(hotel),
       selected: options.some((item) => item?.selected) ? hotel?.selected === true : index === 0
     })).filter((hotel) => (

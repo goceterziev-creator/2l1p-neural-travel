@@ -957,12 +957,29 @@ button:focus-visible {
   box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.16);
 }
 
-.v11-hotel-option img {
+.v11-hotel-gallery {
+  display: grid;
+  grid-template-columns: 1.35fr 0.9fr;
+  grid-template-rows: repeat(2, minmax(72px, 1fr));
+  gap: 7px;
+  min-height: 168px;
+}
+
+.v11-hotel-gallery img {
   width: 100%;
-  min-height: 148px;
   height: 100%;
+  min-height: 0;
   object-fit: cover;
   border-radius: 12px;
+  background: rgba(2, 6, 23, 0.5);
+}
+
+.v11-hotel-gallery img:first-child {
+  grid-row: span 2;
+}
+
+.v11-hotel-gallery img:only-child {
+  grid-column: 1 / -1;
 }
 
 .v11-hotel-option div {
@@ -1132,10 +1149,20 @@ ul {
   .v11-hero,
   .v11-content-grid,
   .v11-detail-grid,
+  .v11-hotel-option,
   .dev-controls,
   .template-card,
   .summary-row {
     grid-template-columns: 1fr;
+  }
+
+  .v11-hotel-gallery {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: minmax(120px, 1fr);
+  }
+
+  .v11-hotel-gallery img:first-child {
+    grid-row: auto;
   }
 
   .hero {

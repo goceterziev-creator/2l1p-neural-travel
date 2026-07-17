@@ -13,7 +13,7 @@ assert.match(appJs, /payload\.proposalInput = proposalInputAdapter\.buildProposa
 assert.match(appJs, /payload\.proposalTemplate = payload\.proposalInput\.proposalTemplate/, "Core Create Offer should send selected proposal template metadata");
 
 assert.match(offerAdapterJs, /proposalTemplate: safeModel\.proposalTemplate/, "Offer payload should preserve proposal template metadata");
-assert.match(offerAdapterJs, /url: firstText\(hotel\?\.url/, "Offer payload should preserve hotel URLs for final client actions");
+assert.match(offerAdapterJs, /url:\s*firstText\(/, "Offer payload should preserve hotel URLs for final client actions");
 
 assert.match(serverJs, /normalizeProposalInputForOffer/, "server should normalize persisted GT63 proposal input");
 assert.match(serverJs, /proposalTemplate,\s*\n\s*proposalInput,/m, "server should persist proposal template and proposal input with the offer");
@@ -22,13 +22,16 @@ assert.match(serverJs, /gt63ProposalRendererRegistry\.renderProposal/, "server f
 assert.match(serverJs, /if \(registryHtml\) return registryHtml;/, "server should prefer registry HTML when proposal metadata exists");
 assert.match(serverJs, /async function renderOfferHtml/, "legacy renderer should remain available as fallback");
 
-assert.match(multiHotelRendererJs, /Предпочитам този хотел/, "multi-hotel final renderer should expose hotel preference action");
+assert.match(multiHotelRendererJs, /РџСЂРµРґРїРѕС‡РёС‚Р°Рј С‚РѕР·Рё С…РѕС‚РµР»/, "multi-hotel final renderer should expose hotel preference action");
 assert.match(multiHotelRendererJs, /Виж хотела/, "multi-hotel final renderer should expose hotel link action");
-assert.match(multiHotelRendererJs, /Избран хотел/, "multi-hotel final renderer should identify the selected hotel");
-assert.match(multiHotelRendererJs, /Обща клиентска цена/, "multi-hotel final renderer should show option-specific package pricing");
+assert.match(multiHotelRendererJs, /РР·Р±СЂР°РЅ С…РѕС‚РµР»/, "multi-hotel final renderer should identify the selected hotel");
+assert.match(multiHotelRendererJs, /РћР±С‰Р° РєР»РёРµРЅС‚СЃРєР° С†РµРЅР°/, "multi-hotel final renderer should show option-specific package pricing");
 assert.match(multiHotelRendererJs, /optionPackageTotal/, "multi-hotel final renderer should price each option from flight plus selected hotel plus transfer plus margin");
-assert.match(multiHotelRendererJs, /Необходим трансфер/, "multi-hotel final renderer should expose transfer-required status when appropriate");
+assert.match(multiHotelRendererJs, /hotelImages/, "multi-hotel final renderer should render hotel image galleries");
+assert.match(multiHotelRendererJs, /slice\(0, 3\)/, "multi-hotel final renderer should limit each hotel gallery to three images");
+assert.match(multiHotelRendererJs, /websiteUrl/, "multi-hotel final renderer should preserve common hotel website URL fields");
+assert.match(multiHotelRendererJs, /РќРµРѕР±С…РѕРґРёРј С‚СЂР°РЅСЃС„РµСЂ/, "multi-hotel final renderer should expose transfer-required status when appropriate");
 assert.match(multiHotelRendererJs, /transferBlock/, "multi-hotel final renderer should expose transfer information");
-assert.equal(/Балансирана опция|Премиум изживяване|Най-добра цена/.test(multiHotelRendererJs), false, "multi-hotel renderer must not hardcode legacy qualitative labels");
+assert.equal(/Р‘Р°Р»Р°РЅСЃРёСЂР°РЅР° РѕРїС†РёСЏ|РџСЂРµРјРёСѓРј РёР·Р¶РёРІСЏРІР°РЅРµ|РќР°Р№-РґРѕР±СЂР° С†РµРЅР°/.test(multiHotelRendererJs), false, "multi-hotel renderer must not hardcode legacy qualitative labels");
 
 console.log("FINAL CLIENT RENDERER REGISTRY REGRESSION PASS");

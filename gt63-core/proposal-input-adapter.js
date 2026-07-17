@@ -153,7 +153,15 @@
       price: amount(hotel.price),
       currency: "EUR",
       description: nullableText(hotel.description),
-      url: nullableText(hotel.url || hotel.link || hotel.bookingUrl),
+      url: nullableText(
+        hotel.url ||
+        hotel.link ||
+        hotel.bookingUrl ||
+        hotel.bookingLink ||
+        hotel.websiteUrl ||
+        hotel.website ||
+        hotel.sourceUrl
+      ),
       imageUrls
     };
   }

@@ -64,6 +64,32 @@
     return urls.find(isUsableImageUrl) || fallbackImage(input);
   }
 
+  function hotelImages(hotel, input) {
+    const urls = [
+      ...(Array.isArray(hotel?.imageUrls) ? hotel.imageUrls : []),
+      ...(Array.isArray(hotel?.images) ? hotel.images : []),
+      hotel?.imageUrl,
+      hotel?.image,
+      hotel?.photo,
+      hotel?.thumbnail
+    ].filter(isUsableImageUrl);
+    const unique = [...new Set(urls)];
+    return (unique.length ? unique : [fallbackImage(input)]).slice(0, 3);
+  }
+
+  function hotelUrl(hotel = {}) {
+    return String(
+      hotel.url ||
+      hotel.link ||
+      hotel.bookingUrl ||
+      hotel.bookingLink ||
+      hotel.websiteUrl ||
+      hotel.website ||
+      hotel.sourceUrl ||
+      ""
+    ).trim();
+  }
+
   function optionPackageTotal(hotel = {}, input = {}) {
     const pricing = input.pricing || {};
     const flightAmount = amount(pricing.flightAmount || input.flight?.price);
@@ -94,7 +120,7 @@
     const priceDisplay = money(total, currency);
     const hotelPriceDisplay = money(hotelOnly, currency);
     const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
-    const preferMessage = encodeURIComponent(`Предпочитам ${name} - обща пакетна цена ${priceDisplay}`);
+    const preferMessage = encodeURIComponent(`РџСЂРµРґРїРѕС‡РёС‚Р°Рј ${name} - РѕР±С‰Р° РїР°РєРµС‚РЅР° С†РµРЅР° ${priceDisplay}`);
 
     return {
       label,
@@ -151,32 +177,34 @@
 
   function hotelOptionCard(hotel = {}, index, currency, input, activeIndex) {
     const payload = selectedOptionPayload(hotel, index, currency, input);
-    const image = firstHotelImage(hotel, input);
+    const gallery = hotelImages(hotel, input);
     const selected = index === activeIndex;
-    const hotelUrl = String(hotel.url || hotel.link || hotel.bookingUrl || "").trim();
+    const optionUrl = hotelUrl(hotel);
 
     return `
       <article class="v11-hotel-option ${selected ? "selected" : ""}" data-option-index="${escapeHtml(index)}">
-        <img src="${escapeHtml(image)}" alt="">
+        <div class="v11-hotel-gallery">
+          ${gallery.map((image) => `<img src="${escapeHtml(image)}" alt="">`).join("")}
+        </div>
         <div>
-          <span>${escapeHtml(payload.label)}${selected ? " · Избран хотел" : ""}</span>
+          <span>${escapeHtml(payload.label)}${selected ? " В· РР·Р±СЂР°РЅ С…РѕС‚РµР»" : ""}</span>
           <strong>${escapeHtml(payload.name)}</strong>
           <small>${escapeHtml(text(hotel.area))}</small>
           <small>${escapeHtml(text(hotel.room))}</small>
           <small>${escapeHtml(text(hotel.meal))}</small>
           <div class="v11-option-price">
-            <span>Обща клиентска цена</span>
+            <span>РћР±С‰Р° РєР»РёРµРЅС‚СЃРєР° С†РµРЅР°</span>
             <strong>${escapeHtml(payload.priceDisplay)}</strong>
-            <small>Хотел: ${escapeHtml(payload.hotelPriceDisplay)}</small>
+            <small>РҐРѕС‚РµР»: ${escapeHtml(payload.hotelPriceDisplay)}</small>
           </div>
           <div class="v11-option-actions">
-            ${hotelUrl ? `<a href="${escapeHtml(hotelUrl)}" target="_blank" rel="noreferrer">Виж хотела</a>` : ""}
+            ${optionUrl ? `<a href="${escapeHtml(optionUrl)}" target="_blank" rel="noreferrer">Виж хотела</a>` : ""}
             <button type="button"
               class="v11-prefer-option"
               data-option-name="${escapeHtml(payload.name)}"
               data-option-price="${escapeHtml(payload.priceDisplay)}"
               data-option-whatsapp="${escapeHtml(payload.whatsappUrl)}">
-              Предпочитам този хотел
+              РџСЂРµРґРїРѕС‡РёС‚Р°Рј С‚РѕР·Рё С…РѕС‚РµР»
             </button>
           </div>
         </div>
@@ -203,18 +231,18 @@
       input.hotel?.name,
       input.content?.heroTitle
     ].filter(Boolean).join(" ");
-    const needsIslandTransfer = /maldives|maldive|малдив/i.test(destinationText);
+    const needsIslandTransfer = /maldives|maldive|РјР°Р»РґРёРІ/i.test(destinationText);
     const status = text(
       transfer.status || transfer.included || transfer.note,
       needsIslandTransfer
-        ? "Необходим трансфер: speedboat / seaplane / domestic flight, за потвърждение"
-        : "За потвърждение"
+        ? "РќРµРѕР±С…РѕРґРёРј С‚СЂР°РЅСЃС„РµСЂ: speedboat / seaplane / domestic flight, Р·Р° РїРѕС‚РІСЉСЂР¶РґРµРЅРёРµ"
+        : "Р—Р° РїРѕС‚РІСЉСЂР¶РґРµРЅРёРµ"
     );
-    const route = text(transfer.route || transfer.description, "Летище → място за настаняване → летище");
+    const route = text(transfer.route || transfer.description, "Р›РµС‚РёС‰Рµ в†’ РјСЏСЃС‚Рѕ Р·Р° РЅР°СЃС‚Р°РЅСЏРІР°РЅРµ в†’ Р»РµС‚РёС‰Рµ");
 
     return `
       <section class="v11-card v11-transfer-card">
-        <p class="v11-kicker">Трансфер</p>
+        <p class="v11-kicker">РўСЂР°РЅСЃС„РµСЂ</p>
         <h4>${escapeHtml(route)}</h4>
         <p>${escapeHtml(status)}</p>
       </section>
@@ -265,7 +293,7 @@
       <article class="v11-proposal multi-hotel-proposal" aria-label="Multi-hotel proposal preview">
         <section class="v11-hero">
           <div>
-            <p class="v11-eyebrow">AYA TRAVEL · MULTI-HOTEL BRIEF</p>
+            <p class="v11-eyebrow">AYA TRAVEL В· MULTI-HOTEL BRIEF</p>
             <h3>${escapeHtml(title)}</h3>
             <p>${escapeHtml(input.content?.heroSubtitle || "A curated travel proposal with accommodation options.")}</p>
             <div class="v11-chip-row">
@@ -278,12 +306,12 @@
             <img src="${escapeHtml(heroImage)}" alt="">
           </div>
           <div class="v11-price-card">
-            <span>Избран хотел</span>
+            <span>РР·Р±СЂР°РЅ С…РѕС‚РµР»</span>
             <strong class="js-selected-option-name">${escapeHtml(selectedPayload.name)}</strong>
             <small>Selected option estimate</small>
             <strong class="js-selected-option-price">${escapeHtml(selectedPayload.priceDisplay)}</strong>
             <small>${escapeHtml(String(hotelOptions.length))} accommodation option${hotelOptions.length === 1 ? "" : "s"}</small>
-            <a class="js-selected-option-whatsapp v11-selected-option-whatsapp" href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">Изпрати избора в WhatsApp</a>
+            <a class="js-selected-option-whatsapp v11-selected-option-whatsapp" href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">РР·РїСЂР°С‚Рё РёР·Р±РѕСЂР° РІ WhatsApp</a>
           </div>
         </section>
 
