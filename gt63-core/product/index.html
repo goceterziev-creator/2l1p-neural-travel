@@ -189,6 +189,22 @@
           <div id="hotelReview">No hotel data</div>
         </article>
       </div>
+      <section class="template-card" aria-label="Proposal Template">
+        <div>
+          <span class="mini-label">Recommended template</span>
+          <strong id="templateRecommendation">Load data to evaluate template.</strong>
+          <p id="templateReason">The agent can confirm or override the recommended presentation.</p>
+        </div>
+        <label>
+          Presentation
+          <select id="templateSelect" disabled>
+            <option value="cathedral">Cathedral</option>
+            <option value="city-discovery">City Discovery</option>
+            <option value="multi-city">Multi-City Journey</option>
+            <option value="multi-hotel">Multi-Hotel Selector</option>
+          </select>
+        </label>
+      </section>
       <div class="review-actions">
         <button id="applyReviewButton" class="secondary-action" type="button" disabled>Approve Review Changes</button>
         <button id="editAgainButton" class="tertiary-action" type="button" disabled>Edit Again</button>
@@ -237,6 +253,7 @@
   <script src="../review-draft.js"></script>
   <script src="../flight-display-bg.js"></script>
   <script src="../flight-date-sanitizer.js"></script>
+  <script src="../proposal-template-resolver.js"></script>
   <script src="../offer-engine-adapter.js"></script>
   <script src="../proposal-input-adapter.js"></script>
   <script src="../luxury-v11-renderer.js"></script>

@@ -6,6 +6,7 @@ const flightDisplayBg = window.GT63FlightDisplayBg;
 const offerEngineAdapter = window.GT63OfferEngineAdapter;
 const proposalInputAdapter = window.GT63ProposalInputAdapter;
 const luxuryRenderer = window.GT63LuxuryV11Renderer;
+const templateResolver = window.GT63ProposalTemplateResolver;
 
 const nodes = {
   form: document.getElementById("proposalForm"),
@@ -44,6 +45,9 @@ const nodes = {
   resetReviewButton: document.getElementById("resetReviewButton"),
   addHotelOptionButton: document.getElementById("addHotelOptionButton"),
   reviewState: document.getElementById("reviewState"),
+  templateRecommendation: document.getElementById("templateRecommendation"),
+  templateReason: document.getElementById("templateReason"),
+  templateSelect: document.getElementById("templateSelect"),
   warningsReview: document.getElementById("warningsReview"),
   blockingReview: document.getElementById("blockingReview"),
   previewArea: document.getElementById("previewArea"),
@@ -71,6 +75,40 @@ function activeProductModel() {
     return reviewDraftApi.activeProductModel(reviewDraft);
   }
   return currentModel;
+}
+
+function templateLabel(value) {
+  return templateResolver?.templateLabel?.(value) || valueOrFallback(value, "Template to confirm");
+}
+
+function resolveProposalTemplate(model = {}, selectedOverride = "") {
+  if (!templateResolver?.resolveProposalTemplate) {
+    return {
+      recommended: "cathedral",
+      selected: selectedOverride || model?.proposalTemplate?.selected || "cathedral",
+      source: selectedOverride ? "agent_override" : "resolver",
+      reason: "Template resolver unavailable."
+    };
+  }
+
+  const baseModel = selectedOverride
+    ? {
+      ...model,
+      proposalTemplate: {
+        ...(model?.proposalTemplate || {}),
+        selected: selectedOverride
+      }
+    }
+    : model;
+  return templateResolver.resolveProposalTemplate(baseModel);
+}
+
+function withResolvedProposalTemplate(model = {}, selectedOverride = "") {
+  const template = resolveProposalTemplate(model, selectedOverride);
+  return {
+    ...model,
+    proposalTemplate: template
+  };
 }
 
 function deepClone(value) {
@@ -409,6 +447,25 @@ function renderHotels(model) {
     .join("");
 }
 
+function renderTemplateSelection(model) {
+  if (!nodes.templateSelect) return;
+  if (!model) {
+    nodes.templateRecommendation.textContent = "Load data to evaluate template.";
+    nodes.templateReason.textContent = "The agent can confirm or override the recommended presentation.";
+    nodes.templateSelect.value = "cathedral";
+    nodes.templateSelect.disabled = true;
+    return;
+  }
+
+  const template = resolveProposalTemplate(model);
+  nodes.templateRecommendation.textContent = `${templateLabel(template.recommended)} recommended`;
+  nodes.templateReason.textContent = template.source === "agent_override"
+    ? `${template.reason} Current selection: ${templateLabel(template.selected)}.`
+    : template.reason;
+  nodes.templateSelect.value = template.selected;
+  nodes.templateSelect.disabled = false;
+}
+
 function proposalContext() {
   return {
     clientName: nodes.clientName.value.trim(),
@@ -541,6 +598,7 @@ function renderReviewedModel(model) {
   renderMission(model);
   renderFlight(model.flight);
   renderHotels(model);
+  renderTemplateSelection(model);
   nodes.warningsReview.innerHTML = renderList(model.warnings, "No warnings");
   nodes.blockingReview.innerHTML = renderList(combinedBlockingIssues(model), "No blocking issues");
   renderGate(model);
@@ -554,11 +612,12 @@ function renderReviewedModel(model) {
 }
 
 function renderModel(model) {
+  const modelWithTemplate = withResolvedProposalTemplate(model);
   reviewDraft = reviewDraftApi?.createReviewDraft
-    ? reviewDraftApi.createReviewDraft(model)
+    ? reviewDraftApi.createReviewDraft(modelWithTemplate)
     : {
-      originalModel: deepClone(model),
-      reviewedModel: deepClone(model),
+      originalModel: deepClone(modelWithTemplate),
+      reviewedModel: deepClone(modelWithTemplate),
       approvedModel: null,
       hasManualEdits: false,
       status: "draft"
@@ -626,17 +685,18 @@ function draftFromReviewFields() {
     }));
     draft.hotel = draft.hotelOptions[selectedIndex] || draft.hotelOptions[0] || null;
   }
-  return draft;
+  return withResolvedProposalTemplate(draft, nodes.templateSelect?.value || draft.proposalTemplate?.selected);
 }
 
 function saveDraftModel(draft) {
+  const nextDraft = withResolvedProposalTemplate(draft, draft?.proposalTemplate?.selected || nodes.templateSelect?.value);
   reviewDraft = reviewDraftApi?.updateReviewedModel
-    ? reviewDraftApi.updateReviewedModel(reviewDraft, draft)
+    ? reviewDraftApi.updateReviewedModel(reviewDraft, nextDraft)
     : {
       originalModel: originalModel(),
-      reviewedModel: draft,
+      reviewedModel: nextDraft,
       approvedModel: null,
-      hasManualEdits: JSON.stringify(draft) !== JSON.stringify(originalModel()),
+      hasManualEdits: JSON.stringify(nextDraft) !== JSON.stringify(originalModel()),
       status: "draft"
     };
   currentModel = reviewedModel();
@@ -677,11 +737,12 @@ function editApprovedModelAgain() {
 function resetReviewToExtracted() {
   const extracted = originalModel();
   if (!extracted) return;
+  const modelWithTemplate = withResolvedProposalTemplate(extracted);
   reviewDraft = reviewDraftApi?.createReviewDraft
-    ? reviewDraftApi.createReviewDraft(extracted)
+    ? reviewDraftApi.createReviewDraft(modelWithTemplate)
     : {
-      originalModel: deepClone(extracted),
-      reviewedModel: deepClone(extracted),
+      originalModel: deepClone(modelWithTemplate),
+      reviewedModel: deepClone(modelWithTemplate),
       approvedModel: null,
       hasManualEdits: false,
       status: "draft"
@@ -897,6 +958,11 @@ nodes.createOfferButton.addEventListener("click", async () => {
 });
 
 nodes.providerMode.addEventListener("change", syncProviderMode);
+nodes.templateSelect.addEventListener("change", () => {
+  const draft = draftFromReviewFields();
+  if (!draft) return;
+  saveDraftModel(draft);
+});
 nodes.marginPercent.addEventListener("input", () => {
   if (currentModel) {
     renderReviewedModel(currentModel);

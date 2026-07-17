@@ -127,6 +127,8 @@ async function main() {
   assert.match(indexHtml, /Approve Review Changes/, "product shell should expose review approval action");
   assert.match(indexHtml, /Edit Again/, "product shell should expose approved draft edit action");
   assert.match(indexHtml, /Reset to Extracted/, "product shell should expose reset-to-extracted action");
+  assert.match(indexHtml, /templateSelect/, "product shell should expose proposal template override control");
+  assert.match(indexHtml, /proposal-template-resolver\.js/, "product shell should load proposal template resolver");
   assert.match(indexHtml, /Continue to Preview/, "product shell should expose the preview action");
   assert.match(indexHtml, /Proposal Preview/, "product shell should expose preview area");
   assert.match(indexHtml, /Create Offer in 2L1P/, "product shell should expose Create Offer action");
@@ -147,6 +149,8 @@ async function main() {
   assert.match(appJs, /renderMission/, "product shell app should render the operator mission card");
   assert.match(appJs, /missionDestination/, "product shell app should keep mission destination safe");
   assert.match(appJs, /offerReadinessIssues/, "product shell app should guard final offer creation");
+  assert.match(appJs, /resolveProposalTemplate/, "product shell app should resolve recommended proposal templates");
+  assert.match(appJs, /agent_override/, "product shell app should preserve agent template overrides");
   assert.match(appJs, /Client name is required before creating an offer/, "product shell app should require client context before Create Offer");
   assert.match(appJs, /Review changes must be approved before creating an offer/, "product shell app should require approved review before Create Offer");
   assert.match(appJs, /data-review-path/, "product shell app should render editable review fields");

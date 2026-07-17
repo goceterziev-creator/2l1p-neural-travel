@@ -570,6 +570,32 @@ button:focus-visible {
   margin-top: 18px;
 }
 
+.template-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.36fr);
+  gap: 16px;
+  align-items: end;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.10), rgba(6, 182, 212, 0.05));
+}
+
+.template-card strong {
+  display: block;
+  margin-top: 5px;
+  color: #fff;
+  font-size: 18px;
+}
+
+.template-card p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .review-state {
   display: inline-flex;
   align-items: center;
@@ -1039,6 +1065,7 @@ ul {
   .v11-content-grid,
   .v11-detail-grid,
   .dev-controls,
+  .template-card,
   .summary-row {
     grid-template-columns: 1fr;
   }
