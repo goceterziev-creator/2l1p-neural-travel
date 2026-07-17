@@ -47,9 +47,15 @@ assert.match(multiHotelHtml, /Hotel option 1/, "multi-hotel renderer should use 
 assert.match(multiHotelHtml, /Hotel option 2/, "multi-hotel renderer should render second hotel option");
 assert.match(multiHotelHtml, /Hotel option 3/, "multi-hotel renderer should render third hotel option");
 assert.match(multiHotelHtml, /3 accommodation options/, "multi-hotel renderer should explain option count factually");
+assert.match(multiHotelHtml, /Избран хотел/, "multi-hotel renderer should identify the selected hotel in the hero");
+assert.match(multiHotelHtml, /Selected option estimate/, "multi-hotel renderer should keep the selected option estimate label");
+assert.match(multiHotelHtml, /js-selected-option-price/, "multi-hotel renderer should expose a dynamic selected package price");
+assert.match(multiHotelHtml, /Обща клиентска цена/, "multi-hotel renderer should show package price per hotel option");
 assert.match(multiHotelHtml, /Виж хотела/, "multi-hotel renderer should show hotel link action when URL exists");
 assert.match(multiHotelHtml, /Предпочитам този хотел/, "multi-hotel renderer should show client preference action");
-assert.match(multiHotelHtml, /Transfer/, "multi-hotel renderer should include transfer information");
+assert.match(multiHotelHtml, /v11-prefer-option/, "multi-hotel renderer should make hotel preference selectable");
+assert.match(multiHotelHtml, /Трансфер/, "multi-hotel renderer should include transfer information");
+assert.match(multiHotelHtml, /Необходим трансфер/, "Maldives multi-hotel renderer should not silently imply transfer is irrelevant");
 assert.equal(/Premium|Balanced|Best price|Балансирана|Премиум|Най-добра цена/.test(multiHotelHtml), false, "multi-hotel renderer must not invent qualitative hotel labels");
 assert.equal(/contractVersion|classifications|universalIntakeDeprecated|debug|sourceAuthority/.test(multiHotelHtml), false, "registry render must not leak engine fields");
 

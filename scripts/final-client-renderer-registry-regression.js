@@ -24,6 +24,10 @@ assert.match(serverJs, /async function renderOfferHtml/, "legacy renderer should
 
 assert.match(multiHotelRendererJs, /Предпочитам този хотел/, "multi-hotel final renderer should expose hotel preference action");
 assert.match(multiHotelRendererJs, /Виж хотела/, "multi-hotel final renderer should expose hotel link action");
+assert.match(multiHotelRendererJs, /Избран хотел/, "multi-hotel final renderer should identify the selected hotel");
+assert.match(multiHotelRendererJs, /Обща клиентска цена/, "multi-hotel final renderer should show option-specific package pricing");
+assert.match(multiHotelRendererJs, /optionPackageTotal/, "multi-hotel final renderer should price each option from flight plus selected hotel plus transfer plus margin");
+assert.match(multiHotelRendererJs, /Необходим трансфер/, "multi-hotel final renderer should expose transfer-required status when appropriate");
 assert.match(multiHotelRendererJs, /transferBlock/, "multi-hotel final renderer should expose transfer information");
 assert.equal(/Балансирана опция|Премиум изживяване|Най-добра цена/.test(multiHotelRendererJs), false, "multi-hotel renderer must not hardcode legacy qualitative labels");
 

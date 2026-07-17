@@ -22,10 +22,15 @@
     return cleaned || fallback;
   }
 
+  function amount(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : 0;
+  }
+
   function money(value, currency = "EUR") {
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) return "-";
-    return `${number.toLocaleString("en-US")} ${currency || "EUR"}`;
+    return `${number.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || "EUR"}`;
   }
 
   function isUsableImageUrl(value) {
@@ -57,6 +62,47 @@
   function firstHotelImage(hotel, input) {
     const urls = Array.isArray(hotel?.imageUrls) ? hotel.imageUrls : [];
     return urls.find(isUsableImageUrl) || fallbackImage(input);
+  }
+
+  function optionPackageTotal(hotel = {}, input = {}) {
+    const pricing = input.pricing || {};
+    const flightAmount = amount(pricing.flightAmount || input.flight?.price);
+    const hotelAmount = amount(hotel.price);
+    const transferAmount = amount(pricing.transferAmount || input.transfer?.price);
+    const marginPercent = amount(pricing.marginPercent);
+    const baseAmount = flightAmount + hotelAmount + transferAmount;
+    if (baseAmount <= 0) return 0;
+    return baseAmount + (baseAmount * (marginPercent / 100));
+  }
+
+  function selectedHotelIndex(hotelOptions = [], activeHotel = {}) {
+    const selectedIndex = hotelOptions.findIndex((hotel) => hotel?.selected);
+    if (selectedIndex >= 0) return selectedIndex;
+    const activeName = String(activeHotel?.name || "").trim();
+    if (activeName) {
+      const matchingIndex = hotelOptions.findIndex((hotel) => String(hotel?.name || "").trim() === activeName);
+      if (matchingIndex >= 0) return matchingIndex;
+    }
+    return 0;
+  }
+
+  function selectedOptionPayload(hotel = {}, index, currency, input) {
+    const label = `Hotel option ${index + 1}`;
+    const hotelOnly = amount(hotel.price);
+    const total = optionPackageTotal(hotel, input) || hotelOnly;
+    const name = text(hotel.name, label);
+    const priceDisplay = money(total, currency);
+    const hotelPriceDisplay = money(hotelOnly, currency);
+    const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
+    const preferMessage = encodeURIComponent(`Предпочитам ${name} - обща пакетна цена ${priceDisplay}`);
+
+    return {
+      label,
+      name,
+      priceDisplay,
+      hotelPriceDisplay,
+      whatsappUrl: `https://wa.me/${whatsappPhone}?text=${preferMessage}`
+    };
   }
 
   function segmentCard(segment = {}) {
@@ -103,31 +149,37 @@
     `;
   }
 
-  function hotelOptionCard(hotel = {}, index, currency, input) {
-    const label = `Hotel option ${index + 1}`;
+  function hotelOptionCard(hotel = {}, index, currency, input, activeIndex) {
+    const payload = selectedOptionPayload(hotel, index, currency, input);
     const image = firstHotelImage(hotel, input);
-    const selected = hotel.selected || index === 0;
+    const selected = index === activeIndex;
     const hotelUrl = String(hotel.url || hotel.link || hotel.bookingUrl || "").trim();
-    const optionPrice = money(hotel.price, currency);
-    const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
-    const preferMessage = encodeURIComponent(`Предпочитам ${text(hotel.name, label)} - ${optionPrice}`);
-    const preferUrl = `https://wa.me/${whatsappPhone}?text=${preferMessage}`;
 
     return `
-      <article class="v11-hotel-option ${selected ? "selected" : ""}">
+      <article class="v11-hotel-option ${selected ? "selected" : ""}" data-option-index="${escapeHtml(index)}">
         <img src="${escapeHtml(image)}" alt="">
         <div>
-          <span>${escapeHtml(label)}</span>
-          <strong>${escapeHtml(text(hotel.name, "Accommodation to confirm"))}</strong>
+          <span>${escapeHtml(payload.label)}${selected ? " · Избран хотел" : ""}</span>
+          <strong>${escapeHtml(payload.name)}</strong>
           <small>${escapeHtml(text(hotel.area))}</small>
           <small>${escapeHtml(text(hotel.room))}</small>
           <small>${escapeHtml(text(hotel.meal))}</small>
+          <div class="v11-option-price">
+            <span>Обща клиентска цена</span>
+            <strong>${escapeHtml(payload.priceDisplay)}</strong>
+            <small>Хотел: ${escapeHtml(payload.hotelPriceDisplay)}</small>
+          </div>
           <div class="v11-option-actions">
             ${hotelUrl ? `<a href="${escapeHtml(hotelUrl)}" target="_blank" rel="noreferrer">Виж хотела</a>` : ""}
-            <a href="${escapeHtml(preferUrl)}" target="_blank" rel="noreferrer">Предпочитам този хотел</a>
+            <button type="button"
+              class="v11-prefer-option"
+              data-option-name="${escapeHtml(payload.name)}"
+              data-option-price="${escapeHtml(payload.priceDisplay)}"
+              data-option-whatsapp="${escapeHtml(payload.whatsappUrl)}">
+              Предпочитам този хотел
+            </button>
           </div>
         </div>
-        <strong>${escapeHtml(optionPrice)}</strong>
       </article>
     `;
   }
@@ -144,14 +196,55 @@
 
   function transferBlock(input = {}) {
     const transfer = input.transfer || {};
-    const status = text(transfer.status || transfer.included || transfer.note, "За потвърждение");
+    const destinationText = [
+      input.destination?.name,
+      input.destination?.requested,
+      input.hotel?.area,
+      input.hotel?.name,
+      input.content?.heroTitle
+    ].filter(Boolean).join(" ");
+    const needsIslandTransfer = /maldives|maldive|малдив/i.test(destinationText);
+    const status = text(
+      transfer.status || transfer.included || transfer.note,
+      needsIslandTransfer
+        ? "Необходим трансфер: speedboat / seaplane / domestic flight, за потвърждение"
+        : "За потвърждение"
+    );
     const route = text(transfer.route || transfer.description, "Летище → място за настаняване → летище");
+
     return `
       <section class="v11-card v11-transfer-card">
-        <p class="v11-kicker">Transfer</p>
+        <p class="v11-kicker">Трансфер</p>
         <h4>${escapeHtml(route)}</h4>
         <p>${escapeHtml(status)}</p>
       </section>
+    `;
+  }
+
+  function selectedHotelScript() {
+    return `
+      <script>
+        (function () {
+          var script = document.currentScript;
+          var root = script && script.closest(".multi-hotel-proposal");
+          if (!root) return;
+          var selectedName = root.querySelector(".js-selected-option-name");
+          var selectedPrice = root.querySelector(".js-selected-option-price");
+          var whatsapp = root.querySelector(".js-selected-option-whatsapp");
+          root.querySelectorAll(".v11-prefer-option").forEach(function (button) {
+            button.addEventListener("click", function () {
+              root.querySelectorAll(".v11-hotel-option").forEach(function (card) {
+                card.classList.remove("selected");
+              });
+              var card = button.closest(".v11-hotel-option");
+              if (card) card.classList.add("selected");
+              if (selectedName) selectedName.textContent = button.dataset.optionName || "Hotel option";
+              if (selectedPrice) selectedPrice.textContent = button.dataset.optionPrice || "-";
+              if (whatsapp && button.dataset.optionWhatsapp) whatsapp.href = button.dataset.optionWhatsapp;
+            });
+          });
+        })();
+      </script>
     `;
   }
 
@@ -162,7 +255,8 @@
       : (input.hotel ? [input.hotel] : []);
     const activeHotel = hotelOptions.find((hotel) => hotel?.selected) || input.hotel || hotelOptions[0] || {};
     const currency = input.pricing?.currency || "EUR";
-    const total = input.pricing?.totalAmount || flight.price || activeHotel.price;
+    const activeIndex = selectedHotelIndex(hotelOptions, activeHotel);
+    const selectedPayload = selectedOptionPayload(hotelOptions[activeIndex] || activeHotel, activeIndex, currency, input);
     const title = input.content?.heroTitle || input.destination?.name || "Travel Proposal";
     const travelDates = input.client?.travelDates || input.destination?.requested || "";
     const heroImage = firstHotelImage(activeHotel, input);
@@ -184,9 +278,12 @@
             <img src="${escapeHtml(heroImage)}" alt="">
           </div>
           <div class="v11-price-card">
-            <span>Selected option estimate</span>
-            <strong>${escapeHtml(money(total, currency))}</strong>
+            <span>Избран хотел</span>
+            <strong class="js-selected-option-name">${escapeHtml(selectedPayload.name)}</strong>
+            <small>Selected option estimate</small>
+            <strong class="js-selected-option-price">${escapeHtml(selectedPayload.priceDisplay)}</strong>
             <small>${escapeHtml(String(hotelOptions.length))} accommodation option${hotelOptions.length === 1 ? "" : "s"}</small>
+            <a class="js-selected-option-whatsapp v11-selected-option-whatsapp" href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">Изпрати избора в WhatsApp</a>
           </div>
         </section>
 
@@ -211,7 +308,7 @@
             <p>Neutral accommodation options for operator review. Price labels are factual only.</p>
             <div class="v11-hotel-options">
               ${hotelOptions.length
-                ? hotelOptions.map((hotel, index) => hotelOptionCard(hotel, index, currency, input)).join("")
+                ? hotelOptions.map((hotel, index) => hotelOptionCard(hotel, index, currency, input, activeIndex)).join("")
                 : "<p class=\"v11-muted\">No hotel option data</p>"}
             </div>
           </div>
@@ -226,6 +323,7 @@
           </div>
           <span>${input.readiness === "ready" ? "READY" : "REVIEW"}</span>
         </section>
+        ${selectedHotelScript()}
       </article>
     `;
   }
