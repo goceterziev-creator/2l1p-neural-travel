@@ -98,6 +98,105 @@ function isPhoneLike(value) {
   return digits.length >= 7 && digits.length >= Math.max(7, Math.round(text.length * 0.55));
 }
 
+const DESTINATION_CONSISTENCY_PROFILES = [
+  {
+    name: "Tokyo",
+    labels: ["tokyo", "токио", "japan", "япония"],
+    positive: ["tokyo", "токио", "japan", "япония", "hnd", "nrt", "haneda", "нарита", "ханеда", "osaka", "kix", "itami"],
+    negative: ["santiago", "сантяго", "chile", "чили", "scl", "arturo merino benitez", "артуро мерино бенитес", "pudahuel", "tocumen", "токумен", "pty"]
+  },
+  {
+    name: "Santiago",
+    labels: ["santiago", "сантяго", "chile", "чили"],
+    positive: ["santiago", "сантяго", "chile", "чили", "scl", "arturo merino benitez", "артуро мерино бенитес", "pudahuel", "tocumen", "токумен", "pty"],
+    negative: ["tokyo", "токио", "japan", "япония", "hnd", "nrt", "haneda", "нарита", "ханеда"]
+  }
+];
+
+function normalizeConsistencyText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function destinationProfileFor(destination) {
+  const text = normalizeConsistencyText(destination);
+  if (!text) return null;
+  return DESTINATION_CONSISTENCY_PROFILES.find((profile) =>
+    profile.labels.some((label) => text.includes(normalizeConsistencyText(label)))
+  ) || null;
+}
+
+function destinationEvidenceText(model = {}) {
+  const flight = model?.flight || {};
+  const outboundSegments = Array.isArray(flight.outboundSegments) ? flight.outboundSegments : [];
+  const inboundSegments = Array.isArray(flight.inboundSegments) ? flight.inboundSegments : [];
+  const looseSegments = Array.isArray(flight.segments) ? flight.segments : [];
+  const segmentText = [...outboundSegments, ...inboundSegments, ...looseSegments]
+    .map((segment) => [
+      segment.from,
+      segment.to,
+      segment.departureAirport,
+      segment.arrivalAirport,
+      segment.departureCity,
+      segment.arrivalCity,
+      segment.departure,
+      segment.arrival
+    ].filter(Boolean).join(" "))
+    .join(" ");
+  const hotelText = hotelOptions(model)
+    .map((hotel) => [
+      hotel.name,
+      hotel.area,
+      hotel.location,
+      hotel.address,
+      hotel.description
+    ].filter(Boolean).join(" "))
+    .join(" ");
+  return normalizeConsistencyText([
+    flight.airline,
+    flight.route,
+    flight.departure,
+    flight.arrival,
+    flight.notes,
+    segmentText,
+    hotelText
+  ].filter(Boolean).join(" "));
+}
+
+function destinationConsistencyIssues(model = activeProductModel()) {
+  const profile = destinationProfileFor(proposalContext().destination);
+  if (!profile || !model) return [];
+
+  const evidence = destinationEvidenceText(model);
+  if (!evidence) return [];
+
+  const hasExpectedEvidence = profile.positive.some((term) => evidence.includes(normalizeConsistencyText(term)));
+  const hasConflictingEvidence = profile.negative.some((term) => evidence.includes(normalizeConsistencyText(term)));
+
+  if (hasConflictingEvidence && !hasExpectedEvidence) {
+    return [
+      `Destination mismatch: offer destination appears to be ${profile.name}, but extracted flight/hotel data points to another destination.`
+    ];
+  }
+
+  return [];
+}
+
+function combinedBlockingIssues(model = activeProductModel()) {
+  return Array.from(new Set([
+    ...(
+      Array.isArray(model?.blockingIssues)
+        ? model.blockingIssues
+        : []
+    ),
+    ...destinationConsistencyIssues(model)
+  ]));
+}
+
 function editInput(path, value, label, type = "text") {
   return `
     <label class="editable-field">
@@ -346,7 +445,7 @@ function offerReadinessIssues(model = activeProductModel()) {
     issues.push("Review changes must be approved before creating an offer.");
   }
 
-  return issues;
+  return [...issues, ...destinationConsistencyIssues(model)];
 }
 
 function renderOfferReadiness(model = activeProductModel()) {
@@ -443,7 +542,7 @@ function renderReviewedModel(model) {
   renderFlight(model.flight);
   renderHotels(model);
   nodes.warningsReview.innerHTML = renderList(model.warnings, "No warnings");
-  nodes.blockingReview.innerHTML = renderList(model.blockingIssues, "No blocking issues");
+  nodes.blockingReview.innerHTML = renderList(combinedBlockingIssues(model), "No blocking issues");
   renderGate(model);
   renderPreview(model);
   renderOfferReadiness(model);
@@ -814,6 +913,9 @@ nodes.marginPercent.addEventListener("input", () => {
 ].forEach((node) => node.addEventListener("input", () => {
   const model = activeProductModel() || currentModel;
   renderMission(model);
+  if (model) {
+    nodes.blockingReview.innerHTML = renderList(combinedBlockingIssues(model), "No blocking issues");
+  }
   renderOfferReadiness(model);
 }));
 nodes.applyReviewButton.addEventListener("click", applyReviewChanges);
