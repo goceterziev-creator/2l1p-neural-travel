@@ -853,6 +853,10 @@ button:focus-visible {
   gap: 16px;
 }
 
+.multi-hotel-sequential-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .v11-card {
   display: grid;
   gap: 16px;

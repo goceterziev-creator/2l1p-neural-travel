@@ -54,25 +54,31 @@ assert.equal(registry.rendererFor(multiHotelInput).label, "Multi-Hotel Selector"
 
 const multiHotelHtml = registry.renderProposal(multiHotelInput);
 assert.match(multiHotelHtml, /MULTI-HOTEL BRIEF/, "multi-hotel renderer should identify the template");
-assert.match(multiHotelHtml, /Accommodation Options/, "multi-hotel renderer should show accommodation options");
+assert.match(multiHotelHtml, /multi-hotel-sequential-grid/, "multi-hotel renderer should use a sequential single-column content grid");
+assert.match(multiHotelHtml, /&#1042;&#1072;&#1096;&#1080;&#1103;&#1090; &#1087;&#1086;&#1083;&#1077;&#1090;/, "multi-hotel renderer should label the flight section in Bulgarian");
+assert.match(multiHotelHtml, /&#1042;&#1072;&#1088;&#1080;&#1072;&#1085;&#1090;&#1080; &#1079;&#1072; &#1085;&#1072;&#1089;&#1090;&#1072;&#1085;&#1103;&#1074;&#1072;&#1085;&#1077;/, "multi-hotel renderer should label accommodation options in Bulgarian");
 assert.match(multiHotelHtml, /Hotel option 1/, "multi-hotel renderer should use neutral hotel option labels");
 assert.match(multiHotelHtml, /Hotel option 2/, "multi-hotel renderer should render second hotel option");
 assert.match(multiHotelHtml, /Hotel option 3/, "multi-hotel renderer should render third hotel option");
 assert.match(multiHotelHtml, /3 accommodation options/, "multi-hotel renderer should explain option count factually");
-assert.match(multiHotelHtml, /РР·Р±СЂР°РЅ С…РѕС‚РµР»/, "multi-hotel renderer should identify the selected hotel in the hero");
+assert.match(multiHotelHtml, /&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;/, "multi-hotel renderer should identify the selected hotel in the hero");
 assert.match(multiHotelHtml, /Selected option estimate/, "multi-hotel renderer should keep the selected option estimate label");
 assert.match(multiHotelHtml, /js-selected-option-price/, "multi-hotel renderer should expose a dynamic selected package price");
 assert.match(multiHotelHtml, /v11-hotel-gallery/, "multi-hotel renderer should show a hotel image gallery");
 assert.doesNotMatch(multiHotelHtml, /alpha-4\.jpg/, "multi-hotel renderer should not render more than three gallery images per hotel option");
 assert.match(multiHotelHtml, /https:\/\/example\.test\/hotel-alpha/, "multi-hotel renderer should preserve hotel website links from websiteUrl");
-assert.match(multiHotelHtml, /РћР±С‰Р° РєР»РёРµРЅС‚СЃРєР° С†РµРЅР°/, "multi-hotel renderer should show package price per hotel option");
-assert.match(multiHotelHtml, /Виж хотела/, "multi-hotel renderer should show hotel link action when URL exists");
-assert.match(multiHotelHtml, /v11-prefer-option/, "multi-hotel renderer should show client preference action");
+assert.match(multiHotelHtml, /&#1054;&#1073;&#1097;&#1072; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1089;&#1082;&#1072; &#1094;&#1077;&#1085;&#1072;/, "multi-hotel renderer should show package price per hotel option");
+assert.match(multiHotelHtml, /&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;/, "multi-hotel renderer should show hotel link action when URL exists");
 assert.match(multiHotelHtml, /v11-prefer-option/, "multi-hotel renderer should make hotel preference selectable");
-assert.match(multiHotelHtml, /РўСЂР°РЅСЃС„РµСЂ/, "multi-hotel renderer should include transfer information");
-assert.match(multiHotelHtml, /РќРµРѕР±С…РѕРґРёРј С‚СЂР°РЅСЃС„РµСЂ/, "Maldives multi-hotel renderer should not silently imply transfer is irrelevant");
-assert.equal(/Premium|Balanced|Best price|Р‘Р°Р»Р°РЅСЃРёСЂР°РЅР°|РџСЂРµРјРёСѓРј|РќР°Р№-РґРѕР±СЂР° С†РµРЅР°/.test(multiHotelHtml), false, "multi-hotel renderer must not invent qualitative hotel labels");
+assert.match(multiHotelHtml, /&#1058;&#1088;&#1072;&#1085;&#1089;&#1092;&#1077;&#1088;/, "multi-hotel renderer should include transfer information");
+assert.match(multiHotelHtml, /\u041d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440/, "Maldives multi-hotel renderer should not silently imply transfer is irrelevant");
+assert.equal(/Premium|Balanced|Best price|Balan|Premi|Nai-dobra/.test(multiHotelHtml), false, "multi-hotel renderer must not invent qualitative hotel labels");
+assert.equal(/Р[ ’џћ›ќ—Ґ]|С[џњ‰‡ђ]/.test(multiHotelHtml), false, "multi-hotel renderer should not output mojibake Bulgarian labels");
 assert.equal(/contractVersion|classifications|universalIntakeDeprecated|debug|sourceAuthority/.test(multiHotelHtml), false, "registry render must not leak engine fields");
+
+const flightIndex = multiHotelHtml.indexOf("v11-flight-card");
+const hotelIndex = multiHotelHtml.indexOf("v11-hotel-card");
+assert.ok(flightIndex >= 0 && hotelIndex > flightIndex, "multi-hotel renderer should render flight before hotel options");
 
 const cityInput = buildProposalInputFromProductModel({
   ...productModel,

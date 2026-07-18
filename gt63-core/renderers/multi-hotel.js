@@ -120,7 +120,7 @@
     const priceDisplay = money(total, currency);
     const hotelPriceDisplay = money(hotelOnly, currency);
     const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
-    const preferMessage = encodeURIComponent(`РџСЂРµРґРїРѕС‡РёС‚Р°Рј ${name} - РѕР±С‰Р° РїР°РєРµС‚РЅР° С†РµРЅР° ${priceDisplay}`);
+    const preferMessage = encodeURIComponent(`Predpochitam ${name} - obshta paketna tsena ${priceDisplay}`);
 
     return {
       label,
@@ -187,24 +187,24 @@
           ${gallery.map((image) => `<img src="${escapeHtml(image)}" alt="">`).join("")}
         </div>
         <div>
-          <span>${escapeHtml(payload.label)}${selected ? " В· РР·Р±СЂР°РЅ С…РѕС‚РµР»" : ""}</span>
+          <span>${escapeHtml(payload.label)}${selected ? " &middot; &#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;" : ""}</span>
           <strong>${escapeHtml(payload.name)}</strong>
           <small>${escapeHtml(text(hotel.area))}</small>
           <small>${escapeHtml(text(hotel.room))}</small>
           <small>${escapeHtml(text(hotel.meal))}</small>
           <div class="v11-option-price">
-            <span>РћР±С‰Р° РєР»РёРµРЅС‚СЃРєР° С†РµРЅР°</span>
+            <span>&#1054;&#1073;&#1097;&#1072; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1089;&#1082;&#1072; &#1094;&#1077;&#1085;&#1072;</span>
             <strong>${escapeHtml(payload.priceDisplay)}</strong>
-            <small>РҐРѕС‚РµР»: ${escapeHtml(payload.hotelPriceDisplay)}</small>
+            <small>&#1061;&#1086;&#1090;&#1077;&#1083;: ${escapeHtml(payload.hotelPriceDisplay)}</small>
           </div>
           <div class="v11-option-actions">
-            ${optionUrl ? `<a href="${escapeHtml(optionUrl)}" target="_blank" rel="noreferrer">Виж хотела</a>` : ""}
+            ${optionUrl ? `<a href="${escapeHtml(optionUrl)}" target="_blank" rel="noreferrer">&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;</a>` : ""}
             <button type="button"
               class="v11-prefer-option"
               data-option-name="${escapeHtml(payload.name)}"
               data-option-price="${escapeHtml(payload.priceDisplay)}"
               data-option-whatsapp="${escapeHtml(payload.whatsappUrl)}">
-              РџСЂРµРґРїРѕС‡РёС‚Р°Рј С‚РѕР·Рё С…РѕС‚РµР»
+              &#1055;&#1088;&#1077;&#1076;&#1087;&#1086;&#1095;&#1080;&#1090;&#1072;&#1084; &#1090;&#1086;&#1079;&#1080; &#1093;&#1086;&#1090;&#1077;&#1083;
             </button>
           </div>
         </div>
@@ -231,18 +231,18 @@
       input.hotel?.name,
       input.content?.heroTitle
     ].filter(Boolean).join(" ");
-    const needsIslandTransfer = /maldives|maldive|РјР°Р»РґРёРІ/i.test(destinationText);
+    const needsIslandTransfer = /maldives|maldive|\u043c\u0430\u043b\u0434\u0438\u0432/i.test(destinationText);
     const status = text(
       transfer.status || transfer.included || transfer.note,
       needsIslandTransfer
-        ? "РќРµРѕР±С…РѕРґРёРј С‚СЂР°РЅСЃС„РµСЂ: speedboat / seaplane / domestic flight, Р·Р° РїРѕС‚РІСЉСЂР¶РґРµРЅРёРµ"
-        : "Р—Р° РїРѕС‚РІСЉСЂР¶РґРµРЅРёРµ"
+        ? "\u041d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440: speedboat / seaplane / domestic flight, \u0437\u0430 \u043f\u043e\u0442\u0432\u044a\u0440\u0436\u0434\u0435\u043d\u0438\u0435"
+        : "\u0417\u0430 \u043f\u043e\u0442\u0432\u044a\u0440\u0436\u0434\u0435\u043d\u0438\u0435"
     );
-    const route = text(transfer.route || transfer.description, "Р›РµС‚РёС‰Рµ в†’ РјСЏСЃС‚Рѕ Р·Р° РЅР°СЃС‚Р°РЅСЏРІР°РЅРµ в†’ Р»РµС‚РёС‰Рµ");
+    const route = text(transfer.route || transfer.description, "\u041b\u0435\u0442\u0438\u0449\u0435 \u2192 \u043c\u044f\u0441\u0442\u043e \u0437\u0430 \u043d\u0430\u0441\u0442\u0430\u043d\u044f\u0432\u0430\u043d\u0435 \u2192 \u043b\u0435\u0442\u0438\u0449\u0435");
 
     return `
       <section class="v11-card v11-transfer-card">
-        <p class="v11-kicker">РўСЂР°РЅСЃС„РµСЂ</p>
+        <p class="v11-kicker">&#1058;&#1088;&#1072;&#1085;&#1089;&#1092;&#1077;&#1088;</p>
         <h4>${escapeHtml(route)}</h4>
         <p>${escapeHtml(status)}</p>
       </section>
@@ -293,7 +293,7 @@
       <article class="v11-proposal multi-hotel-proposal" aria-label="Multi-hotel proposal preview">
         <section class="v11-hero">
           <div>
-            <p class="v11-eyebrow">AYA TRAVEL В· MULTI-HOTEL BRIEF</p>
+            <p class="v11-eyebrow">AYA TRAVEL &middot; MULTI-HOTEL BRIEF</p>
             <h3>${escapeHtml(title)}</h3>
             <p>${escapeHtml(input.content?.heroSubtitle || "A curated travel proposal with accommodation options.")}</p>
             <div class="v11-chip-row">
@@ -306,20 +306,20 @@
             <img src="${escapeHtml(heroImage)}" alt="">
           </div>
           <div class="v11-price-card">
-            <span>РР·Р±СЂР°РЅ С…РѕС‚РµР»</span>
+            <span>&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;</span>
             <strong class="js-selected-option-name">${escapeHtml(selectedPayload.name)}</strong>
             <small>Selected option estimate</small>
             <strong class="js-selected-option-price">${escapeHtml(selectedPayload.priceDisplay)}</strong>
             <small>${escapeHtml(String(hotelOptions.length))} accommodation option${hotelOptions.length === 1 ? "" : "s"}</small>
-            <a class="js-selected-option-whatsapp v11-selected-option-whatsapp" href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">РР·РїСЂР°С‚Рё РёР·Р±РѕСЂР° РІ WhatsApp</a>
+            <a class="js-selected-option-whatsapp v11-selected-option-whatsapp" href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">&#1048;&#1079;&#1087;&#1088;&#1072;&#1090;&#1080; &#1080;&#1079;&#1073;&#1086;&#1088;&#1072; &#1074; WhatsApp</a>
           </div>
         </section>
 
         ${warningList(input.warnings)}
 
-        <section class="v11-content-grid">
+        <section class="v11-content-grid multi-hotel-sequential-grid">
           <div class="v11-card v11-flight-card">
-            <p class="v11-kicker">Flight Experience</p>
+            <p class="v11-kicker">&#1042;&#1072;&#1096;&#1080;&#1103;&#1090; &#1087;&#1086;&#1083;&#1077;&#1090;</p>
             <h4>${escapeHtml(text(flight.airline, "Airline to confirm"))}</h4>
             <p>${escapeHtml(text(flight.route, "Route to confirm"))}</p>
             ${segmentGroup("Outbound", flight.outboundSegments || [], flight.outbound)}
@@ -331,9 +331,9 @@
           </div>
 
           <div class="v11-card v11-hotel-card">
-            <p class="v11-kicker">Accommodation Options</p>
-            <h4>Compare selected stays</h4>
-            <p>Neutral accommodation options for operator review. Price labels are factual only.</p>
+            <p class="v11-kicker">&#1042;&#1072;&#1088;&#1080;&#1072;&#1085;&#1090;&#1080; &#1079;&#1072; &#1085;&#1072;&#1089;&#1090;&#1072;&#1085;&#1103;&#1074;&#1072;&#1085;&#1077;</p>
+            <h4>&#1057;&#1088;&#1072;&#1074;&#1085;&#1077;&#1090;&#1077; &#1087;&#1088;&#1077;&#1076;&#1083;&#1086;&#1078;&#1077;&#1085;&#1080;&#1090;&#1077; &#1074;&#1072;&#1088;&#1080;&#1072;&#1085;&#1090;&#1080;</h4>
+            <p>&#1061;&#1086;&#1090;&#1077;&#1083;&#1089;&#1082;&#1080;&#1090;&#1077; &#1086;&#1087;&#1094;&#1080;&#1080; &#1089;&#1072; &#1087;&#1086;&#1076;&#1088;&#1077;&#1076;&#1077;&#1085;&#1080; &#1079;&#1072; &#1103;&#1089;&#1085;&#1086; &#1089;&#1088;&#1072;&#1074;&#1085;&#1077;&#1085;&#1080;&#1077;. &#1062;&#1077;&#1085;&#1080;&#1090;&#1077; &#1089;&#1072; &#1086;&#1073;&#1097;&#1080; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1089;&#1082;&#1080; &#1094;&#1077;&#1085;&#1080; &#1079;&#1072; &#1089;&#1098;&#1086;&#1090;&#1074;&#1077;&#1090;&#1085;&#1080;&#1103; &#1080;&#1079;&#1073;&#1086;&#1088;.</p>
             <div class="v11-hotel-options">
               ${hotelOptions.length
                 ? hotelOptions.map((hotel, index) => hotelOptionCard(hotel, index, currency, input, activeIndex)).join("")
