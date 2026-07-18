@@ -1,4 +1,174 @@
 :root {
+  --v11-premium-line: rgba(148, 163, 184, 0.2);
+}
+
+.v11-package-summary {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.v11-package-summary strong,
+.v11-insight-card h4,
+.v11-flight-card h4,
+.v11-detailed-flight-card h4 {
+  color: #f8fafc;
+}
+
+.v11-check-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.v11-check-list li {
+  position: relative;
+  padding-left: 1.25rem;
+  color: #dbeafe;
+  line-height: 1.45;
+}
+
+.v11-check-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #22d3ee;
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.45);
+}
+
+.v11-insight-card {
+  border-color: rgba(34, 211, 238, 0.28);
+  background:
+    linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(15, 23, 42, 0.72)),
+    rgba(15, 23, 42, 0.88);
+}
+
+.v11-flight-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.v11-flight-summary-grid div {
+  min-height: 84px;
+  padding: 0.95rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.v11-flight-summary-grid span {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #93a4bd;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.v11-flight-summary-grid strong {
+  color: #f8fafc;
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.v11-gallery-thumb {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  cursor: zoom-in;
+  overflow: hidden;
+}
+
+.v11-selected-hotel-gallery .v11-gallery-thumb:first-child {
+  grid-column: 1 / -1;
+}
+
+.v11-gallery-thumb img {
+  width: 100%;
+  min-height: 160px;
+  object-fit: cover;
+  transition: transform 180ms ease, filter 180ms ease;
+}
+
+.v11-selected-hotel-gallery .v11-gallery-thumb:first-child img {
+  min-height: 300px;
+}
+
+.v11-gallery-thumb:hover img {
+  transform: scale(1.025);
+  filter: saturate(1.08);
+}
+
+.v11-gallery-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(2, 6, 23, 0.92);
+  backdrop-filter: blur(18px);
+}
+
+.v11-gallery-dialog[hidden] {
+  display: none;
+}
+
+.v11-gallery-dialog img {
+  width: min(1120px, 100%);
+  max-height: 82vh;
+  object-fit: contain;
+  border-radius: 18px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+}
+
+.v11-gallery-close,
+.v11-gallery-nav {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.v11-gallery-close {
+  top: 1rem;
+  right: 1rem;
+  padding: 0.7rem 1rem;
+}
+
+.v11-gallery-nav {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 54px;
+  height: 54px;
+}
+
+.v11-gallery-prev {
+  left: 1rem;
+}
+
+.v11-gallery-next {
+  right: 1rem;
+}
+
+:root {
   color-scheme: dark;
   --bg: #0a0f1c;
   --bg-soft: #0f172a;

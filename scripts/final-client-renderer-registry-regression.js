@@ -33,13 +33,19 @@ assert.match(multiHotelRendererJs, /COMPACT_GALLERY_IMAGE_COUNT = 3/, "multi-hot
 assert.match(multiHotelRendererJs, /websiteUrl/, "multi-hotel final renderer should preserve common hotel website URL fields");
 assert.match(multiHotelRendererJs, /\\u041d\\u0435\\u043e\\u0431\\u0445\\u043e\\u0434\\u0438\\u043c \\u0442\\u0440\\u0430\\u043d\\u0441\\u0444\\u0435\\u0440/, "multi-hotel final renderer should expose transfer-required status when appropriate");
 assert.match(multiHotelRendererJs, /transferBlock/, "multi-hotel final renderer should expose transfer information");
-assert.match(multiHotelRendererJs, /multi-hotel-sequential-grid/, "multi-hotel final renderer should render flight and hotels sequentially");
+assert.match(multiHotelRendererJs, /flightSummaryCards/, "multi-hotel final renderer should render premium flight summary cards");
+assert.match(multiHotelRendererJs, /v11-detailed-flight-card/, "multi-hotel final renderer should preserve detailed flight information below transfer");
+assert.match(multiHotelRendererJs, /packageSummaryBlock/, "multi-hotel final renderer should expose package included services");
+assert.match(multiHotelRendererJs, /insightBlock/, "multi-hotel final renderer should expose supported-facts GT63 insight");
+assert.match(multiHotelRendererJs, /v11-gallery-dialog/, "multi-hotel final renderer should include fullscreen selected hotel gallery");
+assert.match(multiHotelRendererJs, /pointerdown/, "multi-hotel final renderer should support touch or pointer gallery navigation");
 assert.match(multiHotelRendererJs, /hotelOptions\.map/, "multi-hotel final renderer should render all hotel options from the array");
 assert.match(multiHotelRendererJs, /v11-selected-hotel-detail/, "multi-hotel final renderer should render selected hotel details");
 assert.match(multiHotelRendererJs, /js-selected-option-image/, "multi-hotel final renderer should update hero image from selected hotel state");
 assert.match(multiHotelRendererJs, /js-selected-option-website/, "multi-hotel final renderer should update selected hotel website link");
-assert.match(productCss, /\.multi-hotel-sequential-grid\s*{\s*grid-template-columns: minmax\(0, 1fr\);/m, "multi-hotel CSS should force sequential single-column layout");
+assert.match(productCss, /\.v11-flight-summary-grid/, "multi-hotel CSS should style premium flight summary cards");
+assert.match(productCss, /\.v11-gallery-dialog/, "multi-hotel CSS should style fullscreen gallery");
 assert.equal(/Р[ ’џћ›ќ—Ґ]|С[џњ‰‡ђ]/.test(multiHotelRendererJs), false, "multi-hotel renderer should not contain mojibake Bulgarian labels");
-assert.equal(/Balan|Premi|Nai-dobra/.test(multiHotelRendererJs), false, "multi-hotel renderer must not hardcode legacy qualitative labels");
+assert.equal(/Premium option|Balanced option|Best price|Premi izhiv|Nai-dobra/.test(multiHotelRendererJs), false, "multi-hotel renderer must not hardcode legacy qualitative labels");
 
 console.log("FINAL CLIENT RENDERER REGISTRY REGRESSION PASS");
