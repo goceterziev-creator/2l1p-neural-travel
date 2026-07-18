@@ -86,16 +86,19 @@ async function main() {
   assert.equal(reviewedPayload.flightPrice, 1520, "Offer Engine should receive reviewed flight price");
 
   const multiHotelModel = JSON.parse(JSON.stringify(originalModel));
-  multiHotelModel.hotelOptions = [
-    { ...multiHotelModel.hotel, name: "Patina Maldives", price: 11200, selected: false, url: "https://example.test/patina" },
-    { ...multiHotelModel.hotel, name: "Conrad Maldives Rangali Island", price: 14800, selected: true, url: "https://example.test/conrad" }
-  ];
-  multiHotelModel.hotel = multiHotelModel.hotelOptions[1];
+  multiHotelModel.hotelOptions = Array.from({ length: 5 }, (_, index) => ({
+    ...multiHotelModel.hotel,
+    name: `Maldives Hotel ${index + 1}`,
+    price: 11200 + (index * 900),
+    selected: index === 4,
+    url: `https://example.test/hotel-${index + 1}`
+  }));
+  multiHotelModel.hotel = multiHotelModel.hotelOptions[4];
   multiHotelModel.proposalTemplate = {
     recommended: "multi-hotel",
     selected: "multi-hotel",
     source: "resolver",
-    reason: "2 accommodation options detected."
+    reason: "5 accommodation options detected."
   };
   const multiHotelPayload = buildOfferPayloadFromProductModel(multiHotelModel, {
     clientName: "GT63 Test Client",
@@ -104,11 +107,11 @@ async function main() {
     guests: "2 adults"
   });
 
-  assert.equal(multiHotelPayload.hotelName, "Conrad Maldives Rangali Island", "Offer Engine should use selected hotel option");
+  assert.equal(multiHotelPayload.hotelName, "Maldives Hotel 5", "Offer Engine should use selected hotel option");
   assert.equal(multiHotelPayload.hotelPrice, 14800, "Offer Engine should price selected hotel option");
-  assert.equal(multiHotelPayload.hotels.length, 2, "Offer Engine should receive all hotel options");
-  assert.equal(multiHotelPayload.hotels[1].selected, true, "Offer Engine should preserve selected hotel flag");
-  assert.equal(multiHotelPayload.hotels[1].url, "https://example.test/conrad", "Offer Engine should preserve hotel links");
+  assert.equal(multiHotelPayload.hotels.length, 5, "Offer Engine should receive all hotel options");
+  assert.equal(multiHotelPayload.hotels[4].selected, true, "Offer Engine should preserve selected hotel flag");
+  assert.equal(multiHotelPayload.hotels[4].url, "https://example.test/hotel-5", "Offer Engine should preserve hotel links");
   assert.equal(multiHotelPayload.proposalTemplate.selected, "multi-hotel", "Offer Engine should receive selected proposal template");
 
   const phoneDestinationPayload = buildOfferPayloadFromProductModel(model, {

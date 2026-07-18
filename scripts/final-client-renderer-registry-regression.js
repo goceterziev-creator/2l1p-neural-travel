@@ -29,11 +29,15 @@ assert.match(multiHotelRendererJs, /&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &
 assert.match(multiHotelRendererJs, /&#1054;&#1073;&#1097;&#1072; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1089;&#1082;&#1072; &#1094;&#1077;&#1085;&#1072;/, "multi-hotel final renderer should show option-specific package pricing");
 assert.match(multiHotelRendererJs, /optionPackageTotal/, "multi-hotel final renderer should price each option from flight plus selected hotel plus transfer plus margin");
 assert.match(multiHotelRendererJs, /hotelImages/, "multi-hotel final renderer should render hotel image galleries");
-assert.match(multiHotelRendererJs, /slice\(0, 3\)/, "multi-hotel final renderer should limit each hotel gallery to three images");
+assert.match(multiHotelRendererJs, /COMPACT_GALLERY_IMAGE_COUNT = 3/, "multi-hotel final renderer should limit compact card galleries without limiting hotel count");
 assert.match(multiHotelRendererJs, /websiteUrl/, "multi-hotel final renderer should preserve common hotel website URL fields");
 assert.match(multiHotelRendererJs, /\\u041d\\u0435\\u043e\\u0431\\u0445\\u043e\\u0434\\u0438\\u043c \\u0442\\u0440\\u0430\\u043d\\u0441\\u0444\\u0435\\u0440/, "multi-hotel final renderer should expose transfer-required status when appropriate");
 assert.match(multiHotelRendererJs, /transferBlock/, "multi-hotel final renderer should expose transfer information");
 assert.match(multiHotelRendererJs, /multi-hotel-sequential-grid/, "multi-hotel final renderer should render flight and hotels sequentially");
+assert.match(multiHotelRendererJs, /hotelOptions\.map/, "multi-hotel final renderer should render all hotel options from the array");
+assert.match(multiHotelRendererJs, /v11-selected-hotel-detail/, "multi-hotel final renderer should render selected hotel details");
+assert.match(multiHotelRendererJs, /js-selected-option-image/, "multi-hotel final renderer should update hero image from selected hotel state");
+assert.match(multiHotelRendererJs, /js-selected-option-website/, "multi-hotel final renderer should update selected hotel website link");
 assert.match(productCss, /\.multi-hotel-sequential-grid\s*{\s*grid-template-columns: minmax\(0, 1fr\);/m, "multi-hotel CSS should force sequential single-column layout");
 assert.equal(/Р[ ’џћ›ќ—Ґ]|С[џњ‰‡ђ]/.test(multiHotelRendererJs), false, "multi-hotel renderer should not contain mojibake Bulgarian labels");
 assert.equal(/Balan|Premi|Nai-dobra/.test(multiHotelRendererJs), false, "multi-hotel renderer must not hardcode legacy qualitative labels");

@@ -162,6 +162,7 @@ async function main() {
   assert.match(appJs, /addFlightSegment/, "product shell app should allow adding flight segments");
   assert.match(appJs, /removeFlightSegment/, "product shell app should allow removing flight segments");
   assert.match(appJs, /removeHotelOption/, "product shell app should allow removing hotel options");
+  assert.match(appJs, /moveHotelOption/, "product shell app should allow reordering hotel options");
   assert.match(appJs, /draftFromReviewFields/, "product shell app should preserve current review edits before structural changes");
   assert.match(appJs, /GT63ProposalRendererRegistry/, "product shell app should use proposal renderer registry");
   assert.match(appJs, /renderProposal/, "product shell app should render preview through the registry");

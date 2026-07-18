@@ -17,29 +17,26 @@ const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
 const productModel = adaptSmartImportForProduct(fixture);
 
 const multiHotelModel = JSON.parse(JSON.stringify(productModel));
-multiHotelModel.hotelOptions = [
-  {
-    ...multiHotelModel.hotel,
-    name: "Hotel Alpha",
-    price: 1000,
-    selected: true,
-    websiteUrl: "https://example.test/hotel-alpha",
-    imageUrls: [
-      "https://images.example.test/alpha-1.jpg",
-      "https://images.example.test/alpha-2.jpg",
-      "https://images.example.test/alpha-3.jpg",
-      "https://images.example.test/alpha-4.jpg"
-    ]
-  },
-  { ...multiHotelModel.hotel, name: "Hotel Beta", price: 1200, selected: false },
-  { ...multiHotelModel.hotel, name: "Hotel Gamma", price: 900, selected: false }
-];
-multiHotelModel.hotel = multiHotelModel.hotelOptions[0];
+multiHotelModel.hotelOptions = Array.from({ length: 10 }, (_, index) => ({
+  ...multiHotelModel.hotel,
+  name: `Hotel ${index + 1}`,
+  price: 1000 + (index * 100),
+  selected: index === 9,
+  websiteUrl: `https://example.test/hotel-${index + 1}`,
+  heroImage: `https://images.example.test/hotel-${index + 1}-hero.jpg`,
+  imageUrls: [
+    `https://images.example.test/hotel-${index + 1}-1.jpg`,
+    `https://images.example.test/hotel-${index + 1}-2.jpg`,
+    `https://images.example.test/hotel-${index + 1}-3.jpg`,
+    `https://images.example.test/hotel-${index + 1}-4.jpg`
+  ]
+}));
+multiHotelModel.hotel = multiHotelModel.hotelOptions[9];
 multiHotelModel.proposalTemplate = {
   recommended: "multi-hotel",
   selected: "multi-hotel",
   source: "resolver",
-  reason: "3 accommodation options detected."
+  reason: "10 accommodation options detected."
 };
 
 const multiHotelInput = buildProposalInputFromProductModel(multiHotelModel, {
@@ -60,19 +57,27 @@ assert.match(multiHotelHtml, /&#1042;&#1072;&#1088;&#1080;&#1072;&#1085;&#1090;&
 assert.match(multiHotelHtml, /Hotel option 1/, "multi-hotel renderer should use neutral hotel option labels");
 assert.match(multiHotelHtml, /Hotel option 2/, "multi-hotel renderer should render second hotel option");
 assert.match(multiHotelHtml, /Hotel option 3/, "multi-hotel renderer should render third hotel option");
-assert.match(multiHotelHtml, /3 accommodation options/, "multi-hotel renderer should explain option count factually");
+assert.match(multiHotelHtml, /Hotel option 10/, "multi-hotel renderer should render tenth hotel option");
+assert.match(multiHotelHtml, /10 accommodation options/, "multi-hotel renderer should explain option count factually");
 assert.match(multiHotelHtml, /&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;/, "multi-hotel renderer should identify the selected hotel in the hero");
+assert.match(multiHotelHtml, /Hotel 10/, "multi-hotel renderer should preserve selected hotel 10 in the hero/details");
 assert.match(multiHotelHtml, /Selected option estimate/, "multi-hotel renderer should keep the selected option estimate label");
 assert.match(multiHotelHtml, /js-selected-option-price/, "multi-hotel renderer should expose a dynamic selected package price");
 assert.match(multiHotelHtml, /v11-hotel-gallery/, "multi-hotel renderer should show a hotel image gallery");
-assert.doesNotMatch(multiHotelHtml, /alpha-4\.jpg/, "multi-hotel renderer should not render more than three gallery images per hotel option");
-assert.match(multiHotelHtml, /https:\/\/example\.test\/hotel-alpha/, "multi-hotel renderer should preserve hotel website links from websiteUrl");
+assert.doesNotMatch(multiHotelHtml, /hotel-10-4\.jpg/, "multi-hotel renderer should not render more than three compact gallery images per hotel option");
+assert.match(multiHotelHtml, /https:\/\/example\.test\/hotel-10/, "multi-hotel renderer should preserve hotel website links from websiteUrl");
+assert.match(multiHotelHtml, /data-option-index="9"/, "multi-hotel renderer should expose selectable state for hotel option 10");
+assert.match(multiHotelHtml, /data-selected-detail-index="9"/, "multi-hotel renderer should expose details for hotel option 10");
+assert.match(multiHotelHtml, /js-selected-option-image/, "multi-hotel renderer should expose dynamic hero image target");
+assert.match(multiHotelHtml, /js-selected-option-website/, "multi-hotel renderer should expose dynamic hotel website target");
+assert.match(multiHotelHtml, /js-selected-option-transfer/, "multi-hotel renderer should expose dynamic transfer summary target");
+assert.match(multiHotelHtml, /v11-selected-hotel-detail active/, "multi-hotel renderer should mark the selected hotel details active");
 assert.match(multiHotelHtml, /&#1054;&#1073;&#1097;&#1072; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1089;&#1082;&#1072; &#1094;&#1077;&#1085;&#1072;/, "multi-hotel renderer should show package price per hotel option");
 assert.match(multiHotelHtml, /&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;/, "multi-hotel renderer should show hotel link action when URL exists");
 assert.match(multiHotelHtml, /v11-prefer-option/, "multi-hotel renderer should make hotel preference selectable");
 assert.match(multiHotelHtml, /&#1058;&#1088;&#1072;&#1085;&#1089;&#1092;&#1077;&#1088;/, "multi-hotel renderer should include transfer information");
 assert.match(multiHotelHtml, /\u041d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440/, "Maldives multi-hotel renderer should not silently imply transfer is irrelevant");
-assert.equal(/Premium|Balanced|Best price|Balan|Premi|Nai-dobra/.test(multiHotelHtml), false, "multi-hotel renderer must not invent qualitative hotel labels");
+assert.equal(/Premium option|Balanced option|Best price|Balan|Premi izhiv|Nai-dobra/.test(multiHotelHtml), false, "multi-hotel renderer must not invent qualitative hotel labels");
 assert.equal(/Р[ ’џћ›ќ—Ґ]|С[џњ‰‡ђ]/.test(multiHotelHtml), false, "multi-hotel renderer should not output mojibake Bulgarian labels");
 assert.equal(/contractVersion|classifications|universalIntakeDeprecated|debug|sourceAuthority/.test(multiHotelHtml), false, "registry render must not leak engine fields");
 

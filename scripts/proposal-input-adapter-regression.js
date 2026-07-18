@@ -120,22 +120,24 @@ assert.equal(reviewedProposal.flight.price, 1520, "preview input should use revi
 assert.equal(reviewedProposal.pricing.flightAmount, 1520, "preview pricing should use reviewed flight price");
 
 const multiHotelModel = JSON.parse(JSON.stringify(extractedModel));
-multiHotelModel.hotelOptions = [
-  { ...multiHotelModel.hotel, name: "Patina Maldives", price: 11200, selected: false },
-  { ...multiHotelModel.hotel, name: "Conrad Maldives Rangali Island", price: 14800, selected: true }
-];
-multiHotelModel.hotel = multiHotelModel.hotelOptions[1];
+multiHotelModel.hotelOptions = Array.from({ length: 5 }, (_, index) => ({
+  ...multiHotelModel.hotel,
+  name: `Maldives Hotel ${index + 1}`,
+  price: 11200 + (index * 900),
+  selected: index === 4
+}));
+multiHotelModel.hotel = multiHotelModel.hotelOptions[4];
 multiHotelModel.proposalTemplate = {
   recommended: "multi-hotel",
   selected: "multi-hotel",
   source: "resolver",
-  reason: "2 accommodation options detected."
+  reason: "5 accommodation options detected."
 };
 const multiHotelProposal = buildProposalInputFromProductModel(multiHotelModel, {
   destination: "Maldives"
 });
-assert.equal(multiHotelProposal.hotel.name, "Conrad Maldives Rangali Island", "preview should use selected hotel option");
-assert.equal(multiHotelProposal.hotelOptions.length, 2, "preview should preserve multiple hotel options");
+assert.equal(multiHotelProposal.hotel.name, "Maldives Hotel 5", "preview should use selected hotel option");
+assert.equal(multiHotelProposal.hotelOptions.length, 5, "preview should preserve multiple hotel options");
 assert.equal(multiHotelProposal.pricing.hotelAmount, 14800, "preview pricing should use selected hotel price");
 assert.equal(multiHotelProposal.proposalTemplate.selected, "multi-hotel", "preview input should preserve selected template");
 assert.equal(multiHotelProposal.proposalTemplate.source, "resolver", "preview input should preserve template source");

@@ -403,7 +403,7 @@ function renderFlight(flight) {
   `;
 }
 
-function renderHotelOption(hotel, index, selected, removable) {
+function renderHotelOption(hotel, index, selected, removable, totalOptions) {
   const hotelImages = Array.isArray(hotel.imageUrls) && hotel.imageUrls.length
     ? hotel.imageUrls
     : Array.isArray(hotel.images)
@@ -417,7 +417,11 @@ function renderHotelOption(hotel, index, selected, removable) {
           <input type="radio" name="selectedHotelOption" value="${index}" ${selected ? "checked" : ""}>
           <span>${selected ? "Selected hotel" : `Hotel option ${index + 1}`}</span>
         </label>
-        ${removable ? `<button class="inline-danger" type="button" data-review-action="remove-hotel-option" data-hotel-index="${escapeHtml(index)}">Remove hotel</button>` : ""}
+        <div class="hotel-option-actions">
+          ${index > 0 ? `<button class="inline-action" type="button" data-review-action="move-hotel-option" data-hotel-index="${escapeHtml(index)}" data-hotel-direction="-1">Move up</button>` : ""}
+          ${index < totalOptions - 1 ? `<button class="inline-action" type="button" data-review-action="move-hotel-option" data-hotel-index="${escapeHtml(index)}" data-hotel-direction="1">Move down</button>` : ""}
+          ${removable ? `<button class="inline-danger" type="button" data-review-action="remove-hotel-option" data-hotel-index="${escapeHtml(index)}">Remove hotel</button>` : ""}
+        </div>
       </div>
       ${imageUrl ? `<img class="hotel-image" src="${escapeHtml(imageUrl)}" alt="">` : ""}
       <div class="summary">
@@ -444,7 +448,7 @@ function renderHotels(model) {
 
   const selectedIndex = Math.max(0, options.findIndex((hotel) => hotel?.selected));
   nodes.hotelReview.innerHTML = options
-    .map((hotel, index) => renderHotelOption(hotel, index, index === selectedIndex, options.length > 1))
+    .map((hotel, index) => renderHotelOption(hotel, index, index === selectedIndex, options.length > 1, options.length))
     .join("");
 }
 
@@ -785,6 +789,21 @@ function removeHotelOption(index) {
   saveDraftModel(draft);
 }
 
+function moveHotelOption(index, direction) {
+  const draft = draftFromReviewFields();
+  if (!draft) return;
+  const options = hotelOptions(draft);
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= options.length) return;
+  const nextOptions = [...options];
+  const moving = nextOptions[index];
+  nextOptions[index] = nextOptions[targetIndex];
+  nextOptions[targetIndex] = moving;
+  draft.hotelOptions = nextOptions;
+  draft.hotel = selectedHotel(draft);
+  saveDraftModel(draft);
+}
+
 function emptySegment(seed = {}) {
   return {
     airline: seed.airline || reviewedModel()?.flight?.airline || "",
@@ -831,6 +850,9 @@ function handleReviewAction(event) {
   }
   if (action === "remove-hotel-option") {
     removeHotelOption(Number(button.getAttribute("data-hotel-index")));
+  }
+  if (action === "move-hotel-option") {
+    moveHotelOption(Number(button.getAttribute("data-hotel-index")), Number(button.getAttribute("data-hotel-direction")));
   }
 }
 

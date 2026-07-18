@@ -82,18 +82,19 @@ const multiHotel = adaptSmartImportForProduct({
   ],
   offerFlight: { airline: "Turkish Airlines", route: "SOF -> IST / IST -> SOF", price: 320 },
   offerHotel: { name: "Primary Hotel", price: 500 },
-  offerHotelOptions: [
-    { name: "Hotel Alpha", area: "Tokyo", price: 500 },
-    { name: "Hotel Beta", area: "Tokyo", price: 650, selected: true },
-    { name: "Hotel Gamma", area: "Tokyo", price: 720 }
-  ],
+  offerHotelOptions: Array.from({ length: 5 }, (_, index) => ({
+    name: `Hotel ${index + 1}`,
+    area: "Tokyo",
+    price: 500 + (index * 50),
+    selected: index === 4
+  })),
   warnings: []
 });
 assertProductModelShape(multiHotel, "multi-hotel");
 assert.equal(multiHotel.readiness, "ready", "multi-hotel contract should remain ready");
-assert.equal(multiHotel.hotelOptions.length, 3, "multi-hotel contract should expose all hotel options");
-assert.equal(multiHotel.hotel.name, "Hotel Beta", "multi-hotel contract should use selected hotel");
-assert.equal(multiHotel.hotelOptions[1].selected, true, "multi-hotel contract should preserve selected option");
+assert.equal(multiHotel.hotelOptions.length, 5, "multi-hotel contract should expose all hotel options");
+assert.equal(multiHotel.hotel.name, "Hotel 5", "multi-hotel contract should use selected hotel");
+assert.equal(multiHotel.hotelOptions[4].selected, true, "multi-hotel contract should preserve selected option");
 assert.equal(multiHotel.hotelOptions[0].selected, false, "multi-hotel contract should not force first option selected when one is selected");
 
 const unknown = adaptSmartImportForProduct(readFixture("unknown-partial-failure.json"));

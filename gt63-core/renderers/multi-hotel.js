@@ -7,6 +7,8 @@
   }
   root.GT63MultiHotelRenderer = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function createMultiHotelRenderer(root) {
+  const COMPACT_GALLERY_IMAGE_COUNT = 3;
+
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
@@ -60,12 +62,21 @@
   }
 
   function firstHotelImage(hotel, input) {
-    const urls = Array.isArray(hotel?.imageUrls) ? hotel.imageUrls : [];
+    const urls = [
+      hotel?.heroImage,
+      ...(Array.isArray(hotel?.imageUrls) ? hotel.imageUrls : []),
+      ...(Array.isArray(hotel?.images) ? hotel.images : []),
+      hotel?.imageUrl,
+      hotel?.image,
+      hotel?.photo,
+      hotel?.thumbnail
+    ];
     return urls.find(isUsableImageUrl) || fallbackImage(input);
   }
 
   function hotelImages(hotel, input) {
     const urls = [
+      hotel?.heroImage,
       ...(Array.isArray(hotel?.imageUrls) ? hotel.imageUrls : []),
       ...(Array.isArray(hotel?.images) ? hotel.images : []),
       hotel?.imageUrl,
@@ -74,7 +85,7 @@
       hotel?.thumbnail
     ].filter(isUsableImageUrl);
     const unique = [...new Set(urls)];
-    return (unique.length ? unique : [fallbackImage(input)]).slice(0, 3);
+    return (unique.length ? unique : [fallbackImage(input)]).slice(0, COMPACT_GALLERY_IMAGE_COUNT);
   }
 
   function hotelUrl(hotel = {}) {
@@ -131,6 +142,51 @@
     };
   }
 
+  function hotelSubtitle(hotel = {}) {
+    return text(
+      hotel.subtitle ||
+      hotel.area ||
+      hotel.location ||
+      hotel.description,
+      "Accommodation details to confirm"
+    );
+  }
+
+  function hotelHighlights(hotel = {}) {
+    const candidates = [
+      ...(Array.isArray(hotel.amenities) ? hotel.amenities : []),
+      ...(Array.isArray(hotel.highlights) ? hotel.highlights : []),
+      ...(Array.isArray(hotel.travelHighlights) ? hotel.travelHighlights : []),
+      hotel.roomsLeft,
+      hotel.availability
+    ].filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
+    return [...new Set(candidates)].slice(0, 8);
+  }
+
+  function hotelPayload(hotel = {}, index, currency, input) {
+    const payload = selectedOptionPayload(hotel, index, currency, input);
+    const images = hotelImages(hotel, input);
+    const optionUrl = hotelUrl(hotel);
+    return {
+      index,
+      label: payload.label,
+      name: payload.name,
+      priceDisplay: payload.priceDisplay,
+      hotelPriceDisplay: payload.hotelPriceDisplay,
+      whatsappUrl: payload.whatsappUrl,
+      image: firstHotelImage(hotel, input),
+      images,
+      url: optionUrl,
+      subtitle: hotelSubtitle(hotel),
+      description: text(hotel.description, "Hotel description to confirm."),
+      room: text(hotel.room || hotel.roomType, "Room to confirm"),
+      meal: text(hotel.meal || hotel.board, "Meal plan to confirm"),
+      area: text(hotel.area || hotel.location || hotel.city, "Location to confirm"),
+      transfer: transferSummary(input),
+      highlights: hotelHighlights(hotel)
+    };
+  }
+
   function segmentCard(segment = {}) {
     const display = root.GT63FlightDisplayBg;
     if (display?.segmentView) {
@@ -176,20 +232,17 @@
   }
 
   function hotelOptionCard(hotel = {}, index, currency, input, activeIndex) {
-    const payload = selectedOptionPayload(hotel, index, currency, input);
-    const gallery = hotelImages(hotel, input);
+    const payload = hotelPayload(hotel, index, currency, input);
     const selected = index === activeIndex;
-    const optionUrl = hotelUrl(hotel);
 
     return `
       <article class="v11-hotel-option ${selected ? "selected" : ""}" data-option-index="${escapeHtml(index)}">
         <div class="v11-hotel-gallery">
-          ${gallery.map((image) => `<img src="${escapeHtml(image)}" alt="">`).join("")}
+          ${payload.images.map((image) => `<img src="${escapeHtml(image)}" alt="">`).join("")}
         </div>
         <div>
           <span>${escapeHtml(payload.label)}${selected ? " &middot; &#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;" : ""}</span>
           <strong>${escapeHtml(payload.name)}</strong>
-          <small>${escapeHtml(text(hotel.area))}</small>
           <small>${escapeHtml(text(hotel.room))}</small>
           <small>${escapeHtml(text(hotel.meal))}</small>
           <div class="v11-option-price">
@@ -198,12 +251,17 @@
             <small>&#1061;&#1086;&#1090;&#1077;&#1083;: ${escapeHtml(payload.hotelPriceDisplay)}</small>
           </div>
           <div class="v11-option-actions">
-            ${optionUrl ? `<a href="${escapeHtml(optionUrl)}" target="_blank" rel="noreferrer">&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;</a>` : ""}
+            ${payload.url ? `<a href="${escapeHtml(payload.url)}" target="_blank" rel="noreferrer">&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;</a>` : ""}
             <button type="button"
               class="v11-prefer-option"
+              data-option-index="${escapeHtml(index)}"
               data-option-name="${escapeHtml(payload.name)}"
               data-option-price="${escapeHtml(payload.priceDisplay)}"
-              data-option-whatsapp="${escapeHtml(payload.whatsappUrl)}">
+              data-option-whatsapp="${escapeHtml(payload.whatsappUrl)}"
+              data-option-image="${escapeHtml(payload.image)}"
+              data-option-subtitle="${escapeHtml(payload.subtitle)}"
+              data-option-url="${escapeHtml(payload.url)}"
+              data-option-transfer="${escapeHtml(payload.transfer)}">
               &#1055;&#1088;&#1077;&#1076;&#1087;&#1086;&#1095;&#1080;&#1090;&#1072;&#1084; &#1090;&#1086;&#1079;&#1080; &#1093;&#1086;&#1090;&#1077;&#1083;
             </button>
           </div>
@@ -222,7 +280,7 @@
     `;
   }
 
-  function transferBlock(input = {}) {
+  function transferSummary(input = {}) {
     const transfer = input.transfer || {};
     const destinationText = [
       input.destination?.name,
@@ -239,13 +297,48 @@
         : "\u0417\u0430 \u043f\u043e\u0442\u0432\u044a\u0440\u0436\u0434\u0435\u043d\u0438\u0435"
     );
     const route = text(transfer.route || transfer.description, "\u041b\u0435\u0442\u0438\u0449\u0435 \u2192 \u043c\u044f\u0441\u0442\u043e \u0437\u0430 \u043d\u0430\u0441\u0442\u0430\u043d\u044f\u0432\u0430\u043d\u0435 \u2192 \u043b\u0435\u0442\u0438\u0449\u0435");
+    return `${route}. ${status}`;
+  }
 
+  function transferBlock(input = {}) {
+    const summary = transferSummary(input);
     return `
       <section class="v11-card v11-transfer-card">
         <p class="v11-kicker">&#1058;&#1088;&#1072;&#1085;&#1089;&#1092;&#1077;&#1088;</p>
-        <h4>${escapeHtml(route)}</h4>
-        <p>${escapeHtml(status)}</p>
+        <h4>${escapeHtml(summary.split(". ")[0])}</h4>
+        <p>${escapeHtml(summary.split(". ").slice(1).join(". ") || "\u0418\u043d\u0444\u043e\u0440\u043c\u0430\u0446\u0438\u044f\u0442\u0430 \u0437\u0430 \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440 \u0449\u0435 \u0431\u044a\u0434\u0435 \u043f\u043e\u0442\u0432\u044a\u0440\u0434\u0435\u043d\u0430 \u043f\u0440\u0435\u0434\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u0430\u0446\u0438\u044f.")}</p>
       </section>
+    `;
+  }
+
+  function selectedHotelDetails(hotel = {}, index, currency, input, activeIndex) {
+    const payload = hotelPayload(hotel, index, currency, input);
+    return `
+      <article class="v11-selected-hotel-detail ${index === activeIndex ? "active" : ""}" data-selected-detail-index="${escapeHtml(index)}">
+        <div class="v11-selected-hotel-gallery">
+          ${payload.images.map((image) => `<img src="${escapeHtml(image)}" alt="">`).join("")}
+        </div>
+        <div class="v11-selected-hotel-copy">
+          <p class="v11-kicker">${escapeHtml(payload.label)}</p>
+          <h4>${escapeHtml(payload.name)}</h4>
+          <p>${escapeHtml(payload.description)}</p>
+          <div class="v11-detail-grid">
+            <div><span>Room</span><strong>${escapeHtml(payload.room)}</strong></div>
+            <div><span>Meal</span><strong>${escapeHtml(payload.meal)}</strong></div>
+            <div><span>Location</span><strong>${escapeHtml(payload.area)}</strong></div>
+            <div><span>Total package</span><strong>${escapeHtml(payload.priceDisplay)}</strong></div>
+          </div>
+          ${payload.highlights.length ? `<ul class="v11-hotel-highlights">${payload.highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+          <div class="v11-detail-row">
+            <span>Transfer</span>
+            <strong>${escapeHtml(payload.transfer)}</strong>
+          </div>
+          <div class="v11-option-actions">
+            ${payload.url ? `<a href="${escapeHtml(payload.url)}" target="_blank" rel="noreferrer">&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;</a>` : ""}
+            <a href="${escapeHtml(payload.whatsappUrl)}" target="_blank" rel="noreferrer">&#1048;&#1079;&#1087;&#1088;&#1072;&#1090;&#1080; &#1080;&#1079;&#1073;&#1086;&#1088;&#1072; &#1074; WhatsApp</a>
+          </div>
+        </div>
+      </article>
     `;
   }
 
@@ -258,6 +351,10 @@
           if (!root) return;
           var selectedName = root.querySelector(".js-selected-option-name");
           var selectedPrice = root.querySelector(".js-selected-option-price");
+          var selectedSubtitle = root.querySelector(".js-selected-option-subtitle");
+          var selectedTransfer = root.querySelector(".js-selected-option-transfer");
+          var selectedImage = root.querySelector(".js-selected-option-image");
+          var selectedWebsite = root.querySelector(".js-selected-option-website");
           var whatsapp = root.querySelector(".js-selected-option-whatsapp");
           root.querySelectorAll(".v11-prefer-option").forEach(function (button) {
             button.addEventListener("click", function () {
@@ -266,8 +363,22 @@
               });
               var card = button.closest(".v11-hotel-option");
               if (card) card.classList.add("selected");
+              root.querySelectorAll(".v11-selected-hotel-detail").forEach(function (detail) {
+                detail.classList.toggle("active", detail.dataset.selectedDetailIndex === button.dataset.optionIndex);
+              });
               if (selectedName) selectedName.textContent = button.dataset.optionName || "Hotel option";
               if (selectedPrice) selectedPrice.textContent = button.dataset.optionPrice || "-";
+              if (selectedSubtitle) selectedSubtitle.textContent = button.dataset.optionSubtitle || "";
+              if (selectedTransfer) selectedTransfer.textContent = button.dataset.optionTransfer || "";
+              if (selectedImage && button.dataset.optionImage) selectedImage.src = button.dataset.optionImage;
+              if (selectedWebsite) {
+                if (button.dataset.optionUrl) {
+                  selectedWebsite.href = button.dataset.optionUrl;
+                  selectedWebsite.hidden = false;
+                } else {
+                  selectedWebsite.hidden = true;
+                }
+              }
               if (whatsapp && button.dataset.optionWhatsapp) whatsapp.href = button.dataset.optionWhatsapp;
             });
           });
@@ -285,6 +396,7 @@
     const currency = input.pricing?.currency || "EUR";
     const activeIndex = selectedHotelIndex(hotelOptions, activeHotel);
     const selectedPayload = selectedOptionPayload(hotelOptions[activeIndex] || activeHotel, activeIndex, currency, input);
+    const selectedFullPayload = hotelPayload(hotelOptions[activeIndex] || activeHotel, activeIndex, currency, input);
     const title = input.content?.heroTitle || input.destination?.name || "Travel Proposal";
     const travelDates = input.client?.travelDates || input.destination?.requested || "";
     const heroImage = firstHotelImage(activeHotel, input);
@@ -303,14 +415,17 @@
             </div>
           </div>
           <div class="v11-hero-visual">
-            <img src="${escapeHtml(heroImage)}" alt="">
+            <img class="js-selected-option-image" src="${escapeHtml(heroImage)}" alt="">
           </div>
           <div class="v11-price-card">
             <span>&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;</span>
             <strong class="js-selected-option-name">${escapeHtml(selectedPayload.name)}</strong>
+            <small class="js-selected-option-subtitle">${escapeHtml(selectedFullPayload.subtitle)}</small>
             <small>Selected option estimate</small>
             <strong class="js-selected-option-price">${escapeHtml(selectedPayload.priceDisplay)}</strong>
             <small>${escapeHtml(String(hotelOptions.length))} accommodation option${hotelOptions.length === 1 ? "" : "s"}</small>
+            <small class="js-selected-option-transfer">${escapeHtml(selectedFullPayload.transfer)}</small>
+            <a class="js-selected-option-website v11-selected-option-website" href="${escapeHtml(selectedFullPayload.url)}" target="_blank" rel="noreferrer" ${selectedFullPayload.url ? "" : "hidden"}>&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;</a>
             <a class="js-selected-option-whatsapp v11-selected-option-whatsapp" href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">&#1048;&#1079;&#1087;&#1088;&#1072;&#1090;&#1080; &#1080;&#1079;&#1073;&#1086;&#1088;&#1072; &#1074; WhatsApp</a>
           </div>
         </section>
@@ -340,6 +455,14 @@
                 : "<p class=\"v11-muted\">No hotel option data</p>"}
             </div>
           </div>
+        </section>
+
+        <section class="v11-card v11-selected-hotel-card">
+          <p class="v11-kicker">&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1074;&#1072;&#1088;&#1080;&#1072;&#1085;&#1090;</p>
+          <h4>&#1044;&#1077;&#1090;&#1072;&#1081;&#1083;&#1080; &#1079;&#1072; &#1080;&#1079;&#1073;&#1088;&#1072;&#1085;&#1080;&#1103; &#1093;&#1086;&#1090;&#1077;&#1083;</h4>
+          ${hotelOptions.length
+            ? hotelOptions.map((hotel, index) => selectedHotelDetails(hotel, index, currency, input, activeIndex)).join("")
+            : "<p class=\"v11-muted\">No selected hotel details</p>"}
         </section>
 
         ${transferBlock(input)}
