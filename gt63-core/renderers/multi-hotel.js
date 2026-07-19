@@ -124,7 +124,7 @@
   }
 
   function selectedOptionPayload(hotel = {}, index, currency, input) {
-    const label = `Hotel option ${index + 1}`;
+    const label = `Хотелска опция ${index + 1}`;
     const hotelOnly = amount(hotel.price);
     const total = optionPackageTotal(hotel, input) || hotelOnly;
     const name = text(hotel.name, label);
@@ -171,7 +171,7 @@
       if (condition) items.push(label);
     };
 
-    add("Самолетни билети", Boolean(flight.airline || flight.route || flight.outboundСегменти?.length || flight.inboundСегменти?.length));
+    add("Самолетни билети", Boolean(flight.airline || flight.route || flight.outboundSegments?.length || flight.inboundSegments?.length));
     add("Настаняване", Boolean(selectedHotel.name || selectedHotel.room || selectedHotel.area));
     add(`Изхранване: ${text(selectedHotel.meal)}`, Boolean(selectedHotel.meal && selectedHotel.meal !== "-"));
     add("Летищен трансфер", Boolean(transfer.included || transfer.type || transfer.status || transfer.price > 0));
@@ -272,25 +272,25 @@
     return `<ul class="v11-check-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
   }
 
-  function flightПрекачвания(flight = {}) {
-    const outboundПрекачвания = Math.max(0, (flight.outboundСегменти || []).length - 1);
-    const inboundПрекачвания = Math.max(0, (flight.inboundСегменти || []).length - 1);
-    const total = Math.max(outboundПрекачвания, inboundПрекачвания);
+  function flightStops(flight = {}) {
+    const outboundStops = Math.max(0, (flight.outboundSegments || []).length - 1);
+    const inboundStops = Math.max(0, (flight.inboundSegments || []).length - 1);
+    const total = Math.max(outboundStops, inboundStops);
     if (!total) return "Директен или за потвърждение";
     return `${total} ${total === 1 ? "прекачване" : "прекачвания"}`;
   }
 
   function flightSummaryCards(flight = {}, travelDates = "") {
     const segments = [
-      ...(flight.outboundСегменти || []),
-      ...(flight.inboundСегменти || [])
+      ...(flight.outboundSegments || []),
+      ...(flight.inboundSegments || [])
     ];
-    const duration = text(flight.totalПродължителност || flight.duration || flight.outboundПродължителност || flight.inboundПродължителност, "");
-    const dates = text(travelDates || flight.dates || flight.date, "Dates to confirm");
+    const duration = text(flight.totalDuration || flight.duration || flight.outboundDuration || flight.inboundDuration, "");
+    const dates = text(travelDates || flight.dates || flight.date, "Датите са за потвърждение");
     const items = [
       ["Авиокомпания", text(flight.airline, "За потвърждение")],
       ["Дати", dates],
-      ["Прекачвания", flightПрекачвания(flight)],
+      ["Прекачвания", flightStops(flight)],
       ["Багаж", text(flight.baggage, "За потвърждение")],
       ["Сегменти", segments.length ? String(segments.length) : "За потвърждение"],
       ["Продължителност", duration || "Вижте детайлите по сегменти"]
@@ -308,6 +308,22 @@
     `;
   }
 
+  function packageIcon(label = "") {
+    if (/самолет|билет/i.test(label)) return "✈";
+    if (/настаняване|хотел/i.test(label)) return "⌂";
+    if (/изхранване|закуска|meal/i.test(label)) return "◌";
+    if (/багаж/i.test(label)) return "▣";
+    if (/трансфер/i.test(label)) return "→";
+    if (/застрах/i.test(label)) return "◇";
+    if (/такс/i.test(label)) return "✓";
+    return "✓";
+  }
+
+  function packageIconCards(items = []) {
+    if (!items.length) return '<p class="v11-muted">Включените услуги ще бъдат потвърдени преди резервация.</p>';
+    return '<div class="v11-package-grid">' + items.map((item) => '<div class="v11-package-item"><span>' + escapeHtml(packageIcon(item)) + '</span><strong>' + escapeHtml(item) + '</strong></div>').join("") + '</div>';
+  }
+
   function packageSummaryBlock(input = {}, selectedHotel = {}) {
     const included = packageIncludes(input, selectedHotel);
     const excluded = packageExclusions(input, selectedHotel);
@@ -315,10 +331,10 @@
       <div class="v11-package-summary">
         <div>
           <strong>Включено в пакета</strong>
-          ${checkList(included, "Включените услуги ще бъдат потвърдени преди резервация.")}
+          ${packageIconCards(included)}
         </div>
         ${excluded.length ? `
-          <div>
+          <div class="v11-package-exclusions">
             <strong>Не е включено</strong>
             ${checkList(excluded)}
           </div>
@@ -338,6 +354,95 @@
     `;
   }
 
+  function destinationExperience(input = {}) {
+    const title = text(input.content?.heroTitle || input.destination?.name || input.destination?.requested, "");
+    const haystack = [title, input.destination?.requested, input.hotel?.area, input.content?.heroSubtitle].filter(Boolean).join(" ").toLowerCase();
+    const lines = [];
+    if (/maldives|maldive|малдив/i.test(haystack)) {
+      lines.push("Предложението е подготвено около островно усещане, спокойствие и време близо до океана.");
+      lines.push("Фокусът е върху плавен престой, ясно избрано настаняване и лесно сравнение между хотелските варианти.");
+    } else if (/tokyo|japan|токио|япония/i.test(haystack)) {
+      lines.push("Това е градско пътуване с фокус върху удобна локация, динамичен ритъм и лесен достъп до различни части на града.");
+      lines.push("Предложението събира полет, хотел и финална цена в ясен формат за спокойно решение.");
+    } else if (/santiago|chile|сантяго|чили/i.test(haystack)) {
+      lines.push("Предложението е структурирано за удобен престой в Сантяго с ясен полетен маршрут и сравними варианти за настаняване.");
+      lines.push("Фокусът е върху практична логистика, контрол на бюджета и лесен избор между хотелските опции.");
+    } else if (/barcelona|барселона/i.test(haystack)) {
+      lines.push("Предложението е подходящо за градски престой с разходки, храна и свободно време в ритъма на Барселона.");
+      lines.push("Фокусът е върху удобно пътуване, ясна цена и лесно сравнение на настаняването.");
+    } else if (title) {
+      lines.push(`Предложението е подготвено за ${title} с фокус върху ясно сравнение, удобна логистика и финална клиентска цена.`);
+    }
+    if (!lines.length) return "";
+    return `
+      <section class="v11-card v11-destination-card">
+        <p class="v11-kicker">Дестинацията</p>
+        <h4>Какво усещане носи това пътуване</h4>
+        ${lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+      </section>
+    `;
+  }
+
+  function timelineStopLabel(value) {
+    const display = root.GT63FlightDisplayBg;
+    const cleaned = text(value, "");
+    if (!cleaned) return "";
+    return display?.airportName ? display.airportName(cleaned) : cleaned;
+  }
+
+  function travelTimeline(input = {}, selectedHotel = {}) {
+    const flight = input.flight || {};
+    const outbound = flight.outboundSegments || [];
+    const inbound = flight.inboundSegments || [];
+    const stops = [];
+    const push = (value) => {
+      const label = timelineStopLabel(value);
+      if (label && stops[stops.length - 1] !== label) stops.push(label);
+    };
+    if (outbound.length) {
+      push(outbound[0]?.from || outbound[0]?.departureAirport);
+      outbound.forEach((segment) => push(segment?.to || segment?.arrivalAirport));
+    } else if (flight.route) {
+      String(flight.route).split(/->|→|\//).map((part) => part.trim()).filter(Boolean).slice(0, 4).forEach(push);
+    }
+    if (selectedHotel.name) push(selectedHotel.name);
+    if (inbound.length) {
+      inbound.forEach((segment) => push(segment?.to || segment?.arrivalAirport));
+    } else if (stops.length > 1) {
+      push(stops[0]);
+    }
+    const uniqueStops = stops.slice(0, 8);
+    if (uniqueStops.length < 2) return "";
+    return `
+      <section class="v11-card v11-timeline-card">
+        <p class="v11-kicker">Маршрут накратко</p>
+        <div class="v11-travel-timeline">
+          ${uniqueStops.map((stop, index) => `<div><strong>${escapeHtml(stop)}</strong>${index < uniqueStops.length - 1 ? "<span>↓</span>" : ""}</div>`).join("")}
+        </div>
+      </section>
+    `;
+  }
+
+  function finalCtaBlock(input = {}, selectedPayload = {}) {
+    const agent = input.agent || input.consultant || input.agency || {};
+    const phone = text(agent.phone || input.contact?.phone || "+359 885 07 89 80", "");
+    const email = text(agent.email || input.contact?.email || "", "");
+    return `
+      <section class="v11-final-cta">
+        <div>
+          <p class="v11-kicker">Вашето пътуване е подготвено</p>
+          <h4>Когато решите да продължите, ще подготвим следващите стъпки за резервация.</h4>
+          <p>Цените и наличностите подлежат на финално потвърждение към момента на резервация.</p>
+        </div>
+        <div class="v11-final-actions">
+          <a href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">WhatsApp</a>
+          ${email ? `<a href="mailto:${escapeHtml(email)}">Email</a>` : ""}
+          ${phone ? `<span>${escapeHtml(phone)}</span>` : ""}
+        </div>
+      </section>
+    `;
+  }
+
   function hotelPayload(hotel = {}, index, currency, input) {
     const payload = selectedOptionPayload(hotel, index, currency, input);
     const images = hotelImages(hotel, input);
@@ -353,10 +458,10 @@
       images,
       url: optionUrl,
       subtitle: hotelSubtitle(hotel),
-      description: text(hotel.description, "Hotel description to confirm."),
-      room: text(hotel.room || hotel.roomType, "Room to confirm"),
-      meal: text(hotel.meal || hotel.board, "Meal plan to confirm"),
-      area: text(hotel.area || hotel.location || hotel.city, "Location to confirm"),
+      description: text(hotel.description, "Описание на хотела за потвърждение."),
+      room: text(hotel.room || hotel.roomType, "Стая за потвърждение"),
+      meal: text(hotel.meal || hotel.board, "Изхранване за потвърждение"),
+      area: text(hotel.area || hotel.location || hotel.city, "Локация за потвърждение"),
       transfer: transferSummary(input),
       highlights: hotelHighlights(hotel)
     };
@@ -377,7 +482,7 @@
       `;
     }
 
-    const title = [segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Flight segment";
+    const title = [segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Полетен сегмент";
     return `
       <article class="v11-segment">
         <strong>${escapeHtml(title)}</strong>
@@ -449,7 +554,7 @@
     if (!Array.isArray(items) || !items.length) return "";
     return `
       <section class="v11-note">
-        <strong>Operator note</strong>
+        <strong>Бележка за преглед</strong>
         <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </section>
     `;
@@ -500,19 +605,19 @@
           <p>${escapeHtml(payload.description)}</p>
           ${tags.length ? `
             <div>
-              <p class="v11-kicker">Best for</p>
+              <p class="v11-kicker">Подходящо за</p>
               <ul class="v11-hotel-highlights">${tags.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
             </div>
           ` : ""}
           <div class="v11-detail-grid">
-            <div><span>Room</span><strong>${escapeHtml(payload.room)}</strong></div>
-            <div><span>Meal</span><strong>${escapeHtml(payload.meal)}</strong></div>
-            <div><span>Location</span><strong>${escapeHtml(payload.area)}</strong></div>
-            <div><span>Total package</span><strong>${escapeHtml(payload.priceDisplay)}</strong></div>
+            <div><span>Стая</span><strong>${escapeHtml(payload.room)}</strong></div>
+            <div><span>Изхранване</span><strong>${escapeHtml(payload.meal)}</strong></div>
+            <div><span>Локация</span><strong>${escapeHtml(payload.area)}</strong></div>
+            <div><span>Крайна цена</span><strong>${escapeHtml(payload.priceDisplay)}</strong></div>
           </div>
           ${payload.highlights.length ? `<ul class="v11-hotel-highlights">${payload.highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
           <div class="v11-detail-row">
-            <span>Transfer</span>
+            <span>Трансфер</span>
             <strong>${escapeHtml(payload.transfer)}</strong>
           </div>
           <div class="v11-option-actions">
@@ -568,7 +673,7 @@
               root.querySelectorAll(".v11-selected-hotel-detail").forEach(function (detail) {
                 detail.classList.toggle("active", detail.dataset.selectedDetailIndex === button.dataset.optionIndex);
               });
-              if (selectedName) selectedName.textContent = button.dataset.optionName || "Hotel option";
+              if (selectedName) selectedName.textContent = button.dataset.optionName || "Хотелска опция";
               if (selectedPrice) selectedPrice.textContent = button.dataset.optionPrice || "-";
               if (selectedSubtitle) selectedSubtitle.textContent = button.dataset.optionSubtitle || "";
               if (selectedTransfer) selectedTransfer.textContent = button.dataset.optionTransfer || "";
@@ -636,7 +741,7 @@
     const selectedPayload = selectedOptionPayload(hotelOptions[activeIndex] || activeHotel, activeIndex, currency, input);
     const selectedFullPayload = hotelPayload(hotelOptions[activeIndex] || activeHotel, activeIndex, currency, input);
     const selectedHotel = hotelOptions[activeIndex] || activeHotel;
-    const title = input.content?.heroTitle || input.destination?.name || "Travel Proposal";
+    const title = input.content?.heroTitle || input.destination?.name || "Персонално предложение";
     const travelDates = input.client?.travelDates || input.destination?.requested || "";
     const heroImage = firstHotelImage(activeHotel, input);
 
@@ -646,11 +751,11 @@
           <div>
             <p class="v11-eyebrow">AYA TRAVEL &middot; MULTI-HOTEL BRIEF</p>
             <h3>${escapeHtml(title)}</h3>
-            <p>${escapeHtml(input.content?.heroSubtitle || "A curated travel proposal with accommodation options.")}</p>
+            <p>${escapeHtml(input.content?.heroSubtitle || "Персонално подготвено предложение с варианти за настаняване.")}</p>
             <div class="v11-chip-row">
-              <span>${escapeHtml(text(input.client?.name, "Client to confirm"))}</span>
-              <span>${escapeHtml(text(travelDates, "Dates to confirm"))}</span>
-              <span>${escapeHtml(text(input.client?.travelers, "Travelers to confirm"))}</span>
+              <span>${escapeHtml(text(input.client?.name, "Клиент за потвърждение"))}</span>
+              <span>${escapeHtml(text(travelDates, "Датите са за потвърждение"))}</span>
+              <span>${escapeHtml(text(input.client?.travelers, "Пътуващи за потвърждение"))}</span>
             </div>
           </div>
           <div class="v11-hero-visual">
@@ -674,10 +779,14 @@
 
         ${insightBlock(input, selectedHotel)}
 
+        ${destinationExperience(input)}
+
+        ${travelTimeline(input, selectedHotel)}
+
         <section class="v11-card v11-flight-card">
           <p class="v11-kicker">&#1054;&#1073;&#1086;&#1073;&#1097;&#1077;&#1085;&#1080;&#1077; &#1085;&#1072; &#1087;&#1086;&#1083;&#1077;&#1090;&#1072;</p>
-          <h4>${escapeHtml(text(flight.airline, "Авиокомпания to confirm"))}</h4>
-          <p>${escapeHtml(text(flight.route, "Route to confirm"))}</p>
+          <h4>${escapeHtml(text(flight.airline, "Авиокомпания за потвърждение"))}</h4>
+          <p>${escapeHtml(text(flight.route, "Маршрут за потвърждение"))}</p>
           ${flightSummaryCards(flight, travelDates)}
         </section>
 
@@ -688,7 +797,7 @@
             <div class="v11-hotel-options">
               ${hotelOptions.length
                 ? hotelOptions.map((hotel, index) => hotelOptionCard(hotel, index, currency, input, activeIndex)).join("")
-                : "<p class=\"v11-muted\">No hotel option data</p>"}
+                : "<p class=\"v11-muted\">Няма данни за хотелски опции</p>"}
             </div>
         </section>
 
@@ -697,34 +806,36 @@
           <h4>&#1044;&#1077;&#1090;&#1072;&#1081;&#1083;&#1080; &#1079;&#1072; &#1080;&#1079;&#1073;&#1088;&#1072;&#1085;&#1080;&#1103; &#1093;&#1086;&#1090;&#1077;&#1083;</h4>
           ${hotelOptions.length
             ? hotelOptions.map((hotel, index) => selectedHotelDetails(hotel, index, currency, input, activeIndex)).join("")
-            : "<p class=\"v11-muted\">No selected hotel details</p>"}
+            : "<p class=\"v11-muted\">Няма детайли за избрания хотел</p>"}
         </section>
 
         ${transferBlock(input)}
 
         <section class="v11-card v11-detailed-flight-card">
           <p class="v11-kicker">&#1055;&#1086;&#1076;&#1088;&#1086;&#1073;&#1085;&#1072; &#1080;&#1085;&#1092;&#1086;&#1088;&#1084;&#1072;&#1094;&#1080;&#1103; &#1079;&#1072; &#1087;&#1086;&#1083;&#1077;&#1090;&#1072;</p>
-          <h4>${escapeHtml(text(flight.airline, "Авиокомпания to confirm"))}</h4>
-          ${segmentGroup("Outbound", flight.outboundСегменти || [], flight.outbound)}
-          ${segmentGroup("Inbound", flight.inboundСегменти || [], flight.inbound)}
+          <h4>${escapeHtml(text(flight.airline, "Авиокомпания за потвърждение"))}</h4>
+          ${segmentGroup("Отиване", flight.outboundSegments || [], flight.outbound)}
+          ${segmentGroup("Връщане", flight.inboundSegments || [], flight.inbound)}
           <div class="v11-detail-row">
             <span>Багаж</span>
             <strong>${escapeHtml(text(flight.baggage, "За потвърждение"))}</strong>
           </div>
         </section>
 
+        ${finalCtaBlock(input, selectedPayload)}
+
         <section class="v11-closing">
           <div>
-            <p class="v11-kicker">Ready for client preview</p>
-            <h4>${escapeHtml(text(input.content?.primaryCta, "Review proposal"))}</h4>
+            <p class="v11-kicker">Готово за следваща стъпка</p>
+            <h4>${escapeHtml(text(input.content?.primaryCta, "Прегледайте предложението"))}</h4>
           </div>
           <span>${input.readiness === "ready" ? "READY" : "REVIEW"}</span>
         </section>
         <div class="v11-gallery-dialog" hidden>
-          <button type="button" class="v11-gallery-close" data-gallery-action="close">Close</button>
-          <button type="button" class="v11-gallery-nav v11-gallery-prev" data-gallery-action="prev">Prev</button>
+          <button type="button" class="v11-gallery-close" data-gallery-action="close">Затвори</button>
+          <button type="button" class="v11-gallery-nav v11-gallery-prev" data-gallery-action="prev">Назад</button>
           <img src="" alt="">
-          <button type="button" class="v11-gallery-nav v11-gallery-next" data-gallery-action="next">Next</button>
+          <button type="button" class="v11-gallery-nav v11-gallery-next" data-gallery-action="next">Напред</button>
         </div>
         ${selectedHotelScript()}
       </article>
