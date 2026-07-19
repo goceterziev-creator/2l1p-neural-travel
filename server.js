@@ -5934,7 +5934,12 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
   <style>${styles}</style>
   <style>
     body { background: #e5e7eb; }
-    .shell { max-width: 1040px; padding: 18px; }
+    .shell { width: min(1280px, calc(100% - 36px)); max-width: none; padding: 18px 0 34px; }
+    .shell[data-proposal-template="multi-hotel"] { width: min(1480px, calc(100% - 44px)); }
+    @media (max-width: 860px) {
+      .shell,
+      .shell[data-proposal-template="multi-hotel"] { width: min(100% - 24px, 1180px); padding: 14px 0 24px; }
+    }
     .gt63-client-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
     .gt63-client-actions a { border: 1px solid rgba(148, 163, 184, 0.38); border-radius: 999px; color: #e5e7eb; padding: 8px 12px; text-decoration: none; }
   </style>

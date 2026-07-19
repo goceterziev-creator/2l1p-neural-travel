@@ -22,6 +22,8 @@ assert.match(serverJs, /renderGt63RegistryOfferHtml/, "server should expose a GT
 assert.match(serverJs, /gt63ProposalRendererRegistry\.renderProposal/, "server final client HTML should render through the registry");
 assert.match(serverJs, /if \(registryHtml\) return registryHtml;/, "server should prefer registry HTML when proposal metadata exists");
 assert.match(serverJs, /async function renderOfferHtml/, "legacy renderer should remain available as fallback");
+assert.match(serverJs, /\.shell\[data-proposal-template="multi-hotel"\]\s*\{\s*width:\s*min\(1480px, calc\(100% - 44px\)\);/m, "multi-hotel final client HTML should use a wide desktop shell");
+assert.equal(/\.shell\s*\{\s*max-width:\s*1040px/.test(serverJs), false, "final client HTML must not lock proposals to the old narrow desktop shell");
 
 assert.match(multiHotelRendererJs, /&#1055;&#1088;&#1077;&#1076;&#1087;&#1086;&#1095;&#1080;&#1090;&#1072;&#1084; &#1090;&#1086;&#1079;&#1080; &#1093;&#1086;&#1090;&#1077;&#1083;/, "multi-hotel final renderer should expose hotel preference action");
 assert.match(multiHotelRendererJs, /&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;/, "multi-hotel final renderer should expose hotel link action");
@@ -49,6 +51,7 @@ assert.match(multiHotelRendererJs, /js-selected-option-image/, "multi-hotel fina
 assert.match(multiHotelRendererJs, /js-selected-option-website/, "multi-hotel final renderer should update selected hotel website link");
 assert.match(productCss, /\.v11-flight-summary-grid/, "multi-hotel CSS should style premium flight summary cards");
 assert.match(productCss, /\.v11-gallery-dialog/, "multi-hotel CSS should style fullscreen gallery");
+assert.match(productCss, /@media \(min-width: 1180px\)[\s\S]*\.shell\[data-proposal-template="multi-hotel"\][\s\S]*\.v11-selected-hotel-detail/, "multi-hotel CSS should include a wide desktop layout for final client HTML");
 assert.equal(/Р[ ’џћ›ќ—Ґ]|С[џњ‰‡ђ]/.test(multiHotelRendererJs), false, "multi-hotel renderer should not contain mojibake Bulgarian labels");
 assert.equal(/outboundСегменти|inboundСегменти|totalПродължителност/.test(multiHotelRendererJs), false, "multi-hotel renderer must keep canonical flight property names untranslated");
 assert.equal(/Selected option estimate|Package Includes|GT63 Insight|Ready for client preview/.test(multiHotelRendererJs), false, "multi-hotel renderer should not keep old English client-facing labels");
