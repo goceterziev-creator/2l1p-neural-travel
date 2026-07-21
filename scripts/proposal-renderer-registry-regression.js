@@ -150,7 +150,7 @@ const selectedSyncHotels = Array.from({ length: 6 }, (_, index) => ({
   name: index === 0 ? "Palace Hotel Tokyo" : (index === 5 ? "Home Story in Tokyo Aerial大島&東京屋語" : `Tokyo Sync Hotel ${index + 1}`),
   description: `Описание за хотелска опция ${index + 1}`,
   room: index === 5 ? "Sync room 6 за двама пътуващи" : `Sync room ${index + 1}`,
-  meal: index === 5 ? "Breakfast included" : "Room only",
+  meal: index === 0 ? "Breakfast included" : (index === 5 ? "" : "Room only"),
   area: index === 5 ? "Tokyo, Japan - option 6 area" : `Tokyo option ${index + 1} area`,
   price: index === 5 ? 5431.93 : 6100 + (index * 100),
   stars: index === 5 ? "3" : "5",
@@ -204,18 +204,29 @@ assert.match(selectedSyncTimeline, /Полет София → Токио/, "time
 assert.equal(/Полет Летище София → Летище Мюнхен/.test(selectedSyncTimeline), false, "timeline summary should not use first outbound segment as the trip route");
 assert.match(selectedSyncTimeline, /Обратен полет Токио → София/, "timeline summary should use destination-level return city route");
 assert.match(selectedSyncTimeline, /Пристигане в Токио/, "timeline should label the real final outbound arrival as arrival in the destination");
+assert.equal(/<span>Пристигане<\/span>/.test(selectedSyncTimeline), false, "arrival timeline item should not render a redundant standalone arrival label");
 assert.match(selectedSyncTimeline, /29 март · 13:15/, "timeline should localize the final outbound arrival date and time");
 assert.equal((selectedSyncTimeline.match(/29 март · 13:15/g) || []).length, 1, "arrival date/time should appear once inside the arrival timeline item");
 assert.match(selectedSyncTimeline, /Летище Токио Ханеда|HND/, "timeline should keep the real final outbound arrival airport");
-assert.match(selectedSyncRecommendation, /Sync room 6|Закуска|по-ниска/, "recommendation should describe supported facts for selected option 6");
+assert.match(selectedSyncRecommendation, /Sync room 6|Хранене за потвърждение|най-достъпният от шестте/, "recommendation should describe supported facts for selected option 6");
 assert.match(selectedSyncDetail, /Home Story in Tokyo Aerial大島&amp;東京屋語/, "selected detail should render selected option 6");
 assert.equal(/Palace Hotel Tokyo/.test(selectedSyncDetail), false, "selected detail should not render option 1 when option 6 is selected");
+assert.equal(/Закуска/.test(selectedSyncHero), false, "hero should not inherit breakfast from non-selected hotel option 1");
+assert.equal(/Закуска/.test(selectedSyncRecommendation), false, "recommendation should not inherit breakfast from non-selected hotel option 1");
+assert.equal(/Закуска/.test(selectedSyncTimeline), false, "timeline should not inherit breakfast from non-selected hotel option 1");
+assert.equal(/Закуска/.test(selectedSyncDetail), false, "selected detail should not inherit breakfast from non-selected hotel option 1");
+assert.match(selectedSyncHero, /Хранене за потвърждение/, "hero should use selected hotel meal fallback");
+assert.match(selectedSyncTimeline, /Хранене за потвърждение/, "timeline should use selected hotel meal fallback");
+assert.match(selectedSyncDetail, /Хранене за потвърждение/, "selected detail should use selected hotel meal fallback");
+assert.match(selectedSyncHtml, /Изхранване: Хранене за потвърждение/, "package inclusions should use selected hotel meal fallback");
 assert.match(selectedSyncHtml, /data-option-whatsapp="[^"]*Home%20Story%20in%20Tokyo%20Aerial/, "WhatsApp context should contain selected option 6");
+assert.match(selectedSyncHtml, /data-option-whatsapp="[^"]*%D1%85%D1%80%D0%B0%D0%BD%D0%B5%D0%BD%D0%B5%3A%20%D0%A5%D1%80%D0%B0%D0%BD%D0%B5%D0%BD%D0%B5%20%D0%B7%D0%B0%20%D0%BF%D0%BE%D1%82%D0%B2%D1%8A%D1%80%D0%B6%D0%B4%D0%B5%D0%BD%D0%B8%D0%B5/, "WhatsApp context should include selected hotel meal fallback");
 assert.match(selectedSyncHtml, /itineraryHotel\.textContent = "Настаняване в "/, "selection script should update itinerary accommodation when hotel changes");
 assert.match(selectedSyncHtml, /button\.textContent = "Избран хотел"/, "selection script should update the selected comparison card action label");
 assert.equal((selectedSyncHtml.match(/class="[^"]*js-selected-option-whatsapp/g) || []).length >= 3, true, "all WhatsApp CTA links should share selected hotel context updates");
 assert.equal((selectedSyncHtml.match(/Избран хотел/g) || []).length >= 1, true, "selected comparison card should render a selected-state action label");
 assert.equal(/A curated private travel proposal|MULTI-HOTEL BRIEF|Review proposal|READY|REVIEW|self-transfer|\bMarch\b|\bApril\b/.test(selectedSyncHtml), false, "selected sync render should not expose forbidden English client copy");
+assert.equal(/Хранене според избраната оферта|Период: .*г\.\./.test(selectedSyncHtml), false, "selected sync render should not expose inconsistent meal fallback or double date punctuation");
 assert.equal(/alt="Home Story in Tokyo Aerial/.test(selectedSyncDetail), false, "selected detail gallery alt text should not repeat the visible selected hotel name");
 
 const desktopSelectedDetailRule = productStyles.match(/\.shell\[data-proposal-template="multi-hotel"\]\s+\.v11-selected-hotel-detail\s*\{[^}]*\}/);

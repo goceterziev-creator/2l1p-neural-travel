@@ -37,13 +37,17 @@
 
   function compactMealLabel(value) {
     const raw = text(value, "");
-    if (!raw) return "Хранене според избраната оферта";
+    if (!raw) return "Хранене за потвърждение";
     if (/all\s*inclusive|всичко включено/i.test(raw)) return "All Inclusive";
     if (/half\s*board|полупансион/i.test(raw)) return "Полупансион";
     if (/full\s*board|пълен пансион/i.test(raw)) return "Пълен пансион";
     if (/breakfast|закуска/i.test(raw)) return "Закуска";
     if (/room\s*only|без хранене/i.test(raw)) return "Без включено хранене";
-    return raw.length > 34 ? "Хранене според избраната оферта" : raw;
+    return raw.length > 34 ? "Хранене за потвърждение" : localizeClientText(raw);
+  }
+
+  function resolvedMealPlan(hotel = {}) {
+    return compactMealLabel(hotel.meal || hotel.board);
   }
 
   const BG_MONTHS = [
@@ -82,6 +86,9 @@
       .replace(/\bcabin baggage included\b/gi, "Включен ръчен багаж")
       .replace(/\bbreakfast included\b/gi, "Включена закуска")
       .replace(/\broom only\b/gi, "Без включено хранене")
+      .replace(/\s+г\.\s*-\s*/g, " г. – ")
+      .replace(/\bTokyo\b/g, "Токио")
+      .replace(/\bJapan\b/g, "Япония")
       .replace(/Дизайнирано пушене/gi, "Зона за пушачи")
       .replace(/Designated smoking area/gi, "Зона за пушачи");
   }
@@ -112,6 +119,8 @@
     if (!selectedPrice || optionPrices.length < 2) return "";
     const lowerCount = optionPrices.filter((price) => selectedPrice < price).length;
     const higherCount = optionPrices.filter((price) => selectedPrice > price).length;
+    const optionCountText = hotelOptions.length === 6 ? "шестте" : String(hotelOptions.length);
+    if (lowerCount === hotelOptions.length - 1 && hotelOptions.length >= 2) return `Това е най-достъпният от ${optionCountText} сравнени варианта.`;
     if (lowerCount === 1) return "Цената е по-ниска от един от сравняваните варианти.";
     if (lowerCount > 1) return `Цената е по-ниска от ${lowerCount} от сравняваните варианти.`;
     if (higherCount === 0) return "Това е най-ниската цена сред показаните варианти.";
@@ -128,9 +137,9 @@
     add(optionPositionSummary(selectedHotel, hotelOptions, input));
     if (stars) add(`Хотелът е с категория ${stars} звезди.`);
     if (selectedHotel.room || selectedHotel.roomType) add(`Стая: ${localizeClientText(selectedHotel.room || selectedHotel.roomType)}.`);
-    if (selectedHotel.meal || selectedHotel.board) add(`Изхранване: ${compactMealLabel(selectedHotel.meal || selectedHotel.board)}.`);
+    if (selectedHotel.meal || selectedHotel.board || reasons.length) add(`Изхранване: ${resolvedMealPlan(selectedHotel)}.`);
     if (input.client?.travelers) add(`Офертата е подготвена за ${text(input.client.travelers)} пътуващи.`);
-    if (input.client?.travelDates || input.destination?.requested) add(`Период: ${localizeClientText(input.client?.travelDates || input.destination?.requested)}.`);
+    if (input.client?.travelDates || input.destination?.requested) add(`Период: ${localizeClientText(input.client?.travelDates || input.destination?.requested)}`);
     if (input.transfer?.included || input.transfer?.type || input.transfer?.status || input.transfer?.price > 0) add("Има данни за трансфер в офертата.");
     if (selectedHotel.area || selectedHotel.location || selectedHotel.city) add(`Локация: ${localizeClientText(selectedHotel.area || selectedHotel.location || selectedHotel.city)}.`);
     if (selectedHotel.reviewScore || selectedHotel.ratingText || selectedHotel.reviews) add(`Има подадени данни за оценка/ревю: ${localizeClientText(selectedHotel.reviewScore || selectedHotel.ratingText || selectedHotel.reviews)}.`);
@@ -168,7 +177,7 @@
     add("Период", dateRangeNights(travelDates));
     add("Пътуващи", input.client?.travelers);
     add("Стая", selectedHotel.room || selectedHotel.roomType, "room");
-    add("Хранене", compactMealLabel(selectedHotel.meal || selectedHotel.board), "meal");
+    add("Хранене", resolvedMealPlan(selectedHotel), "meal");
     add("Локация", selectedHotel.area || selectedHotel.location || selectedHotel.city, "area");
     return facts.slice(0, 9);
   }
@@ -278,13 +287,15 @@
     const priceDisplay = money(total, currency);
     const hotelPriceDisplay = money(hotelOnly, currency);
     const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
-    const preferMessage = encodeURIComponent(`Предпочитам ${name} - обща пакетна цена ${priceDisplay}`);
+    const mealPlan = resolvedMealPlan(hotel);
+    const preferMessage = encodeURIComponent(`Предпочитам ${name} - обща пакетна цена ${priceDisplay}; хранене: ${mealPlan}`);
 
     return {
       label,
       name,
       priceDisplay,
       hotelPriceDisplay,
+      mealPlan,
       whatsappUrl: `https://wa.me/${whatsappPhone}?text=${preferMessage}`
     };
   }
@@ -320,7 +331,7 @@
 
     add("Самолетни билети", Boolean(flight.airline || flight.route || flight.outboundSegments?.length || flight.inboundSegments?.length));
     add("Настаняване", Boolean(selectedHotel.name || selectedHotel.room || selectedHotel.area));
-    add(`Изхранване: ${compactMealLabel(selectedHotel.meal || selectedHotel.board)}`, Boolean(selectedHotel.meal || selectedHotel.board));
+    add(`Изхранване: ${resolvedMealPlan(selectedHotel)}`, Boolean(selectedHotel.name || selectedHotel.room || selectedHotel.area || selectedHotel.meal || selectedHotel.board));
     add("Летищен трансфер", Boolean(transfer.included || transfer.type || transfer.status || transfer.price > 0));
     add("Регистриран багаж", /checked|registr|23kg|30kg|багаж/i.test(String(flight.baggage || "")));
     add("Ръчен багаж", /cabin|carry|personal|ръчен|малка/i.test(String(flight.baggage || "")));
@@ -546,7 +557,7 @@
       const arrivalTime = segmentArrivalLabel(last);
       const arrivalPlace = timelineStopLabel(last.to || last.arrivalAirport);
       add(
-        "Пристигане",
+        "",
         destinationName ? `Пристигане в ${destinationName}` : "Пристигане",
         [arrivalTime, arrivalPlace].filter(Boolean).join("\n")
       );
@@ -557,7 +568,7 @@
       add("Полет", `Маршрут ${text(flight.route)}`, text(flight.airline, ""));
     }
 
-    if (selectedHotel.name) add("Настаняване", `Настаняване в ${text(selectedHotel.name)}`, compactMealLabel(selectedHotel.meal || selectedHotel.board), "js-selected-itinerary-hotel");
+    if (selectedHotel.name) add("Настаняване", `Настаняване в ${text(selectedHotel.name)}`, resolvedMealPlan(selectedHotel), "js-selected-itinerary-hotel");
 
     if (inbound.length) {
       const firstInbound = inbound[0] || {};
@@ -573,7 +584,7 @@
         <p class="v11-kicker">Пътуването накратко</p>
         <h4>Ясен ход на пътуването</h4>
         <ol class="v11-travel-timeline">
-          ${items.map((item) => `<li${item.className ? ` class="${escapeHtml(item.className)}"` : ""}><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.title)}</strong>${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ""}</li>`).join("")}
+          ${items.map((item) => `<li${item.className ? ` class="${escapeHtml(item.className)}"` : ""}>${item.label ? `<span>${escapeHtml(item.label)}</span>` : ""}<strong>${escapeHtml(item.title)}</strong>${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ""}</li>`).join("")}
         </ol>
       </section>
     `;
@@ -616,8 +627,8 @@
       subtitle: hotelSubtitle(hotel),
       description: localizeClientText(text(hotel.description, "Описание на хотела за потвърждение.")),
       room: localizeClientText(text(hotel.room || hotel.roomType, "Стая за потвърждение")),
-      meal: localizeClientText(text(hotel.meal || hotel.board, "Изхранване за потвърждение")),
-      mealCompact: compactMealLabel(hotel.meal || hotel.board),
+      meal: payload.mealPlan,
+      mealCompact: payload.mealPlan,
       area: localizeClientText(text(hotel.area || hotel.location || hotel.city, "Локация за потвърждение")),
       stars: numericStars(hotel),
       transfer: transferSummary(input, hotel),
@@ -921,9 +932,9 @@
               if (selectedName) selectedName.textContent = button.dataset.optionName || "Хотелска опция";
               if (selectedPrice) selectedPrice.textContent = button.dataset.optionPrice || "-";
               if (selectedSubtitle) selectedSubtitle.textContent = button.dataset.optionSubtitle || "";
-              if (heroFactStars) heroFactStars.textContent = button.dataset.optionStars ? button.dataset.optionStars + " звезди" : "За потвърждение";
+              if (heroFactStars) heroFactStars.textContent = button.dataset.optionStars ? button.dataset.optionStars + " звезди" : "Категорията не е посочена";
               if (heroFactRoom) heroFactRoom.textContent = button.dataset.optionRoom || "Стая за потвърждение";
-              if (heroFactMeal) heroFactMeal.textContent = button.dataset.optionMealCompact || "Хранене според избраната оферта";
+              if (heroFactMeal) heroFactMeal.textContent = button.dataset.optionMealCompact || "Хранене за потвърждение";
               if (heroFactArea) heroFactArea.textContent = button.dataset.optionArea || "Локация за потвърждение";
               if (selectedStars) {
                 if (button.dataset.optionStars) {
@@ -933,7 +944,7 @@
                   selectedStars.hidden = true;
                 }
               }
-              if (selectedMeal) selectedMeal.textContent = "Хранене: " + (button.dataset.optionMealCompact || "Хранене според избраната оферта");
+              if (selectedMeal) selectedMeal.textContent = "Хранене: " + (button.dataset.optionMealCompact || "Хранене за потвърждение");
               if (selectedTransfer) selectedTransfer.textContent = button.dataset.optionTransfer || "";
               if (selectedImage && button.dataset.optionImage) selectedImage.src = button.dataset.optionImage;
               if (selectedImage) selectedImage.alt = button.dataset.optionName || "";
@@ -961,7 +972,7 @@
               if (detailPrice) detailPrice.textContent = button.dataset.optionPrice || "-";
               if (detailTransfer) detailTransfer.textContent = button.dataset.optionTransfer || "";
               if (itineraryHotel) itineraryHotel.textContent = "Настаняване в " + (button.dataset.optionName || "избрания хотел");
-              if (itineraryMeal) itineraryMeal.textContent = button.dataset.optionMealCompact || "Хранене според избраната оферта";
+              if (itineraryMeal) itineraryMeal.textContent = button.dataset.optionMealCompact || "Хранене за потвърждение";
               if (detailWebsite) {
                 if (button.dataset.optionUrl) {
                   detailWebsite.href = button.dataset.optionUrl;
