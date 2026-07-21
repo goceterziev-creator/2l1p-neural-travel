@@ -81,7 +81,9 @@
       .replace(/\bchecked baggage included\b/gi, "Включен регистриран багаж")
       .replace(/\bcabin baggage included\b/gi, "Включен ръчен багаж")
       .replace(/\bbreakfast included\b/gi, "Включена закуска")
-      .replace(/\broom only\b/gi, "Без включено хранене");
+      .replace(/\broom only\b/gi, "Без включено хранене")
+      .replace(/Дизайнирано пушене/gi, "Зона за пушачи")
+      .replace(/Designated smoking area/gi, "Зона за пушачи");
   }
 
   function clientDateTimeLabel(value = "") {
@@ -110,7 +112,8 @@
     if (!selectedPrice || optionPrices.length < 2) return "";
     const lowerCount = optionPrices.filter((price) => selectedPrice < price).length;
     const higherCount = optionPrices.filter((price) => selectedPrice > price).length;
-    if (lowerCount > 0) return `Цената е по-ниска от ${lowerCount} от сравняваните варианти.`;
+    if (lowerCount === 1) return "Цената е по-ниска от един от сравняваните варианти.";
+    if (lowerCount > 1) return `Цената е по-ниска от ${lowerCount} от сравняваните варианти.`;
     if (higherCount === 0) return "Това е най-ниската цена сред показаните варианти.";
     return "";
   }
@@ -123,7 +126,7 @@
     };
     const stars = numericStars(selectedHotel);
     add(optionPositionSummary(selectedHotel, hotelOptions, input));
-    if (stars) add(`Хотелът е категория ${stars}.`);
+    if (stars) add(`Хотелът е с категория ${stars} звезди.`);
     if (selectedHotel.room || selectedHotel.roomType) add(`Стая: ${localizeClientText(selectedHotel.room || selectedHotel.roomType)}.`);
     if (selectedHotel.meal || selectedHotel.board) add(`Изхранване: ${compactMealLabel(selectedHotel.meal || selectedHotel.board)}.`);
     if (input.client?.travelers) add(`Офертата е подготвена за ${text(input.client.travelers)} пътуващи.`);
@@ -160,7 +163,6 @@
       if (cleaned) facts.push([label, localizeClientText(cleaned), key]);
     };
     add("Дестинация", input.destination?.name || input.destination?.requested || input.content?.heroTitle, "destination");
-    add("Хотел", selectedPayload.name, "hotel");
     add("Категория", numericStars(selectedHotel) ? `${numericStars(selectedHotel)} звезди` : "", "stars");
     add("Дати", travelDates);
     add("Период", dateRangeNights(travelDates));
@@ -383,9 +385,10 @@
   function flightStops(flight = {}) {
     const outboundStops = Math.max(0, (flight.outboundSegments || []).length - 1);
     const inboundStops = Math.max(0, (flight.inboundSegments || []).length - 1);
-    const total = Math.max(outboundStops, inboundStops);
-    if (!total) return "Директен или за потвърждение";
-    return `${total} ${total === 1 ? "прекачване" : "прекачвания"}`;
+    const parts = [];
+    if (flight.outboundSegments?.length) parts.push(`Отиване: ${outboundStops} ${outboundStops === 1 ? "прекачване" : "прекачвания"}`);
+    if (flight.inboundSegments?.length) parts.push(`Връщане: ${inboundStops} ${inboundStops === 1 ? "прекачване" : "прекачвания"}`);
+    return parts.join(" · ");
   }
 
   function flightSummaryCards(flight = {}, travelDates = "") {
@@ -398,7 +401,7 @@
     const items = [
       ["Авиокомпания", localizeClientText(text(flight.airline, "За потвърждение"))],
       ["Дати", dates],
-      ["Прекачвания", flightStops(flight)],
+      ...(flightStops(flight) ? [["Прекачвания", flightStops(flight)]] : []),
       ["Багаж", localizeClientText(text(flight.baggage, "За потвърждение"))],
       ["Сегменти", segments.length ? String(segments.length) : "За потвърждение"],
       ["Продължителност", duration || "Вижте детайлите по сегменти"]
@@ -509,6 +512,20 @@
     return [from, to].filter(Boolean).join(" → ");
   }
 
+  function cityFromAirport(value = "") {
+    const label = timelineStopLabel(value);
+    return label
+      .replace(/^Летище\s+/i, "")
+      .replace(/^Международно летище\s+/i, "")
+      .replace(/\s+Ханеда$/i, "")
+      .replace(/\s+Мюнхен$/i, "Мюнхен")
+      .trim();
+  }
+
+  function summaryRouteLabel(from, to) {
+    return [from, to].map((item) => text(item, "")).filter(Boolean).join(" → ");
+  }
+
   function travelTimeline(input = {}, selectedHotel = {}) {
     const flight = input.flight || {};
     const outbound = flight.outboundSegments || [];
@@ -523,13 +540,15 @@
     if (outbound.length) {
       const first = outbound[0] || {};
       const last = outbound[outbound.length - 1] || {};
-      add(segmentDateLabel(first) ? `Ден 1 · ${segmentDateLabel(first)}` : "Ден 1", `Полет ${segmentRouteLabel(first) || text(flight.route, "")}`, outbound.length > 1 ? `${outbound.length} сегмента` : "");
+      const outboundFrom = cityFromAirport(first.from || first.departureAirport);
+      const outboundTo = destinationName || cityFromAirport(last.to || last.arrivalAirport);
+      add(segmentDateLabel(first) ? `Ден 1 · ${segmentDateLabel(first)}` : "Ден 1", `Полет ${summaryRouteLabel(outboundFrom, outboundTo) || text(flight.route, "")}`, outbound.length > 1 ? `${outbound.length} сегмента` : "");
       const arrivalTime = segmentArrivalLabel(last);
       const arrivalPlace = timelineStopLabel(last.to || last.arrivalAirport);
       add(
-        arrivalTime ? `Пристигане · ${arrivalTime}` : "Пристигане",
+        "Пристигане",
         destinationName ? `Пристигане в ${destinationName}` : "Пристигане",
-        [arrivalTime, arrivalPlace].filter(Boolean).join(" · ")
+        [arrivalTime, arrivalPlace].filter(Boolean).join("\n")
       );
       if (transfer.included || transfer.type || transfer.status || transfer.price > 0) {
         add("Трансфер", "Трансфер след пристигане", transfer.route || transfer.description || transfer.status || transfer.type);
@@ -543,7 +562,9 @@
     if (inbound.length) {
       const firstInbound = inbound[0] || {};
       const lastInbound = inbound[inbound.length - 1] || {};
-      add(segmentDateLabel(firstInbound) ? `Последен ден · ${segmentDateLabel(firstInbound)}` : "Последен ден", `Обратен полет ${segmentRouteLabel(firstInbound) || segmentRouteLabel(lastInbound)}`, inbound.length > 1 ? `${inbound.length} сегмента` : "");
+      const inboundFrom = destinationName || cityFromAirport(firstInbound.from || firstInbound.departureAirport);
+      const inboundTo = cityFromAirport(lastInbound.to || lastInbound.arrivalAirport);
+      add(segmentDateLabel(firstInbound) ? `Последен ден · ${segmentDateLabel(firstInbound)}` : "Последен ден", `Обратен полет ${summaryRouteLabel(inboundFrom, inboundTo) || segmentRouteLabel(firstInbound) || segmentRouteLabel(lastInbound)}`, inbound.length > 1 ? `${inbound.length} сегмента` : "");
     }
 
     if (items.length < 2) return "";
@@ -794,7 +815,6 @@
           var selectedImage = root.querySelector(".js-selected-option-image");
           var selectedWebsite = root.querySelector(".js-selected-option-website");
           var whatsappLinks = root.querySelectorAll(".js-selected-option-whatsapp");
-          var heroFactHotel = root.querySelector('[data-selected-fact="hotel"] strong');
           var heroFactStars = root.querySelector('[data-selected-fact="stars"] strong');
           var heroFactRoom = root.querySelector('[data-selected-fact="room"] strong');
           var heroFactMeal = root.querySelector('[data-selected-fact="meal"] strong');
@@ -901,7 +921,6 @@
               if (selectedName) selectedName.textContent = button.dataset.optionName || "Хотелска опция";
               if (selectedPrice) selectedPrice.textContent = button.dataset.optionPrice || "-";
               if (selectedSubtitle) selectedSubtitle.textContent = button.dataset.optionSubtitle || "";
-              if (heroFactHotel) heroFactHotel.textContent = button.dataset.optionName || "Хотелска опция";
               if (heroFactStars) heroFactStars.textContent = button.dataset.optionStars ? button.dataset.optionStars + " звезди" : "За потвърждение";
               if (heroFactRoom) heroFactRoom.textContent = button.dataset.optionRoom || "Стая за потвърждение";
               if (heroFactMeal) heroFactMeal.textContent = button.dataset.optionMealCompact || "Хранене според избраната оферта";
