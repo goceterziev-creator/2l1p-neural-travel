@@ -66,13 +66,13 @@
         </article>
       `;
     }
-    const title = [segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Flight segment";
+    const title = [segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Полетен сегмент";
     return `
       <article class="v11-segment">
         <strong>${escapeHtml(title)}</strong>
         <span>${escapeHtml(text(segment.from))} &rarr; ${escapeHtml(text(segment.to))}</span>
         <span>${escapeHtml(text(segment.departure))} &rarr; ${escapeHtml(text(segment.arrival))}</span>
-        <small>Duration: ${escapeHtml(text(segment.duration))}</small>
+        <small>Продължителност: ${escapeHtml(text(segment.duration))}</small>
       </article>
     `;
   }
@@ -83,10 +83,10 @@
       <section class="v11-itinerary-block">
         <div>
           <p class="v11-kicker">${escapeHtml(label)}</p>
-          <h4>${escapeHtml(text(route, "To be confirmed"))}</h4>
+          <h4>${escapeHtml(text(route, "За потвърждение"))}</h4>
         </div>
         <div class="v11-segment-list">
-          ${segments.length ? segments.map(segmentCard).join("") : "<p class=\"v11-muted\">No segment data</p>"}
+          ${segments.length ? segments.map(segmentCard).join("") : "<p class=\"v11-muted\">Няма данни за сегментите</p>"}
         </div>
       </section>
     `;
@@ -127,7 +127,7 @@
     if (!Array.isArray(items) || !items.length) return "";
     return `
       <section class="v11-note">
-        <strong>Operator note</strong>
+        <strong>Бележка за преглед</strong>
         <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </section>
     `;
@@ -146,8 +146,8 @@
       <article class="v11-hotel-option ${selected ? "selected" : ""}">
         ${image ? `<img src="${escapeHtml(image)}" alt="">` : ""}
         <div>
-          <span>${selected ? "Selected hotel" : `Hotel option ${index + 1}`}</span>
-          <strong>${escapeHtml(text(hotel?.name, "Hotel to confirm"))}</strong>
+          <span>${selected ? "Избран хотел" : `Хотелска опция ${index + 1}`}</span>
+          <strong>${escapeHtml(text(hotel?.name, "Хотел за потвърждение"))}</strong>
           <small>${escapeHtml(text(hotel?.area))}</small>
           <small>${escapeHtml(text(hotel?.room))}</small>
         </div>
@@ -162,8 +162,8 @@
     const hotel = proposal.hotel || {};
     const hotelOptions = Array.isArray(proposal.hotelOptions) ? proposal.hotelOptions : [];
     const currency = proposal.pricing?.currency || "EUR";
-    const title = proposal.content?.heroTitle || proposal.destination?.name || "Private Travel Proposal";
-    const subtitle = proposal.content?.heroSubtitle || "A curated travel brief prepared for review.";
+    const title = proposal.content?.heroTitle || proposal.destination?.name || "Персонално предложение";
+    const subtitle = proposal.content?.heroSubtitle || "Персонално подготвено пътуване за клиентски преглед.";
     const travelDates = proposal.client?.travelDates || proposal.destination?.requested || "";
     const total = proposal.pricing?.totalAmount || flight.price || hotel.price;
     const baseTotal = proposal.pricing?.baseAmount;
@@ -174,23 +174,23 @@
       <article class="v11-proposal" aria-label="Luxury V11 proposal preview">
         <section class="v11-hero">
           <div>
-            <p class="v11-eyebrow">AYA TRAVEL · V11 CLIENT BRIEF</p>
+            <p class="v11-eyebrow">AYA TRAVEL &middot; КЛИЕНТСКО ПРЕДЛОЖЕНИЕ</p>
             <h3>${escapeHtml(title)}</h3>
             <p>${escapeHtml(subtitle)}</p>
             <div class="v11-chip-row">
-              <span>${escapeHtml(text(proposal.client?.name, "Client to confirm"))}</span>
-              <span>${escapeHtml(text(travelDates, "Dates to confirm"))}</span>
-              <span>${escapeHtml(text(proposal.client?.travelers, "Travelers to confirm"))}</span>
+              <span>${escapeHtml(text(proposal.client?.name, "Клиент за потвърждение"))}</span>
+              <span>${escapeHtml(text(travelDates, "Дати за потвърждение"))}</span>
+              <span>${escapeHtml(text(proposal.client?.travelers, "Пътуващи за потвърждение"))}</span>
             </div>
           </div>
           <div class="v11-hero-visual">
             <img src="${escapeHtml(image)}" alt="">
           </div>
           <div class="v11-price-card">
-            <span>Estimated investment</span>
+            <span>Ориентировъчна крайна цена</span>
             <strong>${escapeHtml(money(total, currency))}</strong>
-            ${baseTotal && marginPercent ? `<small>Base ${escapeHtml(money(baseTotal, currency))} + ${escapeHtml(marginPercent)}% margin</small>` : ""}
-            <small>Prepared for operator review</small>
+            ${baseTotal && marginPercent ? `<small>База ${escapeHtml(money(baseTotal, currency))} + ${escapeHtml(marginPercent)}% марж</small>` : ""}
+            <small>Подготвено за финален преглед</small>
           </div>
         </section>
 
@@ -198,31 +198,31 @@
 
         <section class="v11-content-grid">
           <div class="v11-card v11-flight-card">
-            <p class="v11-kicker">Flight Experience</p>
-            <h4>${escapeHtml(text(flight.airline, "Airline to confirm"))}</h4>
-            <p>${escapeHtml(text(flight.route, "Route to confirm"))}</p>
-            ${segmentGroup("Outbound", flight.outboundSegments, flight.outbound)}
-            ${segmentGroup("Inbound", flight.inboundSegments, flight.inbound)}
+            <p class="v11-kicker">Полет</p>
+            <h4>${escapeHtml(text(flight.airline, "Авиокомпания за потвърждение"))}</h4>
+            <p>${escapeHtml(text(flight.route, "Маршрут за потвърждение"))}</p>
+            ${segmentGroup("Отиване", flight.outboundSegments, flight.outbound)}
+            ${segmentGroup("Връщане", flight.inboundSegments, flight.inbound)}
             <div class="v11-detail-row">
-              <span>Baggage</span>
-              <strong>${escapeHtml(text(flight.baggage, "To be confirmed"))}</strong>
+              <span>Багаж</span>
+              <strong>${escapeHtml(text(flight.baggage, "За потвърждение"))}</strong>
             </div>
           </div>
 
           <div class="v11-card v11-hotel-card">
             ${hotelImage(proposal)}
-            <p class="v11-kicker">Hotel Selection</p>
-            <h4>${escapeHtml(text(hotel.name, "Hotel to confirm"))}</h4>
-            <p>${escapeHtml(text(hotel.description, "Hotel details to confirm"))}</p>
+            <p class="v11-kicker">Хотел</p>
+            <h4>${escapeHtml(text(hotel.name, "Хотел за потвърждение"))}</h4>
+            <p>${escapeHtml(text(hotel.description, "Детайли за хотела за потвърждение"))}</p>
             <div class="v11-detail-grid">
-              <div><span>Area</span><strong>${escapeHtml(text(hotel.area))}</strong></div>
-              <div><span>Room</span><strong>${escapeHtml(text(hotel.room))}</strong></div>
-              <div><span>Meal</span><strong>${escapeHtml(text(hotel.meal))}</strong></div>
-              <div><span>Hotel Price</span><strong>${escapeHtml(money(hotel.price, currency))}</strong></div>
+              <div><span>Локация</span><strong>${escapeHtml(text(hotel.area))}</strong></div>
+              <div><span>Стая</span><strong>${escapeHtml(text(hotel.room))}</strong></div>
+              <div><span>Изхранване</span><strong>${escapeHtml(text(hotel.meal))}</strong></div>
+              <div><span>Цена на хотел</span><strong>${escapeHtml(money(hotel.price, currency))}</strong></div>
             </div>
             ${hotelOptions.length > 1 ? `
               <div class="v11-hotel-options">
-                <p class="v11-kicker">Alternative Hotel Options</p>
+                <p class="v11-kicker">Алтернативни хотели</p>
                 ${hotelOptions.map((option, index) => hotelOptionCard(option, index, currency)).join("")}
               </div>
             ` : ""}
@@ -231,10 +231,10 @@
 
         <section class="v11-closing">
           <div>
-            <p class="v11-kicker">Ready for client preview</p>
-            <h4>${escapeHtml(text(proposal.content?.primaryCta, "Review proposal"))}</h4>
+            <p class="v11-kicker">Готово за клиентски преглед</p>
+            <h4>${escapeHtml(text(proposal.content?.primaryCta, "Прегледайте предложението"))}</h4>
           </div>
-          <span>${proposal.readiness === "ready" ? "READY" : "REVIEW"}</span>
+          <span>${proposal.readiness === "ready" ? "ГОТОВО" : "ЗА ПРЕГЛЕД"}</span>
         </section>
       </article>
     `;

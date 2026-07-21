@@ -153,6 +153,10 @@ assert.deepStrictEqual(uniqueGeminiModels("gemini-1.5-flash", "gemini-2.5-flash"
 assert.equal(shouldFallbackToOpenAiFlight(new Error("Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.0-flash")), true, "Gemini quota limit should trigger OpenAI flight fallback");
 assert.equal(shouldFallbackToOpenAiFlight(new Error("This model models/gemini-2.5-flash is no longer available to new users.")), true, "Gemini unavailable model should trigger OpenAI flight fallback");
 assert.equal(shouldFallbackToOpenAiFlight(new Error("Uploaded image is empty")), false, "Image validation errors should not trigger provider fallback");
+const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+assert.match(serverSource, /GT63_ENABLE_VISION_TEST_ENDPOINTS/, "production vision test endpoints must require an explicit env flag");
+assert.match(serverSource, /\/api\/import-image-gemini-test"[\s\S]*requireVisionTestEndpointEnabled/, "flight Gemini test endpoint must be guarded in production");
+assert.match(serverSource, /\/api\/universal-travel-intake-gemini-test"[\s\S]*requireVisionTestEndpointEnabled/, "universal Gemini test endpoint must be guarded in production");
 const openAiFlightShape = normalizeVisionFlightJson({
   outboundSegments: [{
     departureAirport: "SOF",

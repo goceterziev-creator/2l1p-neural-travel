@@ -11,6 +11,7 @@ globalThis.GT63MultiHotelRenderer = require("../gt63-core/renderers/multi-hotel"
 const { adaptSmartImportForProduct } = require("../gt63-core/smart-import-consumer-adapter");
 const { buildProposalInputFromProductModel } = require("../gt63-core/proposal-input-adapter");
 const registry = require("../gt63-core/proposal-renderer-registry");
+const productStyles = fs.readFileSync(path.join(__dirname, "..", "gt63-core", "product", "styles.css"), "utf8");
 
 const fixturePath = path.join(__dirname, "..", "test", "fixtures", "smart-import", "flight-hotel-mixed.json");
 const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
@@ -20,6 +21,10 @@ const multiHotelModel = JSON.parse(JSON.stringify(productModel));
 multiHotelModel.hotelOptions = Array.from({ length: 10 }, (_, index) => ({
   ...multiHotelModel.hotel,
   name: `Hotel ${index + 1}`,
+  description: `Selected detail description ${index + 1}`,
+  room: `Selected detail room ${index + 1}`,
+  meal: `Selected detail meal ${index + 1}`,
+  area: `Selected detail location ${index + 1}`,
   price: 1000 + (index * 100),
   selected: index === 9,
   websiteUrl: `https://example.test/hotel-${index + 1}`,
@@ -50,7 +55,7 @@ assert.equal(registry.selectedTemplate(multiHotelInput), "multi-hotel", "registr
 assert.equal(registry.rendererFor(multiHotelInput).label, "Multi-Hotel Selector", "registry should select multi-hotel renderer");
 
 const multiHotelHtml = registry.renderProposal(multiHotelInput);
-assert.match(multiHotelHtml, /MULTI-HOTEL BRIEF/, "multi-hotel renderer should identify the template");
+assert.match(multiHotelHtml, /КЛИЕНТСКИ ИЗБОР/, "multi-hotel renderer should identify the decision UX in Bulgarian");
 assert.doesNotMatch(multiHotelHtml, /multi-hotel-sequential-grid/, "multi-hotel renderer should no longer use the old comparison grid wrapper");
 assert.match(multiHotelHtml, /v11-flight-summary-grid/, "multi-hotel renderer should show premium flight summary cards");
 assert.match(multiHotelHtml, /&#1054;&#1073;&#1086;&#1073;&#1097;&#1077;&#1085;&#1080;&#1077; &#1085;&#1072; &#1087;&#1086;&#1083;&#1077;&#1090;&#1072;/, "multi-hotel renderer should label the flight summary in Bulgarian");
@@ -63,7 +68,12 @@ assert.match(multiHotelHtml, /Хотелска опция 10/, "multi-hotel rend
 assert.match(multiHotelHtml, /10 варианта за настаняване/, "multi-hotel renderer should explain option count factually");
 assert.match(multiHotelHtml, /&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;/, "multi-hotel renderer should identify the selected hotel in the hero");
 assert.match(multiHotelHtml, /Hotel 10/, "multi-hotel renderer should preserve selected hotel 10 in the hero/details");
+assert.match(multiHotelHtml, /src="https:\/\/images\.example\.test\/hotel-10-1\.jpg"/, "hero image should follow the selected hotel image");
 assert.match(multiHotelHtml, /Крайна цена за избрания хотел/, "multi-hotel renderer should keep the selected option estimate label");
+assert.match(multiHotelHtml, /3,543\.75 EUR/, "hero should show the selected final package price");
+assert.match(multiHotelHtml, /Дестинация/, "hero should include destination as a decision fact");
+assert.match(multiHotelHtml, /Пътуващи/, "hero should include travelers as a decision fact");
+assert.match(multiHotelHtml, /Хранене/, "hero should include concise meal information");
 assert.match(multiHotelHtml, /js-selected-option-price/, "multi-hotel renderer should expose a dynamic selected package price");
 assert.match(multiHotelHtml, /v11-hotel-gallery/, "multi-hotel renderer should show a hotel image gallery");
 assert.match(multiHotelHtml, /v11-selected-hotel-gallery/, "multi-hotel renderer should show a larger selected hotel gallery");
@@ -78,20 +88,62 @@ assert.match(multiHotelHtml, /js-selected-option-image/, "multi-hotel renderer s
 assert.match(multiHotelHtml, /js-selected-option-website/, "multi-hotel renderer should expose dynamic hotel website target");
 assert.match(multiHotelHtml, /js-selected-option-transfer/, "multi-hotel renderer should expose dynamic transfer summary target");
 assert.match(multiHotelHtml, /v11-selected-hotel-detail active/, "multi-hotel renderer should mark the selected hotel details active");
+const comparisonSectionStart = multiHotelHtml.indexOf("v11-hotel-card");
+const comparisonSectionEnd = multiHotelHtml.indexOf("v11-selected-hotel-card", comparisonSectionStart);
+const comparisonSection = multiHotelHtml.slice(comparisonSectionStart, comparisonSectionEnd);
+assert.equal((comparisonSection.match(/Избрана опция/g) || []).length, 1, "selected badge should appear exactly once in the initial comparison");
+assert.match(multiHotelHtml, /data-selected-badge/, "selected badge should have accessible text support for dynamic updates");
+assert.match(multiHotelHtml, /selectedBadge\.textContent = "Избрана опция"/, "selected badge should update when the client changes hotel");
+assert.match(multiHotelHtml, /updateRecommendation\(button\.dataset\.optionReasons/, "recommendation should update when the client changes hotel");
+assert.match(multiHotelHtml, /updateDetailGallery\(parseImages\(button\.dataset\.optionImages/, "selected detail gallery should update when the client changes hotel");
+assert.match(multiHotelHtml, /data-option-name="Hotel 1"/, "hotel option buttons should carry alternate selected hotel names");
+assert.match(multiHotelHtml, /data-option-price="2,598\.75 EUR"/, "hotel option buttons should carry alternate selected hotel prices");
+assert.equal((comparisonSection.match(/class="v11-hotel-option /g) || []).length, 10, "comparison should render every hotel option without an artificial max");
+const selectedHotelSectionStart = multiHotelHtml.indexOf("v11-selected-hotel-card");
+const selectedHotelSectionEnd = multiHotelHtml.indexOf("v11-transfer-card", selectedHotelSectionStart);
+const selectedHotelSection = multiHotelHtml.slice(selectedHotelSectionStart, selectedHotelSectionEnd);
+assert.ok(selectedHotelSectionStart >= 0 && selectedHotelSectionEnd > selectedHotelSectionStart, "multi-hotel renderer should expose the selected hotel section");
+assert.equal((selectedHotelSection.match(/v11-selected-hotel-detail/g) || []).length, 1, "selected hotel section should render exactly one hotel detail panel");
+assert.equal((selectedHotelSection.match(/js-selected-detail-name">Hotel 10/g) || []).length, 1, "selected hotel section should render only one visible selected hotel name");
+assert.equal((selectedHotelSection.match(/Selected detail description 10/g) || []).length, 1, "selected hotel section should render only one selected hotel description");
+assert.equal((selectedHotelSection.match(/Selected detail room 10/g) || []).length, 1, "selected hotel section should render only one selected hotel room block");
+assert.equal((selectedHotelSection.match(/Selected detail meal 10/g) || []).length, 1, "selected hotel section should render only one selected hotel meal block");
+assert.equal((selectedHotelSection.match(/Selected detail location 10/g) || []).length, 1, "selected hotel section should render only one selected hotel location block");
+assert.equal((selectedHotelSection.match(/v11-gallery-thumb/g) || []).length, 3, "selected hotel section should render up to three selected hotel gallery images");
+assert.equal(/Hotel [1-9](?!0)|Selected detail (description|room|meal|location) [1-9](?!0)|hotel-[1-9](?!0)-/.test(selectedHotelSection), false, "selected hotel section should not render details or images from non-selected hotels");
+assert.equal(/hotel-10-4\.jpg/.test(selectedHotelSection), false, "selected hotel section should cap selected hotel gallery images at three");
 assert.match(multiHotelHtml, /&#1054;&#1073;&#1097;&#1072; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1089;&#1082;&#1072; &#1094;&#1077;&#1085;&#1072;/, "multi-hotel renderer should show package price per hotel option");
 assert.match(multiHotelHtml, /&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;/, "multi-hotel renderer should show hotel link action when URL exists");
+assert.equal((multiHotelHtml.match(/&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;/g) || []).length >= 10, true, "multi-hotel renderer should show hotel website buttons for every hotel URL");
 assert.match(multiHotelHtml, /v11-prefer-option/, "multi-hotel renderer should make hotel preference selectable");
 assert.match(multiHotelHtml, /Включено в пакета/, "multi-hotel renderer should show a package summary in the hero");
-assert.match(multiHotelHtml, /Защо избрахме тези варианти/, "multi-hotel renderer should show a supported-facts insight block");
+assert.match(multiHotelHtml, /Препоръка от GT63/, "multi-hotel renderer should show a supported-facts recommendation block");
+assert.match(multiHotelHtml, /Защо тази опция/, "multi-hotel renderer should frame the selected option decision");
+assert.match(multiHotelHtml, /Крайната цена за избрания хотел е 3,543\.75 EUR\./, "recommendation should use supported selected price data");
+assert.match(multiHotelHtml, /Хотелът е категория 5\./, "recommendation should use supported hotel category data");
 assert.match(multiHotelHtml, /v11-destination-card/, "multi-hotel renderer should include destination experience copy");
 assert.match(multiHotelHtml, /v11-timeline-card/, "multi-hotel renderer should include a visual travel timeline");
+assert.match(multiHotelHtml, /Пътуването накратко/, "timeline should use client-facing Bulgarian copy");
+assert.match(multiHotelHtml, /Полет Летище София/, "timeline should render from real flight route data");
+assert.match(multiHotelHtml, /v11-detailed-flight-card/, "full technical flight segments should remain available");
+assert.equal(/екскурзия|свободно време|разходка/.test(multiHotelHtml), false, "timeline should not invent activities");
 assert.match(multiHotelHtml, /v11-package-grid/, "multi-hotel renderer should render included services as premium icon cards");
 assert.match(multiHotelHtml, /v11-final-cta/, "multi-hotel renderer should end with an emotional final CTA");
+assert.match(multiHotelHtml, /Вашата оферта е готова\./, "final CTA should use decision-oriented Bulgarian copy");
+assert.match(multiHotelHtml, /Потвърди избрания хотел/, "final CTA should preserve a clear primary hotel confirmation action");
+assert.match(multiHotelHtml, /Попитай консултант/, "final CTA should preserve a consultant secondary action");
 assert.match(multiHotelHtml, /&#1058;&#1088;&#1072;&#1085;&#1089;&#1092;&#1077;&#1088;/, "multi-hotel renderer should include transfer information");
 assert.match(multiHotelHtml, /\u041d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440/, "Maldives multi-hotel renderer should not silently imply transfer is irrelevant");
 assert.equal(/Premium option|Balanced option|Best price|Balan|Premi izhiv|Nai-dobra/.test(multiHotelHtml), false, "multi-hotel renderer must not invent qualitative hotel labels");
+assert.equal(/MULTI-HOTEL BRIEF|Accommodation details to confirm|READY|REVIEW|recommended|best value|luxury claims/.test(multiHotelHtml), false, "multi-hotel renderer should not output English or unsafe client-facing claims");
+assert.equal(/slice\(0,\s*3\).*hotelOptions|maxItems:\s*3/.test(multiHotelHtml), false, "client HTML should not contain a hotel option max limit");
 assert.equal(/Р[ ’џћ›ќ—Ґ]|С[џњ‰‡ђ]/.test(multiHotelHtml), false, "multi-hotel renderer should not output mojibake Bulgarian labels");
 assert.equal(/contractVersion|classifications|universalIntakeDeprecated|debug|sourceAuthority/.test(multiHotelHtml), false, "registry render must not leak engine fields");
+
+const desktopSelectedDetailRule = productStyles.match(/\.shell\[data-proposal-template="multi-hotel"\]\s+\.v11-selected-hotel-detail\s*\{[^}]*\}/);
+assert.ok(desktopSelectedDetailRule, "desktop CSS should define selected hotel detail layout");
+assert.equal(/display\s*:\s*grid/.test(desktopSelectedDetailRule[0]), false, "desktop CSS must not force every selected hotel detail panel visible");
+assert.match(productStyles, /\.shell\[data-proposal-template="multi-hotel"\]\s+\.v11-selected-hotel-detail\.active\s*\{[^}]*display\s*:\s*grid/s, "desktop CSS should display only the active selected hotel detail panel");
 
 const flightIndex = multiHotelHtml.indexOf("v11-flight-card");
 const hotelIndex = multiHotelHtml.indexOf("v11-hotel-card");
@@ -99,6 +151,14 @@ assert.ok(flightIndex >= 0 && hotelIndex > flightIndex, "multi-hotel renderer sh
 const transferIndex = multiHotelHtml.indexOf("v11-transfer-card");
 const detailedFlightIndex = multiHotelHtml.indexOf("v11-detailed-flight-card");
 assert.ok(transferIndex >= 0 && detailedFlightIndex > transferIndex, "multi-hotel renderer should render detailed flight information after transfer");
+
+const thinEvidenceHtml = globalThis.GT63MultiHotelRenderer.renderMultiHotelProposal({
+  hotelOptions: [{ name: "Minimal Hotel", selected: true }],
+  hotel: { name: "Minimal Hotel", selected: true },
+  pricing: { currency: "EUR" },
+  content: { heroTitle: "Minimal destination" }
+});
+assert.equal(/Препоръка от GT63|Защо тази опция|best value|recommended|подходящо/i.test(thinEvidenceHtml), false, "recommendation block should be omitted when evidence is insufficient");
 
 const cityInput = buildProposalInputFromProductModel({
   ...productModel,
@@ -112,7 +172,8 @@ const cityInput = buildProposalInputFromProductModel({
   destination: "Tokyo"
 });
 const cityHtml = registry.renderProposal(cityInput);
-assert.match(cityHtml, /V11 CLIENT BRIEF/, "non-multi-hotel templates should use the V11 fallback renderer until dedicated renderers exist");
+assert.match(cityHtml, /КЛИЕНТСКО ПРЕДЛОЖЕНИЕ/, "non-multi-hotel templates should use the localized V11 fallback renderer until dedicated renderers exist");
+assert.equal(/Flight Experience|Hotel Selection|Ready for client preview|Estimated investment|Client to confirm|Dates to confirm|Travelers to confirm|READY|REVIEW/.test(cityHtml), false, "fallback V11 renderer should not output English client-facing labels");
 
 assert.throws(() => registry.renderProposal({
   ...cityInput,

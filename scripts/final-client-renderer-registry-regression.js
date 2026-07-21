@@ -46,6 +46,7 @@ assert.match(multiHotelRendererJs, /travelTimeline/, "multi-hotel final renderer
 assert.match(multiHotelRendererJs, /finalCtaBlock/, "multi-hotel final renderer should include the final client CTA");
 assert.match(multiHotelRendererJs, /packageIconCards/, "multi-hotel final renderer should render package includes as premium icon cards");
 assert.match(multiHotelRendererJs, /hotelOptions\.map/, "multi-hotel final renderer should render all hotel options from the array");
+assert.equal(/hotelOptions\.slice\(\s*0\s*,\s*3\s*\)/.test(multiHotelRendererJs), false, "multi-hotel final renderer must not cap rendered hotel options at three");
 assert.match(multiHotelRendererJs, /v11-selected-hotel-detail/, "multi-hotel final renderer should render selected hotel details");
 assert.match(multiHotelRendererJs, /js-selected-option-image/, "multi-hotel final renderer should update hero image from selected hotel state");
 assert.match(multiHotelRendererJs, /js-selected-option-website/, "multi-hotel final renderer should update selected hotel website link");
@@ -54,7 +55,7 @@ assert.match(productCss, /\.v11-gallery-dialog/, "multi-hotel CSS should style f
 assert.match(productCss, /@media \(min-width: 1180px\)[\s\S]*\.shell\[data-proposal-template="multi-hotel"\][\s\S]*\.v11-selected-hotel-detail/, "multi-hotel CSS should include a wide desktop layout for final client HTML");
 assert.equal(/Р[ ’џћ›ќ—Ґ]|С[џњ‰‡ђ]/.test(multiHotelRendererJs), false, "multi-hotel renderer should not contain mojibake Bulgarian labels");
 assert.equal(/outboundСегменти|inboundСегменти|totalПродължителност/.test(multiHotelRendererJs), false, "multi-hotel renderer must keep canonical flight property names untranslated");
-assert.equal(/Selected option estimate|Package Includes|GT63 Insight|Ready for client preview/.test(multiHotelRendererJs), false, "multi-hotel renderer should not keep old English client-facing labels");
+assert.equal(/Selected option estimate|Package Includes|GT63 Insight|Ready for client preview|Accommodation details to confirm|MULTI-HOTEL BRIEF|READY|REVIEW/.test(multiHotelRendererJs), false, "multi-hotel renderer should not keep old English client-facing labels");
 assert.equal(/Premium option|Balanced option|Best price|Premi izhiv|Nai-dobra/.test(multiHotelRendererJs), false, "multi-hotel renderer must not hardcode legacy qualitative labels");
 
 console.log("FINAL CLIENT RENDERER REGISTRY REGRESSION PASS");

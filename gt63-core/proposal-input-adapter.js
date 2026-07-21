@@ -173,18 +173,18 @@
     const room = nullableText(hotel?.room);
     const flightRoute = nullableText(model.flight?.route);
     const highlights = [
-      hotelName ? `Stay at ${hotelName}` : null,
-      room ? `Room: ${room}` : null,
-      flightRoute ? `Flights: ${flightRoute}` : null
+      hotelName ? `Настаняване: ${hotelName}` : null,
+      room ? `Стая: ${room}` : null,
+      flightRoute ? `Полети: ${flightRoute}` : null
     ].filter(Boolean);
 
     return {
       heroTitle: title,
       heroSubtitle: hotelName
-        ? `A curated private travel proposal for ${title}.`
-        : "A curated private travel proposal.",
+        ? `Персонално подготвено предложение за ${title}.`
+        : "Персонално подготвено предложение.",
       highlights,
-      primaryCta: "Review proposal"
+      primaryCta: "Прегледайте предложението"
     };
   }
 

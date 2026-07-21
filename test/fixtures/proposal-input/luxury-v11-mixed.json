@@ -96,13 +96,13 @@
   },
   "content": {
     "heroTitle": "Maldives",
-    "heroSubtitle": "A curated private travel proposal for Maldives.",
+    "heroSubtitle": "Персонално подготвено предложение за Maldives.",
     "highlights": [
-      "Stay at Patina Maldives",
-      "Room: One Bedroom Beach Pool Villa",
-      "Flights: SOF -> DXB -> MLE / MLE -> AUH -> SOF"
+      "Настаняване: Patina Maldives",
+      "Стая: One Bedroom Beach Pool Villa",
+      "Полети: SOF -> DXB -> MLE / MLE -> AUH -> SOF"
     ],
-    "primaryCta": "Review proposal"
+    "primaryCta": "Прегледайте предложението"
   },
   "source": {
     "generatedFrom": "GT63_CORE_PRODUCT_MODEL",

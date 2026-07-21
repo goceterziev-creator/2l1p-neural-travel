@@ -963,7 +963,9 @@ button:focus-visible {
 .v11-chip-row span,
 .v11-closing > span {
   display: inline-flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
   border: 1px solid rgba(6, 182, 212, 0.32);
   border-radius: 999px;
   padding: 8px 11px;
@@ -971,6 +973,13 @@ button:focus-visible {
   color: #a5f3fc;
   font-size: 12px;
   font-weight: 900;
+}
+
+.v11-chip-row small {
+  color: #cbd5e1;
+  font-size: 9px;
+  font-weight: 850;
+  text-transform: uppercase;
 }
 
 .v11-price-card {
@@ -1138,6 +1147,25 @@ button:focus-visible {
   box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.16);
 }
 
+.v11-option-heading {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.v11-selected-badge {
+  width: fit-content;
+  border: 1px solid rgba(250, 204, 21, 0.42);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde68a;
+  font-size: 11px;
+  font-weight: 950;
+}
+
 .v11-hotel-gallery {
   display: grid;
   grid-template-columns: 1.35fr 0.9fr;
@@ -1178,21 +1206,34 @@ button:focus-visible {
 
 .v11-selected-hotel-gallery {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.6fr) minmax(96px, 0.65fr);
+  grid-template-rows: repeat(2, minmax(96px, 1fr));
   gap: 10px;
+}
+
+.v11-selected-hotel-gallery .v11-gallery-thumb {
+  min-height: 118px;
+}
+
+.v11-selected-hotel-gallery .v11-gallery-thumb:first-child {
+  grid-row: span 2;
 }
 
 .v11-selected-hotel-gallery img {
   width: 100%;
-  min-height: 180px;
+  height: 100%;
+  min-height: 118px;
   object-fit: cover;
   border-radius: 14px;
   background: rgba(2, 6, 23, 0.5);
 }
 
 .v11-selected-hotel-gallery img:first-child {
-  grid-column: 1 / -1;
-  min-height: 280px;
+  min-height: 248px;
+}
+
+.v11-selected-hotel-gallery .v11-gallery-thumb:first-child img {
+  min-height: 248px;
 }
 
 .v11-selected-hotel-copy {
@@ -1404,10 +1445,16 @@ ul {
 
   .v11-selected-hotel-gallery {
     grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+
+  .v11-selected-hotel-gallery .v11-gallery-thumb:first-child {
+    grid-row: auto;
   }
 
   .v11-selected-hotel-gallery img,
-  .v11-selected-hotel-gallery img:first-child {
+  .v11-selected-hotel-gallery img:first-child,
+  .v11-selected-hotel-gallery .v11-gallery-thumb:first-child img {
     grid-column: auto;
     min-height: 190px;
   }
@@ -1548,33 +1595,41 @@ ul {
 }
 
 .v11-travel-timeline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.8rem;
+  align-items: stretch;
   margin-top: 1rem;
+  padding: 0;
+  list-style: none;
 }
 
-.v11-travel-timeline div {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.65rem;
+.v11-travel-timeline li {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  min-height: 132px;
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  border-radius: 16px;
+  padding: 0.9rem;
+  background: rgba(15, 23, 42, 0.72);
 }
 
 .v11-travel-timeline strong {
-  display: inline-flex;
-  min-height: 42px;
-  align-items: center;
-  padding: 0.65rem 0.9rem;
-  border: 1px solid rgba(59, 130, 246, 0.24);
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.74);
+  display: block;
   color: #f8fafc;
+  line-height: 1.28;
 }
 
 .v11-travel-timeline span {
   color: #22d3ee;
+  font-size: 0.78rem;
   font-weight: 900;
+}
+
+.v11-travel-timeline small {
+  color: #94a3b8;
+  line-height: 1.45;
 }
 
 .v11-detail-grid div {
@@ -1633,6 +1688,12 @@ ul {
   color: #f8fafc;
   font-weight: 900;
   text-decoration: none;
+}
+
+.v11-final-actions .v11-final-primary {
+  border-color: rgba(250, 204, 21, 0.48);
+  background: rgba(250, 204, 21, 0.16);
+  color: #fef3c7;
 }
 
 .v11-option-actions a,
@@ -1702,10 +1763,13 @@ ul {
   }
 
   .shell[data-proposal-template="multi-hotel"] .v11-selected-hotel-detail {
-    display: grid;
     grid-template-columns: minmax(420px, 0.9fr) minmax(0, 1.1fr);
     gap: 1.35rem;
     align-items: start;
+  }
+
+  .shell[data-proposal-template="multi-hotel"] .v11-selected-hotel-detail.active {
+    display: grid;
   }
 
   .shell[data-proposal-template="multi-hotel"] .v11-selected-gallery {
@@ -1728,18 +1792,19 @@ ul {
     font-size: clamp(2.8rem, 16vw, 4.7rem);
   }
 
+  .multi-hotel-proposal .v11-hero-visual,
+  .multi-hotel-proposal .v11-hero-visual img {
+    min-height: 220px;
+  }
+
   .v11-travel-timeline {
     display: grid;
+    grid-template-columns: 1fr;
     align-items: stretch;
   }
 
-  .v11-travel-timeline div {
-    display: grid;
-    justify-items: start;
-  }
-
   .v11-travel-timeline span {
-    padding-left: 1rem;
+    padding-left: 0;
   }
 
   .v11-gallery-nav {

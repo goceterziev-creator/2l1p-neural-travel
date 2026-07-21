@@ -30,6 +30,8 @@ const LIVE_BASE_URL = process.env.LIVE_BASE_URL || `http://localhost:${PORT}`;
 const SESSION_COOKIE = "aya_session";
 const AUTH_SECRET = process.env.AUTH_SECRET || "dev-auth-secret-change-me";
 const BETA_AUTH_BYPASS = process.env.BETA_AUTH_BYPASS === "true";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const ENABLE_VISION_TEST_ENDPOINTS = /^(1|true|yes|on)$/i.test(String(process.env.GT63_ENABLE_VISION_TEST_ENDPOINTS || ""));
 const AGENCY_WHATSAPP_PHONE = String(process.env.AGENCY_WHATSAPP_PHONE || "359885078980").replace(/[^\d]/g, "");
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 const OCR_ENGINE_VERSION = "8.3.2";
@@ -647,6 +649,14 @@ function requireCapability(capability) {
     req.requiredCapability = capability;
     next();
   };
+}
+
+function requireVisionTestEndpointEnabled(req, res, next) {
+  if (!IS_PRODUCTION || ENABLE_VISION_TEST_ENDPOINTS) return next();
+  return res.status(403).json({
+    error: "Vision test endpoint disabled",
+    message: "GT63 vision test endpoints are disabled in production. Set GT63_ENABLE_VISION_TEST_ENDPOINTS=true to enable this diagnostic path explicitly."
+  });
 }
 
 function getCurrentAgencyId(req) {
@@ -10122,7 +10132,7 @@ function buildSmartImportResponse({
   };
 }
 
-app.post("/api/import-image-gemini-test", requireCapability("imports.run"), upload.array("image", 4), async (req, res) => {
+app.post("/api/import-image-gemini-test", requireCapability("imports.run"), requireVisionTestEndpointEnabled, upload.array("image", 4), async (req, res) => {
   try {
     const imageFiles = getUploadedImageFiles(req);
     if (!imageFiles.length) {
@@ -10267,7 +10277,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
   }
 });
 
-app.post("/api/universal-travel-intake-gemini-test", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {
+app.post("/api/universal-travel-intake-gemini-test", requireCapability("imports.run"), requireVisionTestEndpointEnabled, upload.array("image", 8), async (req, res) => {
   const requestId = createUniversalIntakeRequestId();
   try {
     let imageFiles;

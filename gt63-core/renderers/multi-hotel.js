@@ -35,6 +35,92 @@
     return `${number.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || "EUR"}`;
   }
 
+  function compactMealLabel(value) {
+    const raw = text(value, "");
+    if (!raw) return "Хранене според избраната оферта";
+    if (/all\s*inclusive|всичко включено/i.test(raw)) return "All Inclusive";
+    if (/half\s*board|полупансион/i.test(raw)) return "Полупансион";
+    if (/full\s*board|пълен пансион/i.test(raw)) return "Пълен пансион";
+    if (/breakfast|закуска/i.test(raw)) return "Закуска";
+    if (/room\s*only|без хранене/i.test(raw)) return "Без включено хранене";
+    return raw.length > 34 ? "Хранене според избраната оферта" : raw;
+  }
+
+  function numericStars(hotel = {}) {
+    const raw = String(hotel.stars || hotel.category || hotel.rating || "").trim();
+    const match = raw.match(/[1-5](?:[.,]\d)?/);
+    return match ? match[0].replace(".", ",") : "";
+  }
+
+  function optionPositionSummary(hotel = {}, hotelOptions = [], input = {}) {
+    const selectedPrice = optionPackageTotal(hotel, input) || amount(hotel.price);
+    const optionPrices = hotelOptions
+      .map((option) => optionPackageTotal(option, input) || amount(option.price))
+      .filter((price) => price > 0);
+    if (!selectedPrice || optionPrices.length < 2) return "";
+    const lowerCount = optionPrices.filter((price) => selectedPrice < price).length;
+    const higherCount = optionPrices.filter((price) => selectedPrice > price).length;
+    if (lowerCount > 0) return `Цената е по-ниска от ${lowerCount} от сравняваните варианти.`;
+    if (higherCount === 0) return "Това е най-ниската цена сред показаните варианти.";
+    return "";
+  }
+
+  function supportedRecommendationReasons(input = {}, selectedHotel = {}, hotelOptions = []) {
+    const reasons = [];
+    const add = (value) => {
+      const cleaned = text(value, "");
+      if (cleaned && !reasons.includes(cleaned)) reasons.push(cleaned);
+    };
+    const stars = numericStars(selectedHotel);
+    const selectedPrice = optionPackageTotal(selectedHotel, input) || amount(selectedHotel.price);
+    if (selectedPrice > 0) add(`Крайната цена за избрания хотел е ${money(selectedPrice, input.pricing?.currency || "EUR")}.`);
+    add(optionPositionSummary(selectedHotel, hotelOptions, input));
+    if (stars) add(`Хотелът е категория ${stars}.`);
+    if (selectedHotel.room || selectedHotel.roomType) add(`Стаята е ${text(selectedHotel.room || selectedHotel.roomType)}.`);
+    if (selectedHotel.meal || selectedHotel.board) add(`Изхранване: ${compactMealLabel(selectedHotel.meal || selectedHotel.board)}.`);
+    if (input.client?.travelers) add(`Офертата е подготвена за ${text(input.client.travelers)} пътуващи.`);
+    if (input.client?.travelDates || input.destination?.requested) add(`Период: ${text(input.client?.travelDates || input.destination?.requested)}.`);
+    if (input.transfer?.included || input.transfer?.type || input.transfer?.status || input.transfer?.price > 0) add("Има данни за трансфер в офертата.");
+    if (selectedHotel.area || selectedHotel.location || selectedHotel.city) add(`Локация: ${text(selectedHotel.area || selectedHotel.location || selectedHotel.city)}.`);
+    if (selectedHotel.reviewScore || selectedHotel.ratingText || selectedHotel.reviews) add(`Има подадени данни за оценка/ревю: ${text(selectedHotel.reviewScore || selectedHotel.ratingText || selectedHotel.reviews)}.`);
+    if (selectedHotel.cancellation || selectedHotel.bookingConditions || selectedHotel.conditions) add(`Условия: ${text(selectedHotel.cancellation || selectedHotel.bookingConditions || selectedHotel.conditions)}.`);
+    const amenities = [
+      ...(Array.isArray(selectedHotel.amenities) ? selectedHotel.amenities : []),
+      ...(Array.isArray(selectedHotel.highlights) ? selectedHotel.highlights : [])
+    ].map((item) => text(item, "")).filter(Boolean);
+    amenities.slice(0, 2).forEach((item) => add(`Посочено удобство: ${item}.`));
+    return reasons.slice(0, 4);
+  }
+
+  function dataAttr(value) {
+    return escapeHtml(String(value ?? ""));
+  }
+
+  function dateRangeNights(value = "") {
+    const matches = String(value || "").match(/\d{4}-\d{2}-\d{2}/g) || [];
+    if (matches.length < 2) return "";
+    const start = new Date(`${matches[0]}T00:00:00Z`);
+    const end = new Date(`${matches[1]}T00:00:00Z`);
+    const diff = Math.round((end - start) / 86400000);
+    return Number.isFinite(diff) && diff > 0 ? `${diff} нощувки` : "";
+  }
+
+  function heroFacts(input = {}, selectedPayload = {}, selectedHotel = {}, travelDates = "") {
+    const facts = [];
+    const add = (label, value) => {
+      const cleaned = text(value, "");
+      if (cleaned) facts.push([label, cleaned]);
+    };
+    add("Дестинация", input.destination?.name || input.destination?.requested || input.content?.heroTitle);
+    add("Хотел", selectedPayload.name);
+    add("Категория", numericStars(selectedHotel) ? `${numericStars(selectedHotel)} звезди` : "");
+    add("Дати", travelDates);
+    add("Период", dateRangeNights(travelDates));
+    add("Пътуващи", input.client?.travelers);
+    add("Хранене", compactMealLabel(selectedHotel.meal || selectedHotel.board));
+    return facts.slice(0, 7);
+  }
+
   function isUsableImageUrl(value) {
     const url = String(value || "").trim();
     return /^https?:\/\//i.test(url) && !/example\.com/i.test(url);
@@ -131,7 +217,7 @@
     const priceDisplay = money(total, currency);
     const hotelPriceDisplay = money(hotelOnly, currency);
     const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
-    const preferMessage = encodeURIComponent(`Predpochitam ${name} - obshta paketna tsena ${priceDisplay}`);
+    const preferMessage = encodeURIComponent(`Предпочитам ${name} - обща пакетна цена ${priceDisplay}`);
 
     return {
       label,
@@ -148,7 +234,7 @@
       hotel.area ||
       hotel.location ||
       hotel.description,
-      "Accommodation details to confirm"
+      "Детайли за настаняването за потвърждение"
     );
   }
 
@@ -173,7 +259,7 @@
 
     add("Самолетни билети", Boolean(flight.airline || flight.route || flight.outboundSegments?.length || flight.inboundSegments?.length));
     add("Настаняване", Boolean(selectedHotel.name || selectedHotel.room || selectedHotel.area));
-    add(`Изхранване: ${text(selectedHotel.meal)}`, Boolean(selectedHotel.meal && selectedHotel.meal !== "-"));
+    add(`Изхранване: ${compactMealLabel(selectedHotel.meal || selectedHotel.board)}`, Boolean(selectedHotel.meal || selectedHotel.board));
     add("Летищен трансфер", Boolean(transfer.included || transfer.type || transfer.status || transfer.price > 0));
     add("Регистриран багаж", /checked|registr|23kg|30kg|багаж/i.test(String(flight.baggage || "")));
     add("Ръчен багаж", /cabin|carry|personal|ръчен|малка/i.test(String(flight.baggage || "")));
@@ -209,67 +295,30 @@
     return [...new Set(items)];
   }
 
-  function recommendationItems(input = {}, selectedHotel = {}) {
-    const haystack = [
-      selectedHotel.name,
-      selectedHotel.area,
-      selectedHotel.location,
-      selectedHotel.room,
-      selectedHotel.meal,
-      selectedHotel.description,
-      ...(Array.isArray(selectedHotel.amenities) ? selectedHotel.amenities : []),
-      ...(Array.isArray(selectedHotel.highlights) ? selectedHotel.highlights : [])
-    ].filter(Boolean).join(" ").toLowerCase();
-    const items = [];
-    const add = (label, pattern) => {
-      if (pattern.test(haystack)) items.push(label);
-    };
-
-    add("Локацията е подкрепена от видимите данни за района.", /center|central|location|downtown|beach|airport|летище|цент|плаж/i);
-    add("Има добър баланс между комфорт и включени удобства.", /breakfast|wifi|parking|pool|restaurant|закуска|паркинг|басейн/i);
-    add("Подходящо е за по-спокоен престой.", /spa|wellness|quiet|relax|resort|спа|релакс/i);
-    add("Практичен избор за градско разглеждане.", /metro|station|subway|city|shopping|museum|метро|гара|град/i);
-    add("Удобно е спрямо летищната логистика.", /airport|terminal|shuttle|летище|трансфер/i);
-
-    if (!items.length && (input.destination?.name || input.content?.heroTitle)) {
-      items.push("Вариантите са подбрани според видимите данни за дестинация, дати и настаняване.");
-    }
-    return [...new Set(items)].slice(0, 3);
+  function recommendationItems(input = {}, selectedHotel = {}, hotelOptions = []) {
+    return supportedRecommendationReasons(input, selectedHotel, hotelOptions);
   }
 
   function bestForTags(hotel = {}) {
-    const haystack = [
-      hotel.name,
-      hotel.area,
-      hotel.location,
-      hotel.room,
-      hotel.meal,
-      hotel.description,
+    const tags = [
       ...(Array.isArray(hotel.amenities) ? hotel.amenities : []),
       ...(Array.isArray(hotel.highlights) ? hotel.highlights : [])
-    ].filter(Boolean).join(" ").toLowerCase();
-    const tags = [];
-    const add = (label, pattern) => {
-      if (pattern.test(haystack)) tags.push(label);
-    };
-
-    add("Семейства", /family|children|kids|apartment|house|семей|деца|апартамент|къща/i);
-    add("Двойки", /couple|double|romantic|adults|двойна|роман/i);
-    add("Луксозен престой", /luxury|villa|suite|5|five|лукс|вила|суит/i);
-    add("Бизнес пътуване", /business|airport|terminal|conference|летище|конфер/i);
-    add("Релакс", /spa|wellness|pool|quiet|relax|спа|басейн|релакс/i);
-    add("Плаж", /beach|lagoon|sea|ocean|плаж|лагуна|море/i);
-    add("Градски престой", /city|central|metro|downtown|град|цент|метро/i);
-    add("Кулинарно преживяване", /breakfast|restaurant|dining|закуска|ресторант/i);
-    add("Шопинг", /shopping|mall|shops|магаз/i);
-    add("Култура", /museum|temple|historic|culture|музей|храм|култур/i);
-
+    ].map((item) => text(item, "")).filter(Boolean);
     return [...new Set(tags)].slice(0, 6);
   }
 
   function checkList(items = [], emptyText = "") {
     if (!items.length) return emptyText ? `<p class="v11-muted">${escapeHtml(emptyText)}</p>` : "";
     return `<ul class="v11-check-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  }
+
+  function clientWarningText(value) {
+    const raw = text(value, "");
+    if (!raw) return "";
+    if (/review|recommended|routed|engine|operator/i.test(raw)) {
+      return "Има бележка за финален консултантски преглед преди потвърждение.";
+    }
+    return raw;
   }
 
   function flightStops(flight = {}) {
@@ -343,41 +392,30 @@
     `;
   }
 
-  function insightBlock(input = {}, selectedHotel = {}) {
-    const items = recommendationItems(input, selectedHotel);
+  function insightBlock(input = {}, selectedHotel = {}, hotelOptions = []) {
+    const items = recommendationItems(input, selectedHotel, hotelOptions);
+    if (!items.length) return "";
     return `
       <section class="v11-card v11-insight-card">
-        <p class="v11-kicker">Защо избрахме тези варианти</p>
-        <h4>Подбор, базиран на видимите данни</h4>
-        ${checkList(items, "Изборът е базиран на видимите данни за полет, хотел, цена и период.")}
+        <p class="v11-kicker">Препоръка от GT63</p>
+        <h4>Защо тази опция</h4>
+        <ul class="v11-check-list js-gt63-recommendation-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       </section>
     `;
   }
 
   function destinationExperience(input = {}) {
     const title = text(input.content?.heroTitle || input.destination?.name || input.destination?.requested, "");
-    const haystack = [title, input.destination?.requested, input.hotel?.area, input.content?.heroSubtitle].filter(Boolean).join(" ").toLowerCase();
     const lines = [];
-    if (/maldives|maldive|малдив/i.test(haystack)) {
-      lines.push("Предложението е подготвено около островно усещане, спокойствие и време близо до океана.");
-      lines.push("Фокусът е върху плавен престой, ясно избрано настаняване и лесно сравнение между хотелските варианти.");
-    } else if (/tokyo|japan|токио|япония/i.test(haystack)) {
-      lines.push("Това е градско пътуване с фокус върху удобна локация, динамичен ритъм и лесен достъп до различни части на града.");
-      lines.push("Предложението събира полет, хотел и финална цена в ясен формат за спокойно решение.");
-    } else if (/santiago|chile|сантяго|чили/i.test(haystack)) {
-      lines.push("Предложението е структурирано за удобен престой в Сантяго с ясен полетен маршрут и сравними варианти за настаняване.");
-      lines.push("Фокусът е върху практична логистика, контрол на бюджета и лесен избор между хотелските опции.");
-    } else if (/barcelona|барселона/i.test(haystack)) {
-      lines.push("Предложението е подходящо за градски престой с разходки, храна и свободно време в ритъма на Барселона.");
-      lines.push("Фокусът е върху удобно пътуване, ясна цена и лесно сравнение на настаняването.");
-    } else if (title) {
-      lines.push(`Предложението е подготвено за ${title} с фокус върху ясно сравнение, удобна логистика и финална клиентска цена.`);
+    if (title) {
+      lines.push(`Предложението е подготвено за ${title} и подрежда полет, настаняване и цена в един ясен клиентски изглед.`);
+      lines.push("Избраният хотел остава водещ, а останалите варианти са показани за спокойно сравнение преди потвърждение.");
     }
     if (!lines.length) return "";
     return `
       <section class="v11-card v11-destination-card">
-        <p class="v11-kicker">Дестинацията</p>
-        <h4>Какво усещане носи това пътуване</h4>
+        <p class="v11-kicker">Решението накратко</p>
+        <h4>Как да прочетете офертата</h4>
         ${lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
       </section>
     `;
@@ -390,35 +428,54 @@
     return display?.airportName ? display.airportName(cleaned) : cleaned;
   }
 
+  function segmentDateLabel(segment = {}) {
+    const raw = text(segment.date || segment.departureDate || segment.departure || segment.departureTime, "");
+    if (!raw) return "";
+    const datePart = raw.split(/[T,]/)[0].trim();
+    return datePart || raw;
+  }
+
+  function segmentRouteLabel(segment = {}) {
+    const from = timelineStopLabel(segment.from || segment.departureAirport);
+    const to = timelineStopLabel(segment.to || segment.arrivalAirport);
+    return [from, to].filter(Boolean).join(" → ");
+  }
+
   function travelTimeline(input = {}, selectedHotel = {}) {
     const flight = input.flight || {};
     const outbound = flight.outboundSegments || [];
     const inbound = flight.inboundSegments || [];
-    const stops = [];
-    const push = (value) => {
-      const label = timelineStopLabel(value);
-      if (label && stops[stops.length - 1] !== label) stops.push(label);
+    const transfer = input.transfer || {};
+    const items = [];
+    const add = (label, title, detail) => {
+      if (title) items.push({ label, title, detail: text(detail, "") });
     };
+
     if (outbound.length) {
-      push(outbound[0]?.from || outbound[0]?.departureAirport);
-      outbound.forEach((segment) => push(segment?.to || segment?.arrivalAirport));
+      const first = outbound[0] || {};
+      const last = outbound[outbound.length - 1] || {};
+      add(segmentDateLabel(first) ? `Ден 1 · ${segmentDateLabel(first)}` : "Ден 1", `Полет ${segmentRouteLabel(first) || text(flight.route, "")}`, outbound.length > 1 ? `${outbound.length} сегмента` : "");
+      add(segmentDateLabel(last) && segmentDateLabel(last) !== segmentDateLabel(first) ? `Ден 2 · ${segmentDateLabel(last)}` : "Пристигане", transfer.included || transfer.type || transfer.status || transfer.price > 0 ? "Пристигане и трансфер" : "Пристигане", segmentRouteLabel(last));
     } else if (flight.route) {
-      String(flight.route).split(/->|→|\//).map((part) => part.trim()).filter(Boolean).slice(0, 4).forEach(push);
+      add("Полет", `Маршрут ${text(flight.route)}`, text(flight.airline, ""));
     }
-    if (selectedHotel.name) push(selectedHotel.name);
+
+    if (selectedHotel.name) add("Настаняване", `Настаняване в ${text(selectedHotel.name)}`, compactMealLabel(selectedHotel.meal || selectedHotel.board));
+
     if (inbound.length) {
-      inbound.forEach((segment) => push(segment?.to || segment?.arrivalAirport));
-    } else if (stops.length > 1) {
-      push(stops[0]);
+      const firstInbound = inbound[0] || {};
+      const lastInbound = inbound[inbound.length - 1] || {};
+      add(segmentDateLabel(firstInbound) ? `Последен ден · ${segmentDateLabel(firstInbound)}` : "Последен ден", `Обратен полет ${segmentRouteLabel(firstInbound) || segmentRouteLabel(lastInbound)}`, inbound.length > 1 ? `${inbound.length} сегмента` : "");
     }
-    const uniqueStops = stops.slice(0, 8);
-    if (uniqueStops.length < 2) return "";
+
+    if (items.length < 2) return "";
     return `
       <section class="v11-card v11-timeline-card">
-        <p class="v11-kicker">Маршрут накратко</p>
-        <div class="v11-travel-timeline">
-          ${uniqueStops.map((stop, index) => `<div><strong>${escapeHtml(stop)}</strong>${index < uniqueStops.length - 1 ? "<span>↓</span>" : ""}</div>`).join("")}
-        </div>
+        <p class="v11-kicker">Пътуването накратко</p>
+        <h4>Ясен ход на пътуването</h4>
+        <ol class="v11-travel-timeline">
+          ${items.map((item) => `<li><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.title)}</strong>${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ""}</li>`).join("")}
+        </ol>
       </section>
     `;
   }
@@ -430,13 +487,13 @@
     return `
       <section class="v11-final-cta">
         <div>
-          <p class="v11-kicker">Вашето пътуване е подготвено</p>
-          <h4>Когато решите да продължите, ще подготвим следващите стъпки за резервация.</h4>
-          <p>Цените и наличностите подлежат на финално потвърждение към момента на резервация.</p>
+          <p class="v11-kicker">Вашата оферта е готова.</p>
+          <h4>Потвърдете избрания хотел, за да проверим актуалната наличност и да финализираме пътуването.</h4>
+          <p>Наличността, цената и финалните условия се потвърждават преди резервация.</p>
         </div>
         <div class="v11-final-actions">
-          <a href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">WhatsApp</a>
-          ${email ? `<a href="mailto:${escapeHtml(email)}">Email</a>` : ""}
+          <a class="v11-final-primary js-selected-option-whatsapp" href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">Потвърди избрания хотел</a>
+          ${email ? `<a href="mailto:${escapeHtml(email)}">Попитай консултант</a>` : `<a href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">Попитай консултант</a>`}
           ${phone ? `<span>${escapeHtml(phone)}</span>` : ""}
         </div>
       </section>
@@ -461,9 +518,12 @@
       description: text(hotel.description, "Описание на хотела за потвърждение."),
       room: text(hotel.room || hotel.roomType, "Стая за потвърждение"),
       meal: text(hotel.meal || hotel.board, "Изхранване за потвърждение"),
+      mealCompact: compactMealLabel(hotel.meal || hotel.board),
       area: text(hotel.area || hotel.location || hotel.city, "Локация за потвърждение"),
+      stars: numericStars(hotel),
       transfer: transferSummary(input),
-      highlights: hotelHighlights(hotel)
+      highlights: hotelHighlights(hotel),
+      reasons: supportedRecommendationReasons(input, hotel, Array.isArray(input.hotelOptions) ? input.hotelOptions : [])
     };
   }
 
@@ -518,13 +578,16 @@
     return `
       <article class="v11-hotel-option ${selected ? "selected" : ""}" data-option-index="${escapeHtml(index)}">
         <div class="v11-hotel-gallery">
-          ${payload.images.map((image) => `<img src="${escapeHtml(image)}" alt="">`).join("")}
+          ${payload.images.map((image) => `<img src="${escapeHtml(image)}" alt="${escapeHtml(payload.name)}">`).join("")}
         </div>
         <div>
-          <span>${escapeHtml(payload.label)}${selected ? " &middot; &#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;" : ""}</span>
+          <div class="v11-option-heading">
+            <span>${escapeHtml(payload.label)}</span>
+            <strong class="v11-selected-badge" data-selected-badge ${selected ? "" : "hidden"}>${selected ? "Избрана опция" : ""}</strong>
+          </div>
           <strong>${escapeHtml(payload.name)}</strong>
           <small>${escapeHtml(text(hotel.room))}</small>
-          <small>${escapeHtml(text(hotel.meal))}</small>
+          <small>${escapeHtml(payload.mealCompact)}</small>
           <div class="v11-option-price">
             <span>&#1054;&#1073;&#1097;&#1072; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1089;&#1082;&#1072; &#1094;&#1077;&#1085;&#1072;</span>
             <strong>${escapeHtml(payload.priceDisplay)}</strong>
@@ -541,7 +604,15 @@
               data-option-image="${escapeHtml(payload.image)}"
               data-option-subtitle="${escapeHtml(payload.subtitle)}"
               data-option-url="${escapeHtml(payload.url)}"
-              data-option-transfer="${escapeHtml(payload.transfer)}">
+              data-option-transfer="${escapeHtml(payload.transfer)}"
+              data-option-description="${dataAttr(payload.description)}"
+              data-option-room="${dataAttr(payload.room)}"
+              data-option-meal="${dataAttr(payload.meal)}"
+              data-option-meal-compact="${dataAttr(payload.mealCompact)}"
+              data-option-area="${dataAttr(payload.area)}"
+              data-option-stars="${dataAttr(payload.stars)}"
+              data-option-images="${dataAttr(JSON.stringify(payload.images))}"
+              data-option-reasons="${dataAttr(payload.reasons.join("\n"))}">
               &#1055;&#1088;&#1077;&#1076;&#1087;&#1086;&#1095;&#1080;&#1090;&#1072;&#1084; &#1090;&#1086;&#1079;&#1080; &#1093;&#1086;&#1090;&#1077;&#1083;
             </button>
           </div>
@@ -555,7 +626,7 @@
     return `
       <section class="v11-note">
         <strong>Бележка за преглед</strong>
-        <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        <ul>${items.map((item) => `<li>${escapeHtml(clientWarningText(item))}</li>`).join("")}</ul>
       </section>
     `;
   }
@@ -597,32 +668,32 @@
     return `
       <article class="v11-selected-hotel-detail ${index === activeIndex ? "active" : ""}" data-selected-detail-index="${escapeHtml(index)}">
         <div class="v11-selected-hotel-gallery">
-          ${payload.images.map((image, imageIndex) => `<button type="button" class="v11-gallery-thumb" data-gallery-src="${escapeHtml(image)}" data-gallery-index="${escapeHtml(imageIndex)}"><img src="${escapeHtml(image)}" alt=""></button>`).join("")}
+          ${payload.images.map((image, imageIndex) => `<button type="button" class="v11-gallery-thumb" data-gallery-src="${escapeHtml(image)}" data-gallery-index="${escapeHtml(imageIndex)}"><img src="${escapeHtml(image)}" alt="${escapeHtml(payload.name)}"></button>`).join("")}
         </div>
         <div class="v11-selected-hotel-copy">
-          <p class="v11-kicker">${escapeHtml(payload.label)}</p>
-          <h4>${escapeHtml(payload.name)}</h4>
-          <p>${escapeHtml(payload.description)}</p>
+          <p class="v11-kicker js-selected-detail-label">${escapeHtml(payload.label)}</p>
+          <h4 class="js-selected-detail-name">${escapeHtml(payload.name)}</h4>
+          <p class="js-selected-detail-description">${escapeHtml(payload.description)}</p>
           ${tags.length ? `
             <div>
-              <p class="v11-kicker">Подходящо за</p>
+              <p class="v11-kicker">Подадени удобства</p>
               <ul class="v11-hotel-highlights">${tags.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
             </div>
           ` : ""}
           <div class="v11-detail-grid">
-            <div><span>Стая</span><strong>${escapeHtml(payload.room)}</strong></div>
-            <div><span>Изхранване</span><strong>${escapeHtml(payload.meal)}</strong></div>
-            <div><span>Локация</span><strong>${escapeHtml(payload.area)}</strong></div>
-            <div><span>Крайна цена</span><strong>${escapeHtml(payload.priceDisplay)}</strong></div>
+            <div><span>Стая</span><strong class="js-selected-detail-room">${escapeHtml(payload.room)}</strong></div>
+            <div><span>Изхранване</span><strong class="js-selected-detail-meal">${escapeHtml(payload.meal)}</strong></div>
+            <div><span>Локация</span><strong class="js-selected-detail-area">${escapeHtml(payload.area)}</strong></div>
+            <div><span>Крайна цена</span><strong class="js-selected-detail-price">${escapeHtml(payload.priceDisplay)}</strong></div>
           </div>
           ${payload.highlights.length ? `<ul class="v11-hotel-highlights">${payload.highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
           <div class="v11-detail-row">
             <span>Трансфер</span>
-            <strong>${escapeHtml(payload.transfer)}</strong>
+            <strong class="js-selected-detail-transfer">${escapeHtml(payload.transfer)}</strong>
           </div>
           <div class="v11-option-actions">
-            ${payload.url ? `<a href="${escapeHtml(payload.url)}" target="_blank" rel="noreferrer">&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;</a>` : ""}
-            <a href="${escapeHtml(payload.whatsappUrl)}" target="_blank" rel="noreferrer">&#1048;&#1079;&#1087;&#1088;&#1072;&#1090;&#1080; &#1080;&#1079;&#1073;&#1086;&#1088;&#1072; &#1074; WhatsApp</a>
+            <a class="js-selected-detail-website" href="${escapeHtml(payload.url)}" target="_blank" rel="noreferrer" ${payload.url ? "" : "hidden"}>&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;</a>
+            <a class="js-selected-option-whatsapp" href="${escapeHtml(payload.whatsappUrl)}" target="_blank" rel="noreferrer">&#1048;&#1079;&#1087;&#1088;&#1072;&#1090;&#1080; &#1080;&#1079;&#1073;&#1086;&#1088;&#1072; &#1074; WhatsApp</a>
           </div>
         </div>
       </article>
@@ -639,10 +710,24 @@
           var selectedName = root.querySelector(".js-selected-option-name");
           var selectedPrice = root.querySelector(".js-selected-option-price");
           var selectedSubtitle = root.querySelector(".js-selected-option-subtitle");
+          var selectedStars = root.querySelector(".js-selected-option-stars");
+          var selectedMeal = root.querySelector(".js-selected-option-meal");
           var selectedTransfer = root.querySelector(".js-selected-option-transfer");
           var selectedImage = root.querySelector(".js-selected-option-image");
           var selectedWebsite = root.querySelector(".js-selected-option-website");
-          var whatsapp = root.querySelector(".js-selected-option-whatsapp");
+          var whatsappLinks = root.querySelectorAll(".js-selected-option-whatsapp");
+          var detail = root.querySelector(".v11-selected-hotel-detail");
+          var detailGallery = root.querySelector(".v11-selected-hotel-gallery");
+          var detailLabel = root.querySelector(".js-selected-detail-label");
+          var detailName = root.querySelector(".js-selected-detail-name");
+          var detailDescription = root.querySelector(".js-selected-detail-description");
+          var detailRoom = root.querySelector(".js-selected-detail-room");
+          var detailMeal = root.querySelector(".js-selected-detail-meal");
+          var detailArea = root.querySelector(".js-selected-detail-area");
+          var detailPrice = root.querySelector(".js-selected-detail-price");
+          var detailTransfer = root.querySelector(".js-selected-detail-transfer");
+          var detailWebsite = root.querySelector(".js-selected-detail-website");
+          var recommendationList = root.querySelector(".js-gt63-recommendation-list");
           var galleryDialog = root.querySelector(".v11-gallery-dialog");
           var galleryImage = root.querySelector(".v11-gallery-dialog img");
           var galleryImages = [];
@@ -663,21 +748,83 @@
             galleryIndex = (galleryIndex + direction + galleryImages.length) % galleryImages.length;
             galleryImage.src = galleryImages[galleryIndex];
           }
+          function escapeText(value) {
+            return String(value || "").replace(/[&<>"']/g, function (char) {
+              return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
+            });
+          }
+          function bindGalleryButtons(container) {
+            if (!container) return;
+            var images = Array.from(container.querySelectorAll(".v11-gallery-thumb")).map(function (button) {
+              return button.dataset.gallerySrc;
+            }).filter(Boolean);
+            container.querySelectorAll(".v11-gallery-thumb").forEach(function (button, index) {
+              button.addEventListener("click", function () {
+                openGallery(images, index);
+              });
+            });
+          }
+          function updateDetailGallery(images, name) {
+            if (!detailGallery) return;
+            detailGallery.innerHTML = images.map(function (image, index) {
+              var safeImage = escapeText(image);
+              return '<button type="button" class="v11-gallery-thumb" data-gallery-src="' + safeImage + '" data-gallery-index="' + index + '"><img src="' + safeImage + '" alt="' + escapeText(name) + '"></button>';
+            }).join("");
+            bindGalleryButtons(detailGallery);
+          }
+          function parseImages(value) {
+            try {
+              var parsed = JSON.parse(value || "[]");
+              return Array.isArray(parsed) ? parsed.filter(Boolean).slice(0, 3) : [];
+            } catch (error) {
+              return [];
+            }
+          }
+          function updateRecommendation(value) {
+            if (!recommendationList) return;
+            var reasons = String(value || "").split("\\n").map(function (item) {
+              return item.trim();
+            }).filter(Boolean).slice(0, 4);
+            recommendationList.innerHTML = reasons.map(function (item) {
+              return "<li>" + escapeText(item) + "</li>";
+            }).join("");
+            var card = recommendationList.closest(".v11-insight-card");
+            if (card) card.hidden = !reasons.length;
+          }
           root.querySelectorAll(".v11-prefer-option").forEach(function (button) {
             button.addEventListener("click", function () {
               root.querySelectorAll(".v11-hotel-option").forEach(function (card) {
                 card.classList.remove("selected");
+                var badge = card.querySelector("[data-selected-badge]");
+                if (badge) {
+                  badge.textContent = "";
+                  badge.hidden = true;
+                }
               });
               var card = button.closest(".v11-hotel-option");
-              if (card) card.classList.add("selected");
-              root.querySelectorAll(".v11-selected-hotel-detail").forEach(function (detail) {
-                detail.classList.toggle("active", detail.dataset.selectedDetailIndex === button.dataset.optionIndex);
-              });
+              if (card) {
+                card.classList.add("selected");
+                var selectedBadge = card.querySelector("[data-selected-badge]");
+                if (selectedBadge) {
+                  selectedBadge.textContent = "Избрана опция";
+                  selectedBadge.hidden = false;
+                }
+              }
               if (selectedName) selectedName.textContent = button.dataset.optionName || "Хотелска опция";
               if (selectedPrice) selectedPrice.textContent = button.dataset.optionPrice || "-";
               if (selectedSubtitle) selectedSubtitle.textContent = button.dataset.optionSubtitle || "";
+              if (selectedStars) {
+                if (button.dataset.optionStars) {
+                  selectedStars.textContent = "Категория: " + button.dataset.optionStars + " звезди";
+                  selectedStars.hidden = false;
+                } else {
+                  selectedStars.hidden = true;
+                }
+              }
+              if (selectedMeal) selectedMeal.textContent = "Хранене: " + (button.dataset.optionMealCompact || "Хранене според избраната оферта");
               if (selectedTransfer) selectedTransfer.textContent = button.dataset.optionTransfer || "";
               if (selectedImage && button.dataset.optionImage) selectedImage.src = button.dataset.optionImage;
+              if (selectedImage) selectedImage.alt = button.dataset.optionName || "";
               if (selectedWebsite) {
                 if (button.dataset.optionUrl) {
                   selectedWebsite.href = button.dataset.optionUrl;
@@ -686,19 +833,34 @@
                   selectedWebsite.hidden = true;
                 }
               }
-              if (whatsapp && button.dataset.optionWhatsapp) whatsapp.href = button.dataset.optionWhatsapp;
-            });
-          });
-          root.querySelectorAll(".v11-selected-hotel-detail").forEach(function (detail) {
-            var images = Array.from(detail.querySelectorAll(".v11-gallery-thumb")).map(function (button) {
-              return button.dataset.gallerySrc;
-            }).filter(Boolean);
-            detail.querySelectorAll(".v11-gallery-thumb").forEach(function (button, index) {
-              button.addEventListener("click", function () {
-                openGallery(images, index);
+              whatsappLinks.forEach(function (link) {
+                if (button.dataset.optionWhatsapp) link.href = button.dataset.optionWhatsapp;
               });
+              if (detail) {
+                detail.dataset.selectedDetailIndex = button.dataset.optionIndex || "";
+                detail.classList.add("active");
+              }
+              if (detailLabel) detailLabel.textContent = "Хотелска опция " + (Number(button.dataset.optionIndex || 0) + 1);
+              if (detailName) detailName.textContent = button.dataset.optionName || "Хотелска опция";
+              if (detailDescription) detailDescription.textContent = button.dataset.optionDescription || "Описание на хотела за потвърждение.";
+              if (detailRoom) detailRoom.textContent = button.dataset.optionRoom || "Стая за потвърждение";
+              if (detailMeal) detailMeal.textContent = button.dataset.optionMeal || "Изхранване за потвърждение";
+              if (detailArea) detailArea.textContent = button.dataset.optionArea || "Локация за потвърждение";
+              if (detailPrice) detailPrice.textContent = button.dataset.optionPrice || "-";
+              if (detailTransfer) detailTransfer.textContent = button.dataset.optionTransfer || "";
+              if (detailWebsite) {
+                if (button.dataset.optionUrl) {
+                  detailWebsite.href = button.dataset.optionUrl;
+                  detailWebsite.hidden = false;
+                } else {
+                  detailWebsite.hidden = true;
+                }
+              }
+              updateDetailGallery(parseImages(button.dataset.optionImages), button.dataset.optionName || "");
+              updateRecommendation(button.dataset.optionReasons || "");
             });
           });
+          bindGalleryButtons(detailGallery);
           root.querySelectorAll("[data-gallery-action]").forEach(function (button) {
             button.addEventListener("click", function () {
               var action = button.dataset.galleryAction;
@@ -743,28 +905,29 @@
     const selectedHotel = hotelOptions[activeIndex] || activeHotel;
     const title = input.content?.heroTitle || input.destination?.name || "Персонално предложение";
     const travelDates = input.client?.travelDates || input.destination?.requested || "";
-    const heroImage = firstHotelImage(activeHotel, input);
+    const heroImage = firstHotelImage(selectedHotel, input);
+    const facts = heroFacts(input, selectedPayload, selectedHotel, travelDates);
 
     return `
       <article class="v11-proposal multi-hotel-proposal" aria-label="Multi-hotel proposal preview">
         <section class="v11-hero">
           <div>
-            <p class="v11-eyebrow">AYA TRAVEL &middot; MULTI-HOTEL BRIEF</p>
+            <p class="v11-eyebrow">AYA TRAVEL &middot; КЛИЕНТСКИ ИЗБОР</p>
             <h3>${escapeHtml(title)}</h3>
-            <p>${escapeHtml(input.content?.heroSubtitle || "Персонално подготвено предложение с варианти за настаняване.")}</p>
+            <p>${escapeHtml(input.content?.heroSubtitle || "Ясно предложение с избран хотел, сравними алтернативи и следваща стъпка за потвърждение.")}</p>
             <div class="v11-chip-row">
-              <span>${escapeHtml(text(input.client?.name, "Клиент за потвърждение"))}</span>
-              <span>${escapeHtml(text(travelDates, "Датите са за потвърждение"))}</span>
-              <span>${escapeHtml(text(input.client?.travelers, "Пътуващи за потвърждение"))}</span>
+              ${facts.map(([label, value]) => `<span><small>${escapeHtml(label)}</small>${escapeHtml(value)}</span>`).join("")}
             </div>
           </div>
           <div class="v11-hero-visual">
-            <img class="js-selected-option-image" src="${escapeHtml(heroImage)}" alt="">
+            <img class="js-selected-option-image" src="${escapeHtml(heroImage)}" alt="${escapeHtml(selectedPayload.name)}">
           </div>
           <div class="v11-price-card">
             <span>&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;</span>
             <strong class="js-selected-option-name">${escapeHtml(selectedPayload.name)}</strong>
             <small class="js-selected-option-subtitle">${escapeHtml(selectedFullPayload.subtitle)}</small>
+            ${selectedFullPayload.stars ? `<small class="js-selected-option-stars">Категория: ${escapeHtml(selectedFullPayload.stars)} звезди</small>` : `<small class="js-selected-option-stars" hidden></small>`}
+            <small class="js-selected-option-meal">Хранене: ${escapeHtml(selectedFullPayload.mealCompact)}</small>
             <small>Крайна цена за избрания хотел</small>
             <strong class="js-selected-option-price">${escapeHtml(selectedPayload.priceDisplay)}</strong>
             <small>${escapeHtml(String(hotelOptions.length))} варианта за настаняване</small>
@@ -777,7 +940,7 @@
 
         ${warningList(input.warnings)}
 
-        ${insightBlock(input, selectedHotel)}
+        ${insightBlock(input, selectedHotel, hotelOptions)}
 
         ${destinationExperience(input)}
 
@@ -804,8 +967,8 @@
         <section class="v11-card v11-selected-hotel-card">
           <p class="v11-kicker">&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1074;&#1072;&#1088;&#1080;&#1072;&#1085;&#1090;</p>
           <h4>&#1044;&#1077;&#1090;&#1072;&#1081;&#1083;&#1080; &#1079;&#1072; &#1080;&#1079;&#1073;&#1088;&#1072;&#1085;&#1080;&#1103; &#1093;&#1086;&#1090;&#1077;&#1083;</h4>
-          ${hotelOptions.length
-            ? hotelOptions.map((hotel, index) => selectedHotelDetails(hotel, index, currency, input, activeIndex)).join("")
+          ${selectedHotel
+            ? selectedHotelDetails(selectedHotel, activeIndex, currency, input, activeIndex)
             : "<p class=\"v11-muted\">Няма детайли за избрания хотел</p>"}
         </section>
 
@@ -829,7 +992,7 @@
             <p class="v11-kicker">Готово за следваща стъпка</p>
             <h4>${escapeHtml(text(input.content?.primaryCta, "Прегледайте предложението"))}</h4>
           </div>
-          <span>${input.readiness === "ready" ? "READY" : "REVIEW"}</span>
+          <span>${input.readiness === "ready" ? "ГОТОВО" : "ЗА ПРЕГЛЕД"}</span>
         </section>
         <div class="v11-gallery-dialog" hidden>
           <button type="button" class="v11-gallery-close" data-gallery-action="close">Затвори</button>
