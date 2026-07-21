@@ -75,6 +75,8 @@ assert.match(multiHotelHtml, /Дестинация/, "hero should include destin
 assert.match(multiHotelHtml, /Пътуващи/, "hero should include travelers as a decision fact");
 assert.match(multiHotelHtml, /Хранене/, "hero should include concise meal information");
 assert.match(multiHotelHtml, /js-selected-option-price/, "multi-hotel renderer should expose a dynamic selected package price");
+assert.match(multiHotelHtml, /data-selected-fact="hotel"/, "hero hotel fact should expose a dynamic selected hotel target");
+assert.match(multiHotelHtml, /heroFactHotel\.textContent = button\.dataset\.optionName/, "selection script should update the hero hotel fact");
 assert.match(multiHotelHtml, /v11-hotel-gallery/, "multi-hotel renderer should show a hotel image gallery");
 assert.match(multiHotelHtml, /v11-selected-hotel-gallery/, "multi-hotel renderer should show a larger selected hotel gallery");
 assert.match(multiHotelHtml, /v11-gallery-dialog/, "multi-hotel renderer should include fullscreen gallery support");
@@ -204,7 +206,9 @@ assert.match(selectedSyncDetail, /Home Story in Tokyo Aerial大島&amp;東京屋
 assert.equal(/Palace Hotel Tokyo/.test(selectedSyncDetail), false, "selected detail should not render option 1 when option 6 is selected");
 assert.match(selectedSyncHtml, /data-option-whatsapp="[^"]*Home%20Story%20in%20Tokyo%20Aerial/, "WhatsApp context should contain selected option 6");
 assert.match(selectedSyncHtml, /itineraryHotel\.textContent = "Настаняване в "/, "selection script should update itinerary accommodation when hotel changes");
+assert.match(selectedSyncHtml, /heroFactHotel\.textContent = button\.dataset\.optionName/, "selection script should update the hero fact hotel chip when hotel changes");
 assert.match(selectedSyncHtml, /button\.textContent = "Избран хотел"/, "selection script should update the selected comparison card action label");
+assert.equal((selectedSyncHtml.match(/class="[^"]*js-selected-option-whatsapp/g) || []).length >= 3, true, "all WhatsApp CTA links should share selected hotel context updates");
 assert.equal((selectedSyncHtml.match(/Избран хотел/g) || []).length >= 1, true, "selected comparison card should render a selected-state action label");
 assert.equal(/A curated private travel proposal|MULTI-HOTEL BRIEF|Review proposal|READY|REVIEW|self-transfer|\bMarch\b|\bApril\b/.test(selectedSyncHtml), false, "selected sync render should not expose forbidden English client copy");
 assert.equal(/alt="Home Story in Tokyo Aerial/.test(selectedSyncDetail), false, "selected detail gallery alt text should not repeat the visible selected hotel name");

@@ -155,19 +155,19 @@
 
   function heroFacts(input = {}, selectedPayload = {}, selectedHotel = {}, travelDates = "") {
     const facts = [];
-    const add = (label, value) => {
+    const add = (label, value, key = "") => {
       const cleaned = text(value, "");
-      if (cleaned) facts.push([label, localizeClientText(cleaned)]);
+      if (cleaned) facts.push([label, localizeClientText(cleaned), key]);
     };
-    add("Дестинация", input.destination?.name || input.destination?.requested || input.content?.heroTitle);
-    add("Хотел", selectedPayload.name);
-    add("Категория", numericStars(selectedHotel) ? `${numericStars(selectedHotel)} звезди` : "");
+    add("Дестинация", input.destination?.name || input.destination?.requested || input.content?.heroTitle, "destination");
+    add("Хотел", selectedPayload.name, "hotel");
+    add("Категория", numericStars(selectedHotel) ? `${numericStars(selectedHotel)} звезди` : "", "stars");
     add("Дати", travelDates);
     add("Период", dateRangeNights(travelDates));
     add("Пътуващи", input.client?.travelers);
-    add("Стая", selectedHotel.room || selectedHotel.roomType);
-    add("Хранене", compactMealLabel(selectedHotel.meal || selectedHotel.board));
-    add("Локация", selectedHotel.area || selectedHotel.location || selectedHotel.city);
+    add("Стая", selectedHotel.room || selectedHotel.roomType, "room");
+    add("Хранене", compactMealLabel(selectedHotel.meal || selectedHotel.board), "meal");
+    add("Локация", selectedHotel.area || selectedHotel.location || selectedHotel.city, "area");
     return facts.slice(0, 9);
   }
 
@@ -396,7 +396,7 @@
     const duration = text(flight.totalDuration || flight.duration || flight.outboundDuration || flight.inboundDuration, "");
     const dates = localizeClientText(text(travelDates || flight.dates || flight.date, "Датите са за потвърждение"));
     const items = [
-      ["Авиокомпания", text(flight.airline, "За потвърждение")],
+      ["Авиокомпания", localizeClientText(text(flight.airline, "За потвърждение"))],
       ["Дати", dates],
       ["Прекачвания", flightStops(flight)],
       ["Багаж", localizeClientText(text(flight.baggage, "За потвърждение"))],
@@ -571,7 +571,7 @@
         </div>
         <div class="v11-final-actions">
           <a class="v11-final-primary js-selected-option-whatsapp" href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">Потвърди избрания хотел</a>
-          ${email ? `<a href="mailto:${escapeHtml(email)}">Попитай консултант</a>` : `<a href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">Попитай консултант</a>`}
+          ${email ? `<a href="mailto:${escapeHtml(email)}">Попитай консултант</a>` : `<a class="js-selected-option-whatsapp" href="${escapeHtml(selectedPayload.whatsappUrl)}" target="_blank" rel="noreferrer">Попитай консултант</a>`}
           ${phone ? `<span>${escapeHtml(phone)}</span>` : ""}
         </div>
       </section>
@@ -611,8 +611,8 @@
       const view = display.segmentView(segment);
       return `
         <article class="v11-segment">
-          <strong>${escapeHtml(view.title)}</strong>
-          <span>${escapeHtml(view.route)}</span>
+          <strong>${escapeHtml(localizeClientText(view.title))}</strong>
+          <span>${escapeHtml(localizeClientText(view.route))}</span>
           <span>${escapeHtml(localizeClientText(view.date))}</span>
           <span>${escapeHtml(view.time)}</span>
           <small>${escapeHtml(view.duration)}</small>
@@ -620,7 +620,7 @@
       `;
     }
 
-    const title = [segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Полетен сегмент";
+    const title = localizeClientText([segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Полетен сегмент");
     return `
       <article class="v11-segment">
         <strong>${escapeHtml(title)}</strong>
@@ -794,6 +794,11 @@
           var selectedImage = root.querySelector(".js-selected-option-image");
           var selectedWebsite = root.querySelector(".js-selected-option-website");
           var whatsappLinks = root.querySelectorAll(".js-selected-option-whatsapp");
+          var heroFactHotel = root.querySelector('[data-selected-fact="hotel"] strong');
+          var heroFactStars = root.querySelector('[data-selected-fact="stars"] strong');
+          var heroFactRoom = root.querySelector('[data-selected-fact="room"] strong');
+          var heroFactMeal = root.querySelector('[data-selected-fact="meal"] strong');
+          var heroFactArea = root.querySelector('[data-selected-fact="area"] strong');
           var detail = root.querySelector(".v11-selected-hotel-detail");
           var detailGallery = root.querySelector(".v11-selected-hotel-gallery");
           var detailLabel = root.querySelector(".js-selected-detail-label");
@@ -896,6 +901,11 @@
               if (selectedName) selectedName.textContent = button.dataset.optionName || "Хотелска опция";
               if (selectedPrice) selectedPrice.textContent = button.dataset.optionPrice || "-";
               if (selectedSubtitle) selectedSubtitle.textContent = button.dataset.optionSubtitle || "";
+              if (heroFactHotel) heroFactHotel.textContent = button.dataset.optionName || "Хотелска опция";
+              if (heroFactStars) heroFactStars.textContent = button.dataset.optionStars ? button.dataset.optionStars + " звезди" : "За потвърждение";
+              if (heroFactRoom) heroFactRoom.textContent = button.dataset.optionRoom || "Стая за потвърждение";
+              if (heroFactMeal) heroFactMeal.textContent = button.dataset.optionMealCompact || "Хранене според избраната оферта";
+              if (heroFactArea) heroFactArea.textContent = button.dataset.optionArea || "Локация за потвърждение";
               if (selectedStars) {
                 if (button.dataset.optionStars) {
                   selectedStars.textContent = "Категория: " + button.dataset.optionStars + " звезди";
@@ -1005,7 +1015,7 @@
             <h3>${escapeHtml(title)}</h3>
             <p>${escapeHtml(heroSubtitle)}</p>
             <div class="v11-chip-row">
-              ${facts.map(([label, value]) => `<span><small>${escapeHtml(label)}</small>${escapeHtml(value)}</span>`).join("")}
+              ${facts.map(([label, value, key]) => `<span${key ? ` data-selected-fact="${escapeHtml(key)}"` : ""}><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></span>`).join("")}
             </div>
           </div>
           <div class="v11-hero-visual">
@@ -1037,7 +1047,7 @@
 
         <section class="v11-card v11-flight-card">
           <p class="v11-kicker">&#1054;&#1073;&#1086;&#1073;&#1097;&#1077;&#1085;&#1080;&#1077; &#1085;&#1072; &#1087;&#1086;&#1083;&#1077;&#1090;&#1072;</p>
-          <h4>${escapeHtml(text(flight.airline, "Авиокомпания за потвърждение"))}</h4>
+          <h4>${escapeHtml(localizeClientText(text(flight.airline, "Авиокомпания за потвърждение")))}</h4>
           <p>${escapeHtml(localizeClientText(text(flight.route, "Маршрут за потвърждение")))}</p>
           ${flightSummaryCards(flight, travelDates)}
         </section>
@@ -1065,7 +1075,7 @@
 
         <section class="v11-card v11-detailed-flight-card">
           <p class="v11-kicker">&#1055;&#1086;&#1076;&#1088;&#1086;&#1073;&#1085;&#1072; &#1080;&#1085;&#1092;&#1086;&#1088;&#1084;&#1072;&#1094;&#1080;&#1103; &#1079;&#1072; &#1087;&#1086;&#1083;&#1077;&#1090;&#1072;</p>
-          <h4>${escapeHtml(text(flight.airline, "Авиокомпания за потвърждение"))}</h4>
+          <h4>${escapeHtml(localizeClientText(text(flight.airline, "Авиокомпания за потвърждение")))}</h4>
           ${segmentGroup("Отиване", flight.outboundSegments || [], flight.outbound)}
           ${segmentGroup("Връщане", flight.inboundSegments || [], flight.inbound)}
           <div class="v11-detail-row">
