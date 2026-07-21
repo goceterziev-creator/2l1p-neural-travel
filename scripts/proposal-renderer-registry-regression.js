@@ -55,7 +55,7 @@ assert.equal(registry.selectedTemplate(multiHotelInput), "multi-hotel", "registr
 assert.equal(registry.rendererFor(multiHotelInput).label, "Multi-Hotel Selector", "registry should select multi-hotel renderer");
 
 const multiHotelHtml = registry.renderProposal(multiHotelInput);
-assert.match(multiHotelHtml, /КЛИЕНТСКИ ИЗБОР/, "multi-hotel renderer should identify the decision UX in Bulgarian");
+assert.match(multiHotelHtml, /ПЕРСОНАЛНА ОФЕРТА/, "multi-hotel renderer should identify the client proposal in Bulgarian");
 assert.doesNotMatch(multiHotelHtml, /multi-hotel-sequential-grid/, "multi-hotel renderer should no longer use the old comparison grid wrapper");
 assert.match(multiHotelHtml, /v11-flight-summary-grid/, "multi-hotel renderer should show premium flight summary cards");
 assert.match(multiHotelHtml, /&#1054;&#1073;&#1086;&#1073;&#1097;&#1077;&#1085;&#1080;&#1077; &#1085;&#1072; &#1087;&#1086;&#1083;&#1077;&#1090;&#1072;/, "multi-hotel renderer should label the flight summary in Bulgarian");
@@ -119,7 +119,7 @@ assert.match(multiHotelHtml, /v11-prefer-option/, "multi-hotel renderer should m
 assert.match(multiHotelHtml, /Включено в пакета/, "multi-hotel renderer should show a package summary in the hero");
 assert.match(multiHotelHtml, /Препоръка от GT63/, "multi-hotel renderer should show a supported-facts recommendation block");
 assert.match(multiHotelHtml, /Защо тази опция/, "multi-hotel renderer should frame the selected option decision");
-assert.match(multiHotelHtml, /Крайната цена за избрания хотел е 3,543\.75 EUR\./, "recommendation should use supported selected price data");
+assert.equal(/Крайната цена за избрания хотел е/.test(multiHotelHtml), false, "recommendation should not repeat only the final price as a reason");
 assert.match(multiHotelHtml, /Хотелът е категория 5\./, "recommendation should use supported hotel category data");
 assert.match(multiHotelHtml, /v11-destination-card/, "multi-hotel renderer should include destination experience copy");
 assert.match(multiHotelHtml, /v11-timeline-card/, "multi-hotel renderer should include a visual travel timeline");
@@ -132,13 +132,82 @@ assert.match(multiHotelHtml, /v11-final-cta/, "multi-hotel renderer should end w
 assert.match(multiHotelHtml, /Вашата оферта е готова\./, "final CTA should use decision-oriented Bulgarian copy");
 assert.match(multiHotelHtml, /Потвърди избрания хотел/, "final CTA should preserve a clear primary hotel confirmation action");
 assert.match(multiHotelHtml, /Попитай консултант/, "final CTA should preserve a consultant secondary action");
+assert.equal(/v11-closing|Прегледайте предложението|Готово за следваща стъпка|ЗА ПРЕГЛЕД/.test(multiHotelHtml), false, "multi-hotel client HTML should not expose internal workflow closing/status labels");
 assert.match(multiHotelHtml, /&#1058;&#1088;&#1072;&#1085;&#1089;&#1092;&#1077;&#1088;/, "multi-hotel renderer should include transfer information");
 assert.match(multiHotelHtml, /\u041d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440/, "Maldives multi-hotel renderer should not silently imply transfer is irrelevant");
 assert.equal(/Premium option|Balanced option|Best price|Balan|Premi izhiv|Nai-dobra/.test(multiHotelHtml), false, "multi-hotel renderer must not invent qualitative hotel labels");
 assert.equal(/MULTI-HOTEL BRIEF|Accommodation details to confirm|READY|REVIEW|recommended|best value|luxury claims/.test(multiHotelHtml), false, "multi-hotel renderer should not output English or unsafe client-facing claims");
+assert.equal(/A curated private travel proposal|Review proposal|self-transfer|\bMarch\b|\bApril\b/.test(multiHotelHtml), false, "multi-hotel renderer should localize or remove remaining client-facing English copy");
 assert.equal(/slice\(0,\s*3\).*hotelOptions|maxItems:\s*3/.test(multiHotelHtml), false, "client HTML should not contain a hotel option max limit");
 assert.equal(/Р[ ’џћ›ќ—Ґ]|С[џњ‰‡ђ]/.test(multiHotelHtml), false, "multi-hotel renderer should not output mojibake Bulgarian labels");
 assert.equal(/contractVersion|classifications|universalIntakeDeprecated|debug|sourceAuthority/.test(multiHotelHtml), false, "registry render must not leak engine fields");
+
+const selectedSyncHotels = Array.from({ length: 6 }, (_, index) => ({
+  name: index === 0 ? "Palace Hotel Tokyo" : (index === 5 ? "Home Story in Tokyo Aerial大島&東京屋語" : `Tokyo Sync Hotel ${index + 1}`),
+  description: `Описание за хотелска опция ${index + 1}`,
+  room: index === 5 ? "Sync room 6 за двама пътуващи" : `Sync room ${index + 1}`,
+  meal: index === 5 ? "Breakfast included" : "Room only",
+  area: index === 5 ? "Tokyo, Japan - option 6 area" : `Tokyo option ${index + 1} area`,
+  price: index === 5 ? 5431.93 : 6100 + (index * 100),
+  stars: index === 5 ? "3" : "5",
+  websiteUrl: `https://sync.example.test/hotel-${index + 1}`,
+  heroImage: `https://images.sync.test/hotel-${index + 1}-hero.jpg`,
+  imageUrls: [
+    `https://images.sync.test/hotel-${index + 1}-1.jpg`,
+    `https://images.sync.test/hotel-${index + 1}-2.jpg`,
+    `https://images.sync.test/hotel-${index + 1}-3.jpg`,
+    `https://images.sync.test/hotel-${index + 1}-4.jpg`
+  ]
+}));
+
+const selectedSyncHtml = globalThis.GT63MultiHotelRenderer.renderMultiHotelProposal({
+  destination: { name: "Токио", requested: "28 March - 9 April" },
+  content: {
+    heroTitle: "Palace Hotel Tokyo",
+    heroSubtitle: "A curated private travel proposal for Tokyo."
+  },
+  client: { travelers: "2", travelDates: "28 March - 9 April" },
+  pricing: { currency: "EUR" },
+  transfer: { status: "self-transfer" },
+  flight: {
+    airline: "All Nippon Airways",
+    route: "SOF -> MUC -> HND",
+    baggage: "Checked baggage included",
+    outboundSegments: [
+      { from: "SOF", to: "MUC", date: "2026-03-28", departure: "2026-03-28T06:10", arrival: "2026-03-28T07:10" },
+      { from: "MUC", to: "HND", date: "2026-03-28", departure: "2026-03-28T12:00", arrival: "2026-03-29T13:15", arrivalAirport: "HND" }
+    ],
+    inboundSegments: [
+      { from: "HND", to: "SOF", date: "2026-04-09", departure: "2026-04-09T08:15", arrival: "2026-04-09T20:10" }
+    ]
+  },
+  hotelOptions: selectedSyncHotels,
+  hotel: selectedSyncHotels[0],
+  selectedHotelIndex: 5
+});
+
+const selectedSyncHero = selectedSyncHtml.slice(selectedSyncHtml.indexOf("v11-hero"), selectedSyncHtml.indexOf("v11-insight-card"));
+const selectedSyncTimeline = selectedSyncHtml.slice(selectedSyncHtml.indexOf("v11-timeline-card"), selectedSyncHtml.indexOf("v11-flight-card"));
+const selectedSyncRecommendation = selectedSyncHtml.slice(selectedSyncHtml.indexOf("v11-insight-card"), selectedSyncHtml.indexOf("v11-destination-card"));
+const selectedSyncDetail = selectedSyncHtml.slice(selectedSyncHtml.indexOf("v11-selected-hotel-card"), selectedSyncHtml.indexOf("v11-transfer-card"));
+
+assert.match(selectedSyncHero, /Home Story in Tokyo Aerial大島&amp;東京屋語/, "selectedHotelIndex=5 should drive the hero selected hotel name");
+assert.equal(/Palace Hotel Tokyo/.test(selectedSyncHero), false, "hero should not use option 1 as the selected hotel when selectedHotelIndex=5");
+assert.match(selectedSyncHero, /5,431\.93 EUR/, "hero should show the selected option 6 final price");
+assert.match(selectedSyncHero, /hotel-6-hero\.jpg/, "hero image should follow selected option 6 images");
+assert.match(selectedSyncTimeline, /Настаняване в Home Story in Tokyo Aerial大島&amp;東京屋語/, "timeline accommodation should use selected option 6");
+assert.match(selectedSyncTimeline, /Пристигане в Токио/, "timeline should label the real final outbound arrival as arrival in the destination");
+assert.match(selectedSyncTimeline, /29 март · 13:15/, "timeline should localize the final outbound arrival date and time");
+assert.match(selectedSyncTimeline, /Летище Токио Ханеда|HND/, "timeline should keep the real final outbound arrival airport");
+assert.match(selectedSyncRecommendation, /Sync room 6|Закуска|по-ниска/, "recommendation should describe supported facts for selected option 6");
+assert.match(selectedSyncDetail, /Home Story in Tokyo Aerial大島&amp;東京屋語/, "selected detail should render selected option 6");
+assert.equal(/Palace Hotel Tokyo/.test(selectedSyncDetail), false, "selected detail should not render option 1 when option 6 is selected");
+assert.match(selectedSyncHtml, /data-option-whatsapp="[^"]*Home%20Story%20in%20Tokyo%20Aerial/, "WhatsApp context should contain selected option 6");
+assert.match(selectedSyncHtml, /itineraryHotel\.textContent = "Настаняване в "/, "selection script should update itinerary accommodation when hotel changes");
+assert.match(selectedSyncHtml, /button\.textContent = "Избран хотел"/, "selection script should update the selected comparison card action label");
+assert.equal((selectedSyncHtml.match(/Избран хотел/g) || []).length >= 1, true, "selected comparison card should render a selected-state action label");
+assert.equal(/A curated private travel proposal|MULTI-HOTEL BRIEF|Review proposal|READY|REVIEW|self-transfer|\bMarch\b|\bApril\b/.test(selectedSyncHtml), false, "selected sync render should not expose forbidden English client copy");
+assert.equal(/alt="Home Story in Tokyo Aerial/.test(selectedSyncDetail), false, "selected detail gallery alt text should not repeat the visible selected hotel name");
 
 const desktopSelectedDetailRule = productStyles.match(/\.shell\[data-proposal-template="multi-hotel"\]\s+\.v11-selected-hotel-detail\s*\{[^}]*\}/);
 assert.ok(desktopSelectedDetailRule, "desktop CSS should define selected hotel detail layout");

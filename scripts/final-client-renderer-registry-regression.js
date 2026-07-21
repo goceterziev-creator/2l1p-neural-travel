@@ -25,7 +25,8 @@ assert.match(serverJs, /async function renderOfferHtml/, "legacy renderer should
 assert.match(serverJs, /\.shell\[data-proposal-template="multi-hotel"\]\s*\{\s*width:\s*min\(1480px, calc\(100% - 44px\)\);/m, "multi-hotel final client HTML should use a wide desktop shell");
 assert.equal(/\.shell\s*\{\s*max-width:\s*1040px/.test(serverJs), false, "final client HTML must not lock proposals to the old narrow desktop shell");
 
-assert.match(multiHotelRendererJs, /&#1055;&#1088;&#1077;&#1076;&#1087;&#1086;&#1095;&#1080;&#1090;&#1072;&#1084; &#1090;&#1086;&#1079;&#1080; &#1093;&#1086;&#1090;&#1077;&#1083;/, "multi-hotel final renderer should expose hotel preference action");
+assert.match(multiHotelRendererJs, /Предпочитам този хотел/, "multi-hotel final renderer should expose hotel preference action");
+assert.match(multiHotelRendererJs, /Избран хотел/, "multi-hotel final renderer should expose selected hotel action state");
 assert.match(multiHotelRendererJs, /&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;/, "multi-hotel final renderer should expose hotel link action");
 assert.match(multiHotelRendererJs, /&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;/, "multi-hotel final renderer should identify the selected hotel");
 assert.match(multiHotelRendererJs, /&#1054;&#1073;&#1097;&#1072; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1089;&#1082;&#1072; &#1094;&#1077;&#1085;&#1072;/, "multi-hotel final renderer should show option-specific package pricing");
