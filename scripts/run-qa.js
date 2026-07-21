@@ -9,6 +9,7 @@ const CHECK_TARGETS = [
   "gt63-core/core-data-provider.js",
   "gt63-core/review-draft.js",
   "gt63-core/flight-display-bg.js",
+  "gt63-core/presentation-view-model.js",
   "gt63-core/offer-engine-adapter.js",
   "gt63-core/proposal-input-adapter.js",
   "gt63-core/proposal-template-resolver.js",
@@ -21,6 +22,7 @@ const CHECK_TARGETS = [
   "scripts/gt63-offer-engine-adapter-regression.js",
   "scripts/proposal-input-adapter-regression.js",
   "scripts/proposal-template-resolver-regression.js",
+  "scripts/presentation-view-model-regression.js",
   "scripts/proposal-renderer-registry-regression.js",
   "scripts/final-client-renderer-registry-regression.js",
   "scripts/gt63-review-draft-regression.js",
@@ -95,6 +97,7 @@ async function main() {
     await runNode(["scripts/gt63-offer-engine-adapter-regression.js"]);
     await runNode(["scripts/proposal-input-adapter-regression.js"]);
     await runNode(["scripts/proposal-template-resolver-regression.js"]);
+    await runNode(["scripts/presentation-view-model-regression.js"]);
     await runNode(["scripts/proposal-renderer-registry-regression.js"]);
     await runNode(["scripts/final-client-renderer-registry-regression.js"]);
     await runNode(["scripts/gt63-review-draft-regression.js"]);

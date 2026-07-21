@@ -8,6 +8,7 @@
   root.GT63MultiHotelRenderer = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function createMultiHotelRenderer(root) {
   const COMPACT_GALLERY_IMAGE_COUNT = 3;
+  const presentationViewModel = root.GT63PresentationViewModel || (typeof require === "function" ? require("../presentation-view-model") : null);
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -20,34 +21,23 @@
   }
 
   function text(value, fallback = "-") {
-    const cleaned = String(value ?? "").trim();
-    return cleaned || fallback;
+    return presentationViewModel.text(value, fallback);
   }
 
   function amount(value) {
-    const number = Number(value);
-    return Number.isFinite(number) && number > 0 ? number : 0;
+    return presentationViewModel.amount(value);
   }
 
   function money(value, currency = "EUR") {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) return "-";
-    return `${number.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || "EUR"}`;
+    return presentationViewModel.money(value, currency);
   }
 
   function compactMealLabel(value) {
-    const raw = text(value, "");
-    if (!raw) return "Хранене за потвърждение";
-    if (/all\s*inclusive|всичко включено/i.test(raw)) return "All Inclusive";
-    if (/half\s*board|полупансион/i.test(raw)) return "Полупансион";
-    if (/full\s*board|пълен пансион/i.test(raw)) return "Пълен пансион";
-    if (/breakfast|закуска/i.test(raw)) return "Закуска";
-    if (/room\s*only|без хранене/i.test(raw)) return "Без включено хранене";
-    return raw.length > 34 ? "Хранене за потвърждение" : localizeClientText(raw);
+    return presentationViewModel.compactMealLabel(value);
   }
 
   function resolvedMealPlan(hotel = {}) {
-    return compactMealLabel(hotel.meal || hotel.board);
+    return presentationViewModel.resolvedMealPlan(hotel);
   }
 
   const BG_MONTHS = [
@@ -66,31 +56,7 @@
   ];
 
   function localizeClientText(value) {
-    const raw = text(value, "");
-    if (!raw) return "";
-    return raw
-      .replace(/\bJanuary\b/gi, "януари")
-      .replace(/\bFebruary\b/gi, "февруари")
-      .replace(/\bMarch\b/gi, "март")
-      .replace(/\bApril\b/gi, "април")
-      .replace(/\bMay\b/gi, "май")
-      .replace(/\bJune\b/gi, "юни")
-      .replace(/\bJuly\b/gi, "юли")
-      .replace(/\bAugust\b/gi, "август")
-      .replace(/\bSeptember\b/gi, "септември")
-      .replace(/\bOctober\b/gi, "октомври")
-      .replace(/\bNovember\b/gi, "ноември")
-      .replace(/\bDecember\b/gi, "декември")
-      .replace(/\bself[-\s]?transfer\b/gi, "Самостоятелно прехвърляне")
-      .replace(/\bchecked baggage included\b/gi, "Включен регистриран багаж")
-      .replace(/\bcabin baggage included\b/gi, "Включен ръчен багаж")
-      .replace(/\bbreakfast included\b/gi, "Включена закуска")
-      .replace(/\broom only\b/gi, "Без включено хранене")
-      .replace(/\s+г\.\s*-\s*/g, " г. – ")
-      .replace(/\bTokyo\b/g, "Токио")
-      .replace(/\bJapan\b/g, "Япония")
-      .replace(/Дизайнирано пушене/gi, "Зона за пушачи")
-      .replace(/Designated smoking area/gi, "Зона за пушачи");
+    return presentationViewModel.localizeClientText(value);
   }
 
   function clientDateTimeLabel(value = "") {
@@ -106,50 +72,15 @@
   }
 
   function numericStars(hotel = {}) {
-    const raw = String(hotel.stars || hotel.category || hotel.rating || "").trim();
-    const match = raw.match(/[1-5](?:[.,]\d)?/);
-    return match ? match[0].replace(".", ",") : "";
+    return presentationViewModel.numericStars(hotel);
   }
 
   function optionPositionSummary(hotel = {}, hotelOptions = [], input = {}) {
-    const selectedPrice = optionPackageTotal(hotel, input) || amount(hotel.price);
-    const optionPrices = hotelOptions
-      .map((option) => optionPackageTotal(option, input) || amount(option.price))
-      .filter((price) => price > 0);
-    if (!selectedPrice || optionPrices.length < 2) return "";
-    const lowerCount = optionPrices.filter((price) => selectedPrice < price).length;
-    const higherCount = optionPrices.filter((price) => selectedPrice > price).length;
-    const optionCountText = hotelOptions.length === 6 ? "шестте" : String(hotelOptions.length);
-    if (lowerCount === hotelOptions.length - 1 && hotelOptions.length >= 2) return `Това е най-достъпният от ${optionCountText} сравнени варианта.`;
-    if (lowerCount === 1) return "Цената е по-ниска от един от сравняваните варианти.";
-    if (lowerCount > 1) return `Цената е по-ниска от ${lowerCount} от сравняваните варианти.`;
-    if (higherCount === 0) return "Това е най-ниската цена сред показаните варианти.";
-    return "";
+    return presentationViewModel.optionPositionSummary(hotel, hotelOptions, input);
   }
 
   function supportedRecommendationReasons(input = {}, selectedHotel = {}, hotelOptions = []) {
-    const reasons = [];
-    const add = (value) => {
-      const cleaned = text(value, "");
-      if (cleaned && !reasons.includes(cleaned)) reasons.push(cleaned);
-    };
-    const stars = numericStars(selectedHotel);
-    add(optionPositionSummary(selectedHotel, hotelOptions, input));
-    if (stars) add(`Хотелът е с категория ${stars} звезди.`);
-    if (selectedHotel.room || selectedHotel.roomType) add(`Стая: ${localizeClientText(selectedHotel.room || selectedHotel.roomType)}.`);
-    if (selectedHotel.meal || selectedHotel.board || reasons.length) add(`Изхранване: ${resolvedMealPlan(selectedHotel)}.`);
-    if (input.client?.travelers) add(`Офертата е подготвена за ${text(input.client.travelers)} пътуващи.`);
-    if (input.client?.travelDates || input.destination?.requested) add(`Период: ${localizeClientText(input.client?.travelDates || input.destination?.requested)}`);
-    if (input.transfer?.included || input.transfer?.type || input.transfer?.status || input.transfer?.price > 0) add("Има данни за трансфер в офертата.");
-    if (selectedHotel.area || selectedHotel.location || selectedHotel.city) add(`Локация: ${localizeClientText(selectedHotel.area || selectedHotel.location || selectedHotel.city)}.`);
-    if (selectedHotel.reviewScore || selectedHotel.ratingText || selectedHotel.reviews) add(`Има подадени данни за оценка/ревю: ${localizeClientText(selectedHotel.reviewScore || selectedHotel.ratingText || selectedHotel.reviews)}.`);
-    if (selectedHotel.cancellation || selectedHotel.bookingConditions || selectedHotel.conditions) add(`Условия: ${localizeClientText(selectedHotel.cancellation || selectedHotel.bookingConditions || selectedHotel.conditions)}.`);
-    const amenities = [
-      ...(Array.isArray(selectedHotel.amenities) ? selectedHotel.amenities : []),
-      ...(Array.isArray(selectedHotel.highlights) ? selectedHotel.highlights : [])
-    ].map((item) => text(item, "")).filter(Boolean);
-    amenities.slice(0, 2).forEach((item) => add(`Посочено удобство: ${localizeClientText(item)}.`));
-    return reasons.slice(0, 4);
+    return presentationViewModel.supportedRecommendationReasons(input, selectedHotel, hotelOptions);
   }
 
   function dataAttr(value) {
@@ -157,29 +88,11 @@
   }
 
   function dateRangeNights(value = "") {
-    const matches = String(value || "").match(/\d{4}-\d{2}-\d{2}/g) || [];
-    if (matches.length < 2) return "";
-    const start = new Date(`${matches[0]}T00:00:00Z`);
-    const end = new Date(`${matches[1]}T00:00:00Z`);
-    const diff = Math.round((end - start) / 86400000);
-    return Number.isFinite(diff) && diff > 0 ? `${diff} нощувки` : "";
+    return presentationViewModel.dateRangeNights(value);
   }
 
   function heroFacts(input = {}, selectedPayload = {}, selectedHotel = {}, travelDates = "") {
-    const facts = [];
-    const add = (label, value, key = "") => {
-      const cleaned = text(value, "");
-      if (cleaned) facts.push([label, localizeClientText(cleaned), key]);
-    };
-    add("Дестинация", input.destination?.name || input.destination?.requested || input.content?.heroTitle, "destination");
-    add("Категория", numericStars(selectedHotel) ? `${numericStars(selectedHotel)} звезди` : "", "stars");
-    add("Дати", travelDates);
-    add("Период", dateRangeNights(travelDates));
-    add("Пътуващи", input.client?.travelers);
-    add("Стая", selectedHotel.room || selectedHotel.roomType, "room");
-    add("Хранене", resolvedMealPlan(selectedHotel), "meal");
-    add("Локация", selectedHotel.area || selectedHotel.location || selectedHotel.city, "area");
-    return facts.slice(0, 9);
+    return presentationViewModel.heroFacts(input, selectedPayload, selectedHotel, travelDates);
   }
 
   function isUsableImageUrl(value) {
@@ -249,55 +162,15 @@
   }
 
   function optionPackageTotal(hotel = {}, input = {}) {
-    const pricing = input.pricing || {};
-    const flightAmount = amount(pricing.flightAmount || input.flight?.price);
-    const hotelAmount = amount(hotel.price);
-    const transferAmount = amount(pricing.transferAmount || input.transfer?.price);
-    const marginPercent = amount(pricing.marginPercent);
-    const baseAmount = flightAmount + hotelAmount + transferAmount;
-    if (baseAmount <= 0) return 0;
-    return baseAmount + (baseAmount * (marginPercent / 100));
+    return presentationViewModel.optionPackageTotal(hotel, input);
   }
 
   function selectedHotelIndex(hotelOptions = [], activeHotel = {}, input = {}) {
-    const explicitIndex = Number(
-      input.selectedHotelIndex ??
-      input.selectedHotel?.index ??
-      input.selection?.selectedHotelIndex ??
-      input.selection?.hotelIndex
-    );
-    if (Number.isInteger(explicitIndex) && explicitIndex >= 0 && explicitIndex < hotelOptions.length) {
-      return explicitIndex;
-    }
-    const selectedIndex = hotelOptions.findIndex((hotel) => hotel?.selected);
-    if (selectedIndex >= 0) return selectedIndex;
-    const activeName = String(input.selectedHotel?.name || activeHotel?.name || "").trim();
-    if (activeName) {
-      const matchingIndex = hotelOptions.findIndex((hotel) => String(hotel?.name || "").trim() === activeName);
-      if (matchingIndex >= 0) return matchingIndex;
-    }
-    return 0;
+    return presentationViewModel.selectedHotelIndex(hotelOptions, activeHotel, input);
   }
 
   function selectedOptionPayload(hotel = {}, index, currency, input) {
-    const label = `Хотелска опция ${index + 1}`;
-    const hotelOnly = amount(hotel.price);
-    const total = optionPackageTotal(hotel, input) || hotelOnly;
-    const name = text(hotel.name, label);
-    const priceDisplay = money(total, currency);
-    const hotelPriceDisplay = money(hotelOnly, currency);
-    const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
-    const mealPlan = resolvedMealPlan(hotel);
-    const preferMessage = encodeURIComponent(`Предпочитам ${name} - обща пакетна цена ${priceDisplay}; хранене: ${mealPlan}`);
-
-    return {
-      label,
-      name,
-      priceDisplay,
-      hotelPriceDisplay,
-      mealPlan,
-      whatsappUrl: `https://wa.me/${whatsappPhone}?text=${preferMessage}`
-    };
+    return presentationViewModel.selectedOptionPayload(hotel, index, currency, input);
   }
 
   function hotelSubtitle(hotel = {}) {
@@ -1019,23 +892,21 @@
 
   function renderMultiHotelProposal(input) {
     const flight = input.flight || {};
-    const hotelOptions = Array.isArray(input.hotelOptions) && input.hotelOptions.length
-      ? input.hotelOptions
-      : (input.hotel ? [input.hotel] : []);
-    const activeHotel = input.selectedHotel || hotelOptions.find((hotel) => hotel?.selected) || input.hotel || hotelOptions[0] || {};
-    const currency = input.pricing?.currency || "EUR";
-    const activeIndex = selectedHotelIndex(hotelOptions, activeHotel, input);
-    const selectedPayload = selectedOptionPayload(hotelOptions[activeIndex] || activeHotel, activeIndex, currency, input);
-    const selectedFullPayload = hotelPayload(hotelOptions[activeIndex] || activeHotel, activeIndex, currency, input);
-    const selectedHotel = hotelOptions[activeIndex] || activeHotel;
+    const viewModel = presentationViewModel.buildPresentationViewModel(input);
+    const hotelOptions = viewModel.hotelOptions;
+    const currency = viewModel.currency;
+    const activeIndex = viewModel.selectedHotelIndex;
+    const selectedHotel = viewModel.selectedHotel;
+    const selectedPayload = viewModel.selectedPayload;
+    const selectedFullPayload = hotelPayload(selectedHotel, activeIndex, currency, input);
     const title = input.destination?.name || input.destination?.requested || input.content?.heroTitle || "Персонално предложение";
-    const travelDates = localizeClientText(input.client?.travelDates || input.destination?.requested || "");
+    const travelDates = viewModel.travelDates;
     const rawHeroSubtitle = localizeClientText(input.content?.heroSubtitle || "");
     const heroSubtitle = rawHeroSubtitle && !/curated private travel proposal|multi-hotel brief|ready|review/i.test(rawHeroSubtitle)
       ? rawHeroSubtitle
       : `Подбрана персонална оферта за Вашето пътуване${title ? ` до ${title}` : ""}.`;
     const heroImage = firstHotelImage(selectedHotel, input);
-    const facts = heroFacts(input, selectedPayload, selectedHotel, travelDates);
+    const facts = viewModel.heroFacts;
 
     return `
       <article class="v11-proposal multi-hotel-proposal" aria-label="Клиентска оферта с избор на хотел">
