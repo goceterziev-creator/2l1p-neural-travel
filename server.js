@@ -8259,7 +8259,9 @@ offer.pdfDownloads = toNumber(offer.pdfDownloads) + 1;
 offer.updatedAt = new Date().toISOString();
 writeDb(db);
 
-  const html = await renderOfferHtml(offer, { forPdf: true });
+  const printUrl = new URL(`/api/offers/${encodeURIComponent(offer.id)}/print`, LIVE_BASE_URL);
+  if (req.query?.mode) printUrl.searchParams.set("mode", String(req.query.mode));
+  if (req.query?.selectedHotelId) printUrl.searchParams.set("selectedHotelId", String(req.query.selectedHotelId));
 
   let browser;
   try {
@@ -8275,12 +8277,43 @@ writeDb(db);
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 1800 });
 
-    await page.setContent(html, {
-  waitUntil: "domcontentloaded",
-  timeout: 30000
-});
+    const response = await page.goto(printUrl.toString(), {
+      waitUntil: ["domcontentloaded", "networkidle0"],
+      timeout: 45000
+    });
+    const status = response?.status() || 0;
+    if (!response || status >= 400) {
+      const body = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+      let routeErrorPayload = null;
+      try {
+        routeErrorPayload = body ? JSON.parse(body) : null;
+      } catch {
+        routeErrorPayload = null;
+      }
+      const error = new Error(`Print HTML route failed with status ${status}${body ? `: ${body.slice(0, 240)}` : ""}`);
+      error.status = status >= 400 && status < 500 ? status : 500;
+      error.code = routeErrorPayload?.error || "GT63_PDF_PRINT_ROUTE_FAILED";
+      throw error;
+    }
 
-await page.evaluateHandle("document.fonts.ready");
+    await page.evaluate(async () => {
+      if (document.fonts?.ready) await document.fonts.ready;
+      const images = Array.from(document.images || []);
+      await Promise.all(images.map((image) => {
+        if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error(`Image load timeout: ${image.currentSrc || image.src || "unknown"}`)), 12000);
+          image.addEventListener("load", () => {
+            clearTimeout(timeout);
+            resolve();
+          }, { once: true });
+          image.addEventListener("error", () => {
+            clearTimeout(timeout);
+            reject(new Error(`Image load failed: ${image.currentSrc || image.src || "unknown"}`));
+          }, { once: true });
+        });
+      }));
+    });
 
     const pdfBuffer = await page.pdf({
       format: "A4",
@@ -8290,10 +8323,13 @@ await page.evaluateHandle("document.fonts.ready");
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${offer.id}.pdf"`);
-    res.send(pdfBuffer);
+    res.send(Buffer.from(pdfBuffer));
   } catch (error) {
     console.error("PDF generation error:", error);
-    res.status(500).json({ error: "PDF generation failed", details: error.message });
+    res.status(error.status || 500).json({
+      error: error.code || "PDF generation failed",
+      details: error.message
+    });
   } finally {
     if (browser) await browser.close();
   }

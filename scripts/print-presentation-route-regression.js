@@ -4,10 +4,12 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const zlib = require("zlib");
 const { spawn } = require("child_process");
 
 const printRenderer = require("../gt63-core/renderers/print-presentation");
 const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+const printRendererJs = fs.readFileSync(path.join(__dirname, "..", "gt63-core", "renderers", "print-presentation.js"), "utf8");
 
 function hotelOptions(count) {
   return Array.from({ length: count }, (_, index) => ({
@@ -20,8 +22,7 @@ function hotelOptions(count) {
     area: `Tokyo print area ${index + 1}`,
     price: 1000 + (index * 111),
     selected: index === Math.min(count - 1, 5),
-    websiteUrl: `https://print.example.test/hotel-${index + 1}`,
-    imageUrls: [`https://images.print.test/hotel-${index + 1}.jpg`]
+    websiteUrl: `https://print.example.test/hotel-${index + 1}`
   }));
 }
 
@@ -61,6 +62,96 @@ function assertStaticPrintHtml(html) {
   assert.doesNotMatch(html, /READY|REVIEW|MULTI-HOTEL BRIEF|Review proposal/i, "print HTML must not expose internal workflow labels");
 }
 
+function flateStreams(buffer) {
+  const source = buffer.toString("latin1");
+  const streams = [];
+  const regex = /<<(?:[\s\S]*?)\/Filter\s*\/FlateDecode(?:[\s\S]*?)>>\s*stream/g;
+  let match;
+  while ((match = regex.exec(source))) {
+    let start = match.index + match[0].length;
+    if (buffer[start] === 13 && buffer[start + 1] === 10) start += 2;
+    else if (buffer[start] === 10) start += 1;
+    const end = source.indexOf("endstream", start);
+    if (end < 0) continue;
+    let rawEnd = end;
+    while (rawEnd > start && (buffer[rawEnd - 1] === 10 || buffer[rawEnd - 1] === 13)) rawEnd -= 1;
+    try {
+      streams.push(zlib.inflateSync(buffer.subarray(start, rawEnd)).toString("utf8"));
+    } catch {
+      // Non-text stream or unsupported compression detail; skip it.
+    }
+  }
+  return streams;
+}
+
+function unicodeFromHex(hex) {
+  const clean = String(hex || "").replace(/[^0-9a-f]/gi, "");
+  let value = "";
+  for (let index = 0; index + 3 < clean.length; index += 4) {
+    const code = parseInt(clean.slice(index, index + 4), 16);
+    if (Number.isFinite(code)) value += String.fromCodePoint(code);
+  }
+  return value;
+}
+
+function pdfTextMap(streams) {
+  const map = new Map();
+  for (const stream of streams) {
+    for (const block of stream.matchAll(/\d+\s+beginbfchar([\s\S]*?)endbfchar/g)) {
+      for (const item of block[1].matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g)) {
+        if (!map.has(item[1])) map.set(item[1], unicodeFromHex(item[2]));
+      }
+    }
+    for (const block of stream.matchAll(/\d+\s+beginbfrange([\s\S]*?)endbfrange/g)) {
+      for (const item of block[1].matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g)) {
+        const start = parseInt(item[1], 16);
+        const end = parseInt(item[2], 16);
+        const unicodeStart = parseInt(item[3], 16);
+        for (let code = start; code <= end; code += 1) {
+          const key = code.toString(16).toUpperCase().padStart(item[1].length, "0");
+          if (!map.has(key)) map.set(key, String.fromCodePoint(unicodeStart + (code - start)));
+        }
+      }
+    }
+  }
+  return map;
+}
+
+function extractPdfText(buffer) {
+  const streams = flateStreams(buffer);
+  const map = pdfTextMap(streams);
+  const chunks = [];
+  let textContentStreamCount = 0;
+  for (const stream of streams) {
+    if (!/\bBT\b/.test(stream) || !/(?:Tj|TJ)/.test(stream)) continue;
+    textContentStreamCount += 1;
+    for (const item of stream.matchAll(/<([0-9a-fA-F]{4,})>/g)) {
+      const hex = item[1];
+      let decoded = "";
+      for (let index = 0; index + 3 < hex.length; index += 4) {
+        const key = hex.slice(index, index + 4).toUpperCase();
+        decoded += map.get(key) || "";
+      }
+      if (decoded) chunks.push(decoded);
+    }
+  }
+  return {
+    text: chunks.join(" ").replace(/\s+/g, " ").trim(),
+    compactText: chunks.join("").replace(/\s+/g, ""),
+    pageCount: (buffer.toString("latin1").match(/\/Type\s*\/Page\b/g) || []).length,
+    textContentStreamCount
+  };
+}
+
+function assertValidPdf(buffer, label) {
+  assert.ok(Buffer.isBuffer(buffer), `${label} PDF should be a buffer`);
+  assert.ok(buffer.length > 1000, `${label} PDF should be non-empty`);
+  assert.equal(buffer.subarray(0, 5).toString(), "%PDF-", `${label} should be a valid PDF`);
+  const extracted = extractPdfText(buffer);
+  assert.ok(extracted.pageCount >= 1, `${label} PDF should have at least one page`);
+  return extracted;
+}
+
 for (const count of [1, 3, 6, 10]) {
   const input = proposalInput(count);
   const selectedId = input.hotelOptions[Math.min(count - 1, 5)].id;
@@ -81,8 +172,11 @@ for (const count of [1, 3, 6, 10]) {
 
 assert.match(serverJs, /app\.get\("\/api\/offers\/:id\/print"/, "server should expose a dedicated print route");
 assert.match(serverJs, /renderGt63PrintOfferHtml/, "server should render dedicated Print HTML through a separate wrapper");
-assert.match(serverJs, /const html = await renderOfferHtml\(offer, \{ forPdf: true \}\);/, "PDF endpoint should not be redirected to Print HTML in this checkpoint");
-assert.equal(/page\.pdf[\s\S]{0,500}renderGt63PrintOfferHtml|renderGt63PrintOfferHtml[\s\S]{0,500}page\.pdf/.test(serverJs), false, "Puppeteer should not print the dedicated Print HTML before the infrastructure checkpoint");
+assert.match(serverJs, /new URL\(`\/api\/offers\/\$\{encodeURIComponent\(offer\.id\)\}\/print`, LIVE_BASE_URL\)/, "PDF endpoint should build the dedicated Print HTML route URL");
+assert.match(serverJs, /page\.goto\(printUrl\.toString\(\)/, "PDF endpoint should load the dedicated Print HTML route in Puppeteer");
+assert.equal(/renderOfferHtml\(offer, \{ forPdf: true \}\)/.test(serverJs), false, "PDF endpoint must not use the interactive HTML pipeline");
+assert.match(serverJs, /\.gt63-print-cta[\s\S]*?break-inside:\s*avoid/, "Print CSS should keep CTA/contact block together");
+assert.match(printRendererJs, /Контакт с консултант/, "Print renderer should include contact text inside the CTA block");
 
 async function waitForHealth(baseUrl) {
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -107,6 +201,18 @@ async function request(baseUrl, pathname) {
     json = null;
   }
   return { response, text, json };
+}
+
+async function requestBuffer(baseUrl, pathname) {
+  const response = await fetch(`${baseUrl}${pathname}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  let json = null;
+  try {
+    json = JSON.parse(buffer.toString("utf8"));
+  } catch {
+    json = null;
+  }
+  return { response, buffer, json, text: buffer.toString("utf8") };
 }
 
 async function routeRegression() {
@@ -168,6 +274,32 @@ async function routeRegression() {
     const invalidMode = await request(baseUrl, "/api/offers/OFF-PRINT-ROUTE/print?mode=gallery");
     assert.equal(invalidMode.response.status, 400, "invalid print mode should return 400");
     assert.equal(invalidMode.json?.error, "GT63_PRINT_INVALID_MODE", "invalid print mode should return controlled error code");
+
+    const selectedPdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?mode=selected&selectedHotelId=print-hotel-6");
+    assert.equal(selectedPdf.response.status, 200, `selected PDF endpoint should return 200, got ${selectedPdf.response.status}: ${selectedPdf.text.slice(0, 200)}`);
+    const selectedPdfText = assertValidPdf(selectedPdf.buffer, "selected mode");
+    assert.match(selectedPdfText.compactText, /PrintRouteHotel6/, `selected PDF text should include selected hotel; extracted: ${selectedPdfText.text.slice(0, 400)}`);
+    assert.match(selectedPdfText.compactText, /Токио/, "selected PDF text should include destination");
+    assert.match(selectedPdfText.compactText, /Вашатаофертаеготова/, "selected PDF text should include CTA text");
+    assert.match(selectedPdfText.compactText, /Контактсконсултант/, "selected PDF text should include contact text in the CTA block");
+    assert.doesNotMatch(selectedPdfText.text, /Предпочитам този хотел|Изпрати избора в WhatsApp|Затвори|Напред|Назад/, "selected PDF text should not contain interactive controls");
+    assert.ok(selectedPdfText.pageCount <= 5, "selected PDF should not create an excessive or likely blank trailing page");
+
+    const comparisonPdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?mode=comparison&selectedHotelId=print-hotel-6");
+    assert.equal(comparisonPdf.response.status, 200, `comparison PDF endpoint should return 200, got ${comparisonPdf.response.status}: ${comparisonPdf.text.slice(0, 200)}`);
+    const comparisonPdfText = assertValidPdf(comparisonPdf.buffer, "comparison mode");
+    for (let index = 1; index <= 6; index += 1) {
+      assert.match(comparisonPdfText.compactText, new RegExp(`PrintRouteHotel${index}`), `comparison PDF text should include hotel option ${index}`);
+    }
+    assert.ok(comparisonPdfText.pageCount <= 5, "comparison PDF should not create an excessive or likely blank trailing page");
+
+    const invalidHotelPdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?selectedHotelId=missing");
+    assert.equal(invalidHotelPdf.response.status, 400, "invalid selectedHotelId should return 400 from PDF endpoint");
+    assert.equal(invalidHotelPdf.json?.error, "GT63_PRINT_INVALID_SELECTED_HOTEL_ID", "PDF endpoint should preserve invalid selectedHotelId error code");
+
+    const invalidModePdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?mode=gallery");
+    assert.equal(invalidModePdf.response.status, 400, "invalid mode should return 400 from PDF endpoint");
+    assert.equal(invalidModePdf.json?.error, "GT63_PRINT_INVALID_MODE", "PDF endpoint should preserve invalid mode error code");
   } finally {
     child.kill();
     fs.rmSync(tmpDir, { recursive: true, force: true });

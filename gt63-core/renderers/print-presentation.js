@@ -181,6 +181,7 @@
     const mode = viewModel.contract.mode;
     const title = text(input.destination?.name || input.destination?.requested || input.content?.heroTitle, "Персонална оферта");
     const hotelName = text(viewModel.selectedHotel?.name, "Избран хотел");
+    const contactPhone = text(input.contact?.whatsappPhone || input.contact?.phone, "");
 
     return `
       <article class="gt63-print-proposal" data-print-mode="${escapeHtml(mode)}">
@@ -209,6 +210,7 @@
         <section class="gt63-print-section gt63-print-cta">
           <h2>Вашата оферта е готова.</h2>
           <p>Потвърдете избрания хотел, за да проверим актуалната наличност и финалните условия преди резервация.</p>
+          ${contactPhone ? `<p>Контакт с консултант: ${escapeHtml(contactPhone)}</p>` : ""}
         </section>
       </article>
     `;
