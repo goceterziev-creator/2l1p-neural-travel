@@ -5,8 +5,9 @@
 Last verified:
 
 - Date: 2026-07-22
-- Commit: 1c2be86d92ca025e29f52feada7c16255b80f4cb
 - Branch: main
+- Implementation baseline: 1c2be86d92ca025e29f52feada7c16255b80f4cb
+- Release documentation marker: 6f303db4d65d61f3569f6bf5fdfbf7adfc295cfb
 
 ## Release Status
 
@@ -22,6 +23,7 @@ GT63 PRINT PRESENTATION MODE V1 = PASS / PRODUCTION VERIFIED / LOCKED
 - 76f2647 - GT63 Print V1 dedicated print HTML route
 - e45c984 - GT63 Print V1 Puppeteer print pipeline
 - 1c2be86 - GT63 Print V1 PDF image resilience
+- 6f303db - docs: lock GT63 Print V1 release state
 
 ## Locked Product Areas
 
@@ -119,6 +121,8 @@ Observation:
 ## Update Rule
 
 Every completed milestone must update this file in the same commit or release marker.
+
+Repository HEAD and origin alignment must be verified through Git. This document records implementation and release milestones, not its own future correction commit hash.
 
 ## New Chat Bootstrap
 
