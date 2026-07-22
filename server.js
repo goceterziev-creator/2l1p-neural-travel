@@ -6004,110 +6004,280 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
   <title>${escapeGt63RegistryHtml(title)} - AYA Travel Print</title>
   <style>
     :root {
-      color: #172033;
-      font-family: Arial, Helvetica, sans-serif;
-      background: #f4f2ed;
+      --gt63-ink: #18202c;
+      --gt63-muted: #667085;
+      --gt63-paper: #fbfaf7;
+      --gt63-warm: #f1eadf;
+      --gt63-line: #d8cfbf;
+      --gt63-accent: #a97838;
+      --gt63-teal: #1b6866;
+      --gt63-night: #101824;
+      color: var(--gt63-ink);
+      font-family: Georgia, "Times New Roman", serif;
+      background: var(--gt63-warm);
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: #f4f2ed; color: #172033; }
+    html { background: var(--gt63-warm); }
+    body {
+      margin: 0;
+      background: var(--gt63-warm);
+      color: var(--gt63-ink);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
     .gt63-print-shell {
       width: min(210mm, 100%);
-      min-height: 297mm;
       margin: 0 auto;
-      padding: 14mm 13mm;
-      background: #fbfaf7;
+      background: var(--gt63-paper);
     }
-    .gt63-print-proposal { display: grid; gap: 9mm; }
-    .gt63-print-hero {
-      break-inside: avoid;
-      border-bottom: 1px solid #cfc7b8;
-      padding-bottom: 8mm;
+    .gt63-print-proposal {
+      display: block;
     }
+    .gt63-print-page {
+      position: relative;
+      height: 297mm;
+      padding: 17mm 16mm 16mm;
+      background: var(--gt63-paper);
+      page-break-after: always;
+      break-after: page;
+      overflow: hidden;
+    }
+    .gt63-print-page:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .gt63-print-cover {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 10mm;
+      background:
+        linear-gradient(90deg, rgba(169, 120, 56, .12), transparent 48%),
+        var(--gt63-paper);
+    }
+    .gt63-print-brand,
     .gt63-print-kicker {
       margin: 0 0 3mm;
-      color: #5d6678;
-      font-size: 9pt;
+      color: var(--gt63-muted);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8.5pt;
       font-weight: 700;
-      letter-spacing: .08em;
+      letter-spacing: 0;
       text-transform: uppercase;
     }
+    .gt63-print-brand {
+      color: var(--gt63-accent);
+    }
     h1, h2, h3, p { margin-top: 0; }
-    h1 { font-size: 28pt; line-height: 1.05; margin-bottom: 4mm; }
-    h2 { font-size: 16pt; margin-bottom: 3mm; }
-    h3 { font-size: 12pt; margin-bottom: 2mm; }
-    p, dd, td, th, li, span, small { font-size: 10pt; line-height: 1.45; }
-    .gt63-print-summary,
-    .gt63-print-details {
+    h1 {
+      max-width: 150mm;
+      font-size: 36pt;
+      line-height: 1.02;
+      margin-bottom: 4mm;
+      font-weight: 700;
+    }
+    h2 {
+      font-size: 19pt;
+      line-height: 1.15;
+      margin-bottom: 3mm;
+      font-weight: 700;
+    }
+    h3 {
+      font-size: 12pt;
+      margin-bottom: 2mm;
+    }
+    p, dd, td, th, li, span, small {
+      font-size: 10.2pt;
+      line-height: 1.48;
+    }
+    .gt63-print-subtitle {
+      font-size: 16pt;
+      color: var(--gt63-teal);
+    }
+    .gt63-print-cover-layout,
+    .gt63-print-editorial-grid {
+      display: grid;
+      grid-template-columns: 1.25fr .75fr;
+      gap: 8mm;
+      align-items: start;
+    }
+    .gt63-print-image-frame {
+      margin: 0;
+      border: 1px solid var(--gt63-line);
+      background: #fff;
+      break-inside: avoid;
+      overflow: hidden;
+    }
+    .gt63-print-image-frame img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+    }
+    .gt63-print-cover .gt63-print-image-frame img {
+      aspect-ratio: 16 / 10;
+    }
+    .gt63-print-image-frame figcaption {
+      padding: 2.5mm 3mm;
+      color: var(--gt63-muted);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+    }
+    .gt63-print-image-frame.is-placeholder {
+      min-height: 48mm;
+      display: grid;
+      place-items: center;
+      color: var(--gt63-muted);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9pt;
+    }
+    .gt63-print-selected-details.without-image .gt63-print-editorial-grid {
+      grid-template-columns: 1fr;
+    }
+    .gt63-print-price-panel {
+      align-self: end;
+      padding: 7mm;
+      background: var(--gt63-night);
+      color: #fff;
+      break-inside: avoid;
+    }
+    .gt63-print-price-panel p,
+    .gt63-print-price-panel span {
+      color: rgba(255,255,255,.78);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9pt;
+    }
+    .gt63-print-price-panel strong {
+      display: block;
+      margin: 2mm 0 3mm;
+      font-size: 24pt;
+      line-height: 1;
+    }
+    .gt63-print-fact-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 3mm;
       margin: 5mm 0 0;
     }
-    .gt63-print-summary div,
-    .gt63-print-details div {
-      border: 1px solid #d8d1c4;
-      padding: 3mm;
-      background: #ffffff;
+    .gt63-print-fact-grid.is-cover {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
     }
-    dt { color: #667085; font-size: 8pt; font-weight: 700; text-transform: uppercase; }
-    dd { margin: 1mm 0 0; font-weight: 700; }
+    .gt63-print-fact-grid.is-compact {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .gt63-print-fact {
+      border: 1px solid var(--gt63-line);
+      padding: 3mm;
+      background: rgba(255,255,255,.72);
+      break-inside: avoid;
+    }
+    dt {
+      color: var(--gt63-muted);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 7.8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    dd {
+      margin: 1mm 0 0;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
     .gt63-print-section {
       break-inside: avoid;
-      border-top: 1px solid #d8d1c4;
-      padding-top: 6mm;
+      padding: 6mm 0;
+      border-top: 1px solid var(--gt63-line);
     }
-    .gt63-print-selected-details {
+    .gt63-print-section:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .gt63-print-section-head {
+      margin-bottom: 4mm;
+    }
+    .gt63-print-reason-list {
       display: grid;
-      grid-template-columns: 1.35fr .9fr;
-      gap: 7mm;
-      align-items: start;
+      gap: 2mm;
+      margin: 0;
+      padding-left: 5mm;
     }
-    .gt63-print-selected-details.without-image {
-      grid-template-columns: 1fr;
-    }
-    .gt63-print-selected-details img {
-      width: 100%;
-      aspect-ratio: 4 / 3;
-      object-fit: cover;
-      border: 1px solid #d8d1c4;
-    }
-    .gt63-print-recommendation ul { margin: 0; padding-left: 5mm; }
     .gt63-print-link { overflow-wrap: anywhere; }
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 4mm;
       page-break-inside: auto;
+      font-family: Arial, Helvetica, sans-serif;
     }
     tr { break-inside: avoid; page-break-inside: avoid; }
     th, td {
-      border: 1px solid #d8d1c4;
+      border: 1px solid var(--gt63-line);
       padding: 2.5mm;
       text-align: left;
       vertical-align: top;
     }
-    th { background: #ece7dd; font-size: 8pt; text-transform: uppercase; }
-    tr.selected td { background: #f6ecd6; font-weight: 700; }
+    th {
+      background: var(--gt63-warm);
+      font-size: 7.6pt;
+      text-transform: uppercase;
+    }
+    tr.selected td {
+      background: #f8efd9;
+      font-weight: 700;
+      box-shadow: inset 2mm 0 0 var(--gt63-accent);
+    }
+    .gt63-print-flight-columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5mm;
+      margin-top: 5mm;
+    }
+    .gt63-print-segment-list {
+      display: grid;
+      gap: 2mm;
+    }
     .gt63-print-segment {
       display: grid;
       gap: 1mm;
-      border: 1px solid #d8d1c4;
+      border: 1px solid var(--gt63-line);
       padding: 3mm;
-      margin-top: 2mm;
       background: #fff;
       break-inside: avoid;
     }
     .gt63-print-cta {
-      background: #172033;
+      min-height: 72mm;
+      display: grid;
+      align-content: center;
+      gap: 4mm;
+      background: var(--gt63-night);
       color: #fff;
-      padding: 6mm;
-      border: 0;
+      padding: 12mm;
       break-inside: avoid;
+    }
+    .gt63-print-cta h2 {
+      color: #fff;
+      font-size: 26pt;
+    }
+    .gt63-print-cta p,
+    .gt63-print-cta span {
+      color: rgba(255,255,255,.82);
+    }
+    .gt63-print-cta-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8mm;
+      align-items: end;
+      border-top: 1px solid rgba(255,255,255,.18);
+      padding-top: 5mm;
+    }
+    .gt63-print-cta-row strong {
+      font-size: 22pt;
+      line-height: 1;
     }
     @page { size: A4; margin: 0; }
     @media print {
-      body { background: #fff; }
-      .gt63-print-shell { width: auto; min-height: auto; margin: 0; }
+      html, body { background: #fff; }
+      .gt63-print-shell { width: auto; margin: 0; }
+      .gt63-print-page { height: 297mm; }
     }
   </style>
 </head>
@@ -8347,7 +8517,8 @@ writeDb(db);
     const pdfBuffer = await page.pdf({
       format: "A4",
       printBackground: true,
-      margin: { top: "12mm", right: "10mm", bottom: "12mm", left: "10mm" }
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
+      timeout: 90000
     });
 
     res.setHeader("Content-Type", "application/pdf");

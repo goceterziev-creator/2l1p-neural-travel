@@ -71,9 +71,14 @@ function proposalInputWithSelectedImage(imageUrl) {
 
 function assertStaticPrintHtml(html) {
   assert.match(html, /gt63-print-proposal/, "print HTML should use the print renderer shell");
+  assert.match(html, /gt63-print-page/, "print HTML should use the page-based print shell");
+  assert.match(html, /gt63-print-cover/, "print HTML should include the cover page foundation");
+  assert.match(html, /gt63-print-image-frame/, "print HTML should use the print image frame system");
+  assert.match(html, /gt63-print-final-page/, "print HTML should include a final CTA page shell");
   assert.doesNotMatch(html, /<script\b/i, "print HTML must not depend on JavaScript");
   assert.doesNotMatch(html, /v11-prefer-option|v11-gallery-dialog|data-gallery-action|js-selected-option/i, "print HTML must not expose interactive controls");
   assert.doesNotMatch(html, /READY|REVIEW|MULTI-HOTEL BRIEF|Review proposal/i, "print HTML must not expose internal workflow labels");
+  assert.doesNotMatch(html, /gt63-print-page\s+[^"]*">\s*<\/section>/, "print HTML must not render empty fixed pages");
 }
 
 function flateStreams(buffer) {
@@ -192,6 +197,13 @@ assert.match(serverJs, /waitUntil:\s*"domcontentloaded"/, "PDF endpoint should n
 assert.equal(/networkidle0/.test(serverJs), false, "PDF endpoint must not wait for networkidle0 because slow images are handled locally");
 assert.equal(/renderOfferHtml\(offer, \{ forPdf: true \}\)/.test(serverJs), false, "PDF endpoint must not use the interactive HTML pipeline");
 assert.match(serverJs, /\.gt63-print-cta[\s\S]*?break-inside:\s*avoid/, "Print CSS should keep CTA/contact block together");
+assert.match(serverJs, /--gt63-accent/, "Print CSS should define luxury print design tokens");
+assert.match(printRendererJs, /function printPage/, "Print renderer should use a reusable page shell");
+assert.match(printRendererJs, /function editorialSection/, "Print renderer should use reusable print section shells");
+assert.match(printRendererJs, /function imageFrame/, "Print renderer should use reusable image frames and placeholders");
+assert.match(serverJs, /\.gt63-print-page[\s\S]*?break-after:\s*page/, "Print CSS should define deterministic A4 page shells");
+assert.match(serverJs, /\.gt63-print-image-frame/, "Print CSS should define reusable print image frames");
+assert.match(serverJs, /\.gt63-print-page:last-child[\s\S]*?break-after:\s*auto/, "Print CSS should avoid a forced blank trailing page");
 assert.match(printRendererJs, /Контакт с консултант/, "Print renderer should include contact text inside the CTA block");
 
 async function waitForHealth(baseUrl) {
@@ -334,6 +346,7 @@ async function routeRegression() {
     const selectedPdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?mode=selected&selectedHotelId=print-hotel-6");
     assert.equal(selectedPdf.response.status, 200, `selected PDF endpoint should return 200, got ${selectedPdf.response.status}: ${selectedPdf.text.slice(0, 200)}`);
     const selectedPdfText = assertValidPdf(selectedPdf.buffer, "selected mode");
+    assert.ok(selectedPdfText.pageCount >= 2, "selected PDF should use a deliberate page-based layout");
     assert.match(selectedPdfText.compactText, /PrintRouteHotel6/, `selected PDF text should include selected hotel; extracted: ${selectedPdfText.text.slice(0, 400)}`);
     assert.match(selectedPdfText.compactText, /Токио/, "selected PDF text should include destination");
     assert.match(selectedPdfText.compactText, /Вашатаофертаеготова/, "selected PDF text should include CTA text");
@@ -344,6 +357,7 @@ async function routeRegression() {
     const comparisonPdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?mode=comparison&selectedHotelId=print-hotel-6");
     assert.equal(comparisonPdf.response.status, 200, `comparison PDF endpoint should return 200, got ${comparisonPdf.response.status}: ${comparisonPdf.text.slice(0, 200)}`);
     const comparisonPdfText = assertValidPdf(comparisonPdf.buffer, "comparison mode");
+    assert.ok(comparisonPdfText.pageCount >= 2, "comparison PDF should use a deliberate page-based layout");
     for (let index = 1; index <= 6; index += 1) {
       assert.match(comparisonPdfText.compactText, new RegExp(`PrintRouteHotel${index}`), `comparison PDF text should include hotel option ${index}`);
     }
