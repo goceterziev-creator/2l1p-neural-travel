@@ -1,84 +1,58 @@
-# GT63 Print Presentation Mode V1
+# GT63 Next Task
 
-## Goal
+## Current Release Lock
 
-Generate a premium, factual, Bulgarian A4 Print HTML presentation from approved proposal data and export it through Puppeteer as a text-selectable PDF.
+GT63 PRINT PRESENTATION MODE V1 = PASS / PRODUCTION VERIFIED / LOCKED
 
-Interactive HTML remains the primary locked product.
+The Print V1 implementation is complete and locked at:
 
-## Phase 0 - Discovery
+- ed311a5 - GT63 Print V1 shared presentation view model foundation
+- 76f2647 - GT63 Print V1 dedicated print HTML route
+- e45c984 - GT63 Print V1 Puppeteer print pipeline
+- 1c2be86 - GT63 Print V1 PDF image resilience
 
-Before coding:
+## Operating Rule
 
-- locate renderer registry;
-- locate shared presentation logic;
-- locate selected hotel resolver;
-- locate price and meal-plan resolver;
-- locate server routes;
-- locate current Puppeteer/PDF flow;
-- locate regression fixtures;
-- report any mismatch between documentation and code.
-- If documentation conflicts with current code or git history, stop and report the mismatch before implementation.
+Do not start a new feature implementation from this file alone.
 
-## Architecture
+Before any next milestone:
+
+- read `docs/GT63_CANONICAL_CONTEXT.md`;
+- read `docs/GT63_CURRENT_STATE.md`;
+- inspect git status, current branch, latest commits and remote alignment;
+- inspect the relevant source and regression files for the requested task;
+- stop and report any mismatch between documentation, code and git history before implementation.
+
+## Locked Architecture
 
 Approved Proposal Model
 -> Shared Presentation View Model
-├── Interactive Client Renderer
-└── Print Presentation Renderer
-    -> Dedicated Print HTML
-    -> Puppeteer
-    -> Luxury PDF
-
-## Required Deliverables
-
-- dedicated /print route;
-- shared presentation view model;
-- selected print mode;
-- comparison print mode;
-- validated selectedHotelId;
-- persisted selected hotel fallback;
-- static Bulgarian Print HTML;
-- A4 print CSS;
-- deterministic page breaks;
-- existing Puppeteer infrastructure;
-- text-selectable PDF;
-- clickable links where supported;
-- no JavaScript-dependent content;
-- no interactive hotel switching;
-- no admin controls;
-- unlimited hotelOptions[];
-- selected hotel consistency;
-- print and interactive data consistency;
-- regression tests;
-- visual fixtures.
-
-## Selected Hotel Resolution
+   -> Interactive Client Renderer
+   -> Print Presentation Renderer
+      -> Dedicated Print HTML
+      -> Puppeteer
+      -> Luxury PDF
 
 Rules:
 
-- explicit selectedHotelId must belong to proposal.hotelOptions[];
-- invalid explicit ID returns controlled error;
-- no silent fallback to hotelOptions[0] when an explicit invalid ID is supplied;
-- when no explicit ID exists, use persisted canonical selected hotel;
-- only use the first hotel as a documented final fallback when no selected state exists.
+- Interactive HTML remains the primary product artifact.
+- Print HTML is a dedicated route.
+- Puppeteer prints the dedicated Print HTML route.
+- Do not print the interactive page as-is.
+- Do not build a direct PDF drawing engine.
+- Do not build screenshot-based PDF.
+- Do not duplicate pricing, selected hotel, meal plan, recommendation or flight logic.
+- Do not change locked Interactive HTML unless a real regression, accessibility defect or documented user-tested issue requires it.
 
-## Print Modes
+## Eligible Next Work
 
-### selected
+Only start one of these after an explicit user request:
 
-- default mode;
-- full brochure for one selected hotel;
-- selected hotel details only;
-- no full details for every hotel.
-
-### comparison
-
-- concise comparison of all hotelOptions[];
-- unlimited options;
-- stable pagination;
-- selected hotel visibly marked;
-- no full-page detail section for every option by default.
+- production bug fix;
+- accessibility defect fix;
+- documented user-tested issue;
+- Provider Resilience investigation if normal Smart Import shows provider failures;
+- release documentation update after a completed milestone.
 
 ## Non-Goals
 
@@ -89,48 +63,29 @@ Rules:
 - no pricing changes;
 - no persistence migration;
 - no Interactive HTML redesign;
-- no direct PDF drawing engine;
+- no Print V1 redesign;
+- no direct PDF engine;
 - no screenshot PDF;
-- no duplicated business logic.
+- no generated QA, runtime DB or PDF artifacts in commits;
+- never use `git add .`.
 
-## Acceptance Criteria
+## Verification Baseline
 
-- valid print route returns 200;
-- invalid selectedHotelId returns controlled error;
-- selected and comparison modes work;
-- selected hotel matches Interactive HTML;
-- price matches;
-- meal plan matches;
-- recommendation matches;
-- flight summary matches;
-- no internal workflow labels;
-- no interactive controls;
-- no blank trailing page;
-- CTA/contact block remains together;
-- comparison handles 1, 3, 6 and 10 hotels;
-- Locked Interactive HTML regression suite remains PASS after shared-helper extraction.
-- Puppeteer creates a non-empty valid PDF;
-- Bulgarian text is readable;
-- destination and selected hotel appear in PDF text;
-- generated PDF fixtures are not committed by default.
+For any future change touching presentation, print, PDF or shared view-model logic, keep these checks in scope:
 
-## Visual Fixtures
+- relevant targeted regression for the changed area;
+- locked Interactive HTML regression suite remains PASS;
+- Print presentation route regression remains PASS;
+- PDF endpoint still uses dedicated Print HTML, not Interactive HTML;
+- selected and comparison PDF modes remain valid;
+- production smoke for a real offer when release readiness is claimed.
 
-- Tokyo selected hotel;
-- Tokyo comparison with 6 hotels;
-- Maldives selected hotel;
-- missing stars;
-- unknown meal plan;
-- missing baggage;
-- long hotel name;
-- 10 hotel options.
-
-## Final Status
+## Final Status Format
 
 Use exactly one:
 
-GT63 PRINT PRESENTATION MODE V1 = PASS
+GT63 NEXT TASK = PASS
 
-GT63 PRINT PRESENTATION MODE V1 = PASS WITH WARNINGS
+GT63 NEXT TASK = PASS WITH WARNINGS
 
-GT63 PRINT PRESENTATION MODE V1 = NOT READY
+GT63 NEXT TASK = NOT READY
