@@ -22,6 +22,7 @@ const gt63FlightDisplayBg = require("./gt63-core/flight-display-bg");
 globalThis.GT63FlightDisplayBg = gt63FlightDisplayBg;
 globalThis.GT63LuxuryV11Renderer = require("./gt63-core/luxury-v11-renderer");
 globalThis.GT63MultiHotelRenderer = require("./gt63-core/renderers/multi-hotel");
+const gt63PrintPresentationRenderer = require("./gt63-core/renderers/print-presentation");
 const gt63ProposalRendererRegistry = require("./gt63-core/proposal-renderer-registry");
 
 const app = express();
@@ -470,6 +471,7 @@ function isPublicApiRequest(req) {
   if (req.path === "/health") return true;
   if (req.path.startsWith("/auth/")) return true;
   if (req.method === "GET" && req.path.startsWith("/offers/view/")) return true;
+  if (req.method === "GET" && /^\/offers\/[^/]+\/print$/.test(req.path)) return true;
   if (req.method === "GET" && /^\/offers\/[^/]+\/pdf$/.test(req.path)) return true;
   if (req.method === "POST" && /^\/offers\/[^/]+\/(click|book)$/.test(req.path)) return true;
   return false;
@@ -5966,6 +5968,154 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
 </html>`;
 }
 
+function renderGt63PrintOfferHtml(offer = {}, options = {}) {
+  const proposalInput = normalizeProposalInputForOffer(offer.proposalInput);
+  if (!proposalInput) {
+    const error = new Error("Offer does not contain GT63 proposal input");
+    error.status = 400;
+    error.code = "GT63_PRINT_MISSING_PROPOSAL_INPUT";
+    throw error;
+  }
+
+  const input = cloneJsonSafe(proposalInput);
+  if (!input) {
+    const error = new Error("Offer proposal input is invalid");
+    error.status = 400;
+    error.code = "GT63_PRINT_INVALID_PROPOSAL_INPUT";
+    throw error;
+  }
+  input.contact = {
+    ...(input.contact || {}),
+    whatsappPhone: AGENCY_WHATSAPP_PHONE
+  };
+
+  const title = input.content?.heroTitle || input.destination?.name || offer.destination || "AYA Travel";
+  const mode = options.mode || "selected";
+  const body = gt63PrintPresentationRenderer.renderPrintProposal(input, {
+    mode,
+    selectedHotelId: options.selectedHotelId
+  });
+
+  return `<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeGt63RegistryHtml(title)} - AYA Travel Print</title>
+  <style>
+    :root {
+      color: #172033;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f4f2ed;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f2ed; color: #172033; }
+    .gt63-print-shell {
+      width: min(210mm, 100%);
+      min-height: 297mm;
+      margin: 0 auto;
+      padding: 14mm 13mm;
+      background: #fbfaf7;
+    }
+    .gt63-print-proposal { display: grid; gap: 9mm; }
+    .gt63-print-hero {
+      break-inside: avoid;
+      border-bottom: 1px solid #cfc7b8;
+      padding-bottom: 8mm;
+    }
+    .gt63-print-kicker {
+      margin: 0 0 3mm;
+      color: #5d6678;
+      font-size: 9pt;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: 28pt; line-height: 1.05; margin-bottom: 4mm; }
+    h2 { font-size: 16pt; margin-bottom: 3mm; }
+    h3 { font-size: 12pt; margin-bottom: 2mm; }
+    p, dd, td, th, li, span, small { font-size: 10pt; line-height: 1.45; }
+    .gt63-print-summary,
+    .gt63-print-details {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 3mm;
+      margin: 5mm 0 0;
+    }
+    .gt63-print-summary div,
+    .gt63-print-details div {
+      border: 1px solid #d8d1c4;
+      padding: 3mm;
+      background: #ffffff;
+    }
+    dt { color: #667085; font-size: 8pt; font-weight: 700; text-transform: uppercase; }
+    dd { margin: 1mm 0 0; font-weight: 700; }
+    .gt63-print-section {
+      break-inside: avoid;
+      border-top: 1px solid #d8d1c4;
+      padding-top: 6mm;
+    }
+    .gt63-print-selected-details {
+      display: grid;
+      grid-template-columns: 1.35fr .9fr;
+      gap: 7mm;
+      align-items: start;
+    }
+    .gt63-print-selected-details img {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      border: 1px solid #d8d1c4;
+    }
+    .gt63-print-recommendation ul { margin: 0; padding-left: 5mm; }
+    .gt63-print-link { overflow-wrap: anywhere; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 4mm;
+      page-break-inside: auto;
+    }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    th, td {
+      border: 1px solid #d8d1c4;
+      padding: 2.5mm;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #ece7dd; font-size: 8pt; text-transform: uppercase; }
+    tr.selected td { background: #f6ecd6; font-weight: 700; }
+    .gt63-print-segment {
+      display: grid;
+      gap: 1mm;
+      border: 1px solid #d8d1c4;
+      padding: 3mm;
+      margin-top: 2mm;
+      background: #fff;
+      break-inside: avoid;
+    }
+    .gt63-print-cta {
+      background: #172033;
+      color: #fff;
+      padding: 6mm;
+      border: 0;
+      break-inside: avoid;
+    }
+    @page { size: A4; margin: 0; }
+    @media print {
+      body { background: #fff; }
+      .gt63-print-shell { width: auto; min-height: auto; margin: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="gt63-print-shell">
+    ${body}
+  </main>
+</body>
+</html>`;
+}
+
 async function renderOfferHtml(offer, options = {}) {
   const registryHtml = renderGt63RegistryOfferHtml(offer, options);
   if (registryHtml) return registryHtml;
@@ -8075,6 +8225,30 @@ if (offer.status === "sent") offer.status = "viewed";
 
   res.setHeader("Content-Type", "text/html; charset=UTF-8");
   res.send(await renderOfferHtml(offerForRender));
+});
+
+app.get("/api/offers/:id/print", async (req, res) => {
+  const db = readDb();
+  const offer = db.offers.find((o) => o.id === req.params.id);
+  if (!offer) return res.status(404).send("Offer not found");
+
+  try {
+    const html = renderGt63PrintOfferHtml(offer, {
+      mode: req.query?.mode,
+      selectedHotelId: req.query?.selectedHotelId
+    });
+    res.setHeader("Content-Type", "text/html; charset=UTF-8");
+    res.send(html);
+  } catch (error) {
+    if (error.status === 400 || /^GT63_PRINT_/.test(String(error.code || ""))) {
+      return res.status(400).json({
+        error: error.code || "GT63_PRINT_ROUTE_ERROR",
+        message: error.message
+      });
+    }
+    console.error("Print route error:", error);
+    return res.status(500).json({ error: "GT63_PRINT_ROUTE_FAILED", message: error.message });
+  }
 });
 
 app.get("/api/offers/:id/pdf", async (req, res) => {
