@@ -6062,6 +6062,9 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       gap: 7mm;
       align-items: start;
     }
+    .gt63-print-selected-details.without-image {
+      grid-template-columns: 1fr;
+    }
     .gt63-print-selected-details img {
       width: 100%;
       aspect-ratio: 4 / 3;
@@ -8276,9 +8279,17 @@ writeDb(db);
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 1800 });
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      if (request.resourceType() === "image") {
+        request.abort("blockedbyclient").catch(() => {});
+        return;
+      }
+      request.continue().catch(() => {});
+    });
 
     const response = await page.goto(printUrl.toString(), {
-      waitUntil: ["domcontentloaded", "networkidle0"],
+      waitUntil: "domcontentloaded",
       timeout: 45000
     });
     const status = response?.status() || 0;
@@ -8301,15 +8312,33 @@ writeDb(db);
       const images = Array.from(document.images || []);
       await Promise.all(images.map((image) => {
         if (image.complete && image.naturalWidth > 0) return Promise.resolve();
-        return new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error(`Image load timeout: ${image.currentSrc || image.src || "unknown"}`)), 12000);
+        const hideUnavailableImage = () => {
+          image.removeAttribute("src");
+          image.alt = "";
+          image.setAttribute("data-print-image-unavailable", "true");
+          image.style.display = "none";
+          const wrapper = image.closest(".gt63-print-selected-details");
+          if (wrapper) wrapper.classList.add("without-image");
+        };
+        if (image.complete && image.naturalWidth <= 0) {
+          hideUnavailableImage();
+          return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            console.warn(`GT63 print PDF image skipped after timeout: ${image.currentSrc || image.src || "unknown"}`);
+            hideUnavailableImage();
+            resolve();
+          }, 12000);
           image.addEventListener("load", () => {
             clearTimeout(timeout);
             resolve();
           }, { once: true });
           image.addEventListener("error", () => {
             clearTimeout(timeout);
-            reject(new Error(`Image load failed: ${image.currentSrc || image.src || "unknown"}`));
+            console.warn(`GT63 print PDF image skipped after load failure: ${image.currentSrc || image.src || "unknown"}`);
+            hideUnavailableImage();
+            resolve();
           }, { once: true });
         });
       }));
