@@ -82,6 +82,12 @@
     `;
   }
 
+  function contentPage(className, content) {
+    const body = nonEmpty(content);
+    if (!body) return "";
+    return `<section class="gt63-print-page gt63-print-flow-page ${escapeHtml(className || "")}">${body}</section>`;
+  }
+
   function factGrid(items = [], className = "") {
     const cards = items
       .filter((item) => nonEmpty(item?.value))
@@ -163,6 +169,13 @@
     );
   }
 
+  function hasMeaningfulFlight(input = {}) {
+    const flight = input.flight || {};
+    const outbound = Array.isArray(flight.outboundSegments) ? flight.outboundSegments : [];
+    const inbound = Array.isArray(flight.inboundSegments) ? flight.inboundSegments : [];
+    return Boolean(flight.airline || flight.route || flight.baggage || flight.price || outbound.length || inbound.length);
+  }
+
   function technicalSegments(title, segments = []) {
     if (!segments.length) return "";
     return `
@@ -203,6 +216,108 @@
           ${url ? `<p class="gt63-print-link">Хотел: ${escapeHtml(url)}</p>` : ""}
         </div>
         ${imageFrame(image, "Снимка на избрания хотел", text(hotel.name, ""))}
+      </div>
+    `);
+  }
+
+  function includedServicesBlock(viewModel, input = {}) {
+    const hotel = viewModel.selectedHotel || {};
+    const flight = input.flight || {};
+    const transfer = input.transfer || {};
+    const services = [];
+    const add = (label, value, status = "Данни в офертата") => {
+      const cleaned = nonEmpty(value);
+      if (cleaned) services.push({ label, value: cleaned, status });
+    };
+
+    add("Настаняване", hotel.name);
+    add("Стая", hotel.room || hotel.roomType);
+    add("Изхранване", viewModel.selectedMealPlan);
+    add("Багаж", flight.baggage);
+    if (transfer.included || transfer.price > 0 || transfer.type || transfer.status || transfer.route || transfer.description) {
+      add("Трансфер", transfer.status || transfer.type || transfer.route || transfer.description, transfer.included ? "Посочен като включен" : "За потвърждение");
+    }
+    add("Контакт", input.contact?.whatsappPhone || input.contact?.phone, "За съдействие");
+
+    if (!services.length) return "";
+    return editorialSection("gt63-print-included-services", "Включено и за потвърждение", "Какво съдържа офертата", `
+      <div class="gt63-print-service-grid">
+        ${services.map((service) => `
+          <article class="gt63-print-service-card">
+            <p>${escapeHtml(service.label)}</p>
+            <strong>${escapeHtml(localize(service.value))}</strong>
+            <span>${escapeHtml(service.status)}</span>
+          </article>
+        `).join("")}
+      </div>
+    `);
+  }
+
+  function canonicalTimelineItems(input = {}) {
+    const source = Array.isArray(input.timeline) ? input.timeline
+      : Array.isArray(input.program) ? input.program
+        : Array.isArray(input.itinerary) ? input.itinerary
+          : Array.isArray(input.events) ? input.events
+            : [];
+    return source.map((item) => ({
+      date: nonEmpty(item.date || item.day || item.when || item.time),
+      title: nonEmpty(item.title || item.name || item.label),
+      description: nonEmpty(item.description || item.details || item.summary || item.text)
+    })).filter((item) => item.date || item.title || item.description);
+  }
+
+  function timelineBlock(input = {}) {
+    const items = canonicalTimelineItems(input);
+    if (!items.length) return "";
+    return editorialSection("gt63-print-timeline", "Програма", "Хронология на пътуването", `
+      <div class="gt63-print-timeline-list">
+        ${items.map((item) => `
+          <article class="gt63-print-timeline-item">
+            ${item.date ? `<span>${escapeHtml(localize(item.date))}</span>` : ""}
+            <h3>${escapeHtml(localize(item.title || "Етап от пътуването"))}</h3>
+            ${item.description ? `<p>${escapeHtml(localize(item.description))}</p>` : ""}
+          </article>
+        `).join("")}
+      </div>
+    `);
+  }
+
+  function canonicalExperienceItems(input = {}) {
+    const source = Array.isArray(input.optionalExperiences) ? input.optionalExperiences
+      : Array.isArray(input.experiences) ? input.experiences
+        : Array.isArray(input.excursions) ? input.excursions
+          : [];
+    return source.map((item) => ({
+      title: nonEmpty(item.title || item.name),
+      description: nonEmpty(item.description || item.summary || item.details),
+      location: nonEmpty(item.location || item.area),
+      duration: nonEmpty(item.duration),
+      price: nonEmpty(item.priceDisplay || item.price),
+      currency: nonEmpty(item.currency),
+      image: imageUrl(item)
+    })).filter((item) => item.title || item.description || item.location || item.duration || item.price || item.image);
+  }
+
+  function optionalExperiencesBlock(input = {}) {
+    const experiences = canonicalExperienceItems(input);
+    if (!experiences.length) return "";
+    return editorialSection("gt63-print-experiences", "По желание", "Допълнителни преживявания", `
+      <div class="gt63-print-experience-grid">
+        ${experiences.map((experience) => `
+          <article class="gt63-print-experience-card">
+            ${imageFrame(experience.image, experience.title ? `Снимка към ${experience.title}` : "Снимка към преживяване")}
+            <div>
+              <p class="gt63-print-kicker">Опционално</p>
+              ${experience.title ? `<h3>${escapeHtml(localize(experience.title))}</h3>` : ""}
+              ${experience.description ? `<p>${escapeHtml(localize(experience.description))}</p>` : ""}
+              ${factGrid([
+                { label: "Локация", value: experience.location },
+                { label: "Продължителност", value: experience.duration },
+                { label: "Цена", value: [experience.price, experience.currency].filter(Boolean).join(" ") || "За потвърждение" }
+              ], "is-compact")}
+            </div>
+          </article>
+        `).join("")}
       </div>
     `);
   }
@@ -254,8 +369,7 @@
     const flight = input.flight || {};
     const outbound = Array.isArray(flight.outboundSegments) ? flight.outboundSegments : [];
     const inbound = Array.isArray(flight.inboundSegments) ? flight.inboundSegments : [];
-    const hasFlight = flight.airline || flight.route || flight.baggage || outbound.length || inbound.length;
-    if (!hasFlight) return "";
+    if (!hasMeaningfulFlight(input)) return "";
     const details = factGrid([
       { label: "Авиокомпания", value: flight.airline || "Авиокомпания за потвърждение" },
       { label: "Маршрут", value: flight.route || "Маршрут за потвърждение" },
@@ -289,12 +403,18 @@
   function renderPrintProposal(input = {}, options = {}) {
     const viewModel = viewModelApi.buildPresentationViewModel(input, options);
     const mode = viewModel.contract.mode;
-    const selectedContent = [
-      recommendationBlock(viewModel),
-      selectedHotelDetails(viewModel),
-      comparisonTable(viewModel),
-      transferBlock(input),
-      flightBlock(input)
+    const selectedPages = [
+      contentPage("gt63-print-flight-page", flightBlock(input)),
+      contentPage("gt63-print-hotel-page", [
+        recommendationBlock(viewModel),
+        selectedHotelDetails(viewModel)
+      ].filter(Boolean).join("")),
+      contentPage("gt63-print-services-page", [
+        includedServicesBlock(viewModel, input),
+        transferBlock(input)
+      ].filter(Boolean).join("")),
+      contentPage("gt63-print-timeline-page", timelineBlock(input)),
+      contentPage("gt63-print-experiences-page", optionalExperiencesBlock(input))
     ].filter(Boolean).join("");
     const comparisonContent = [
       recommendationBlock(viewModel),
@@ -305,7 +425,7 @@
     return `
       <article class="gt63-print-proposal" data-print-mode="${escapeHtml(mode)}">
         ${coverPage(viewModel, input, mode)}
-        ${printPage("gt63-print-content-page", mode === "comparison" ? comparisonContent : selectedContent)}
+        ${mode === "comparison" ? printPage("gt63-print-content-page", comparisonContent) : selectedPages}
         ${printPage("gt63-print-final-page", ctaBlock(viewModel, input))}
       </article>
     `;

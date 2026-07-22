@@ -6035,12 +6035,12 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     }
     .gt63-print-page {
       position: relative;
-      height: 297mm;
+      min-height: 297mm;
       padding: 17mm 16mm 16mm;
       background: var(--gt63-paper);
       page-break-after: always;
       break-after: page;
-      overflow: hidden;
+      overflow: visible;
     }
     .gt63-print-page:last-child {
       page-break-after: auto;
@@ -6050,9 +6050,15 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       display: grid;
       grid-template-rows: auto 1fr auto;
       gap: 10mm;
+      height: 297mm;
+      overflow: hidden;
       background:
         linear-gradient(90deg, rgba(169, 120, 56, .12), transparent 48%),
         var(--gt63-paper);
+    }
+    .gt63-print-flow-page {
+      height: auto;
+      min-height: 0;
     }
     .gt63-print-brand,
     .gt63-print-kicker {
@@ -6186,6 +6192,8 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       break-inside: avoid;
       padding: 6mm 0;
       border-top: 1px solid var(--gt63-line);
+      orphans: 3;
+      widows: 3;
     }
     .gt63-print-section:first-child {
       border-top: 0;
@@ -6243,6 +6251,81 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       background: #fff;
       break-inside: avoid;
     }
+    .gt63-print-service-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4mm;
+    }
+    .gt63-print-service-card {
+      padding: 5mm;
+      border: 1px solid var(--gt63-line);
+      background: rgba(255,255,255,.76);
+      break-inside: avoid;
+    }
+    .gt63-print-service-card p {
+      margin-bottom: 2mm;
+      color: var(--gt63-muted);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .gt63-print-service-card strong {
+      display: block;
+      margin-bottom: 2mm;
+      font-size: 12pt;
+      overflow-wrap: anywhere;
+    }
+    .gt63-print-service-card span {
+      color: var(--gt63-muted);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8.5pt;
+    }
+    .gt63-print-timeline-list {
+      display: grid;
+      gap: 4mm;
+    }
+    .gt63-print-timeline-item {
+      position: relative;
+      padding: 0 0 4mm 7mm;
+      border-left: 1px solid var(--gt63-line);
+      break-inside: avoid;
+    }
+    .gt63-print-timeline-item::before {
+      content: "";
+      position: absolute;
+      left: -1.6mm;
+      top: 1mm;
+      width: 3mm;
+      height: 3mm;
+      border-radius: 50%;
+      background: var(--gt63-accent);
+    }
+    .gt63-print-timeline-item span {
+      display: block;
+      margin-bottom: 1mm;
+      color: var(--gt63-muted);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .gt63-print-experience-grid {
+      display: grid;
+      gap: 5mm;
+    }
+    .gt63-print-experience-card {
+      display: grid;
+      grid-template-columns: .82fr 1.18fr;
+      gap: 5mm;
+      padding: 4mm;
+      border: 1px solid var(--gt63-line);
+      background: rgba(255,255,255,.76);
+      break-inside: avoid;
+    }
+    .gt63-print-experience-card .gt63-print-image-frame img {
+      aspect-ratio: 5 / 4;
+    }
     .gt63-print-cta {
       min-height: 72mm;
       display: grid;
@@ -6252,6 +6335,12 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       color: #fff;
       padding: 12mm;
       break-inside: avoid;
+    }
+    .gt63-print-final-page {
+      height: 297mm;
+      display: grid;
+      align-items: center;
+      overflow: hidden;
     }
     .gt63-print-cta h2 {
       color: #fff;
@@ -6277,7 +6366,9 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     @media print {
       html, body { background: #fff; }
       .gt63-print-shell { width: auto; margin: 0; }
-      .gt63-print-page { height: 297mm; }
+      .gt63-print-cover,
+      .gt63-print-final-page { height: 297mm; }
+      .gt63-print-flow-page { height: auto; min-height: 0; }
     }
   </style>
 </head>

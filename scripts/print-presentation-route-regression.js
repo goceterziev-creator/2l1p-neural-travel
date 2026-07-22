@@ -56,6 +56,30 @@ function proposalInput(count = 6) {
   };
 }
 
+function proposalInputWithoutFlight(count = 6) {
+  const input = proposalInput(count);
+  delete input.flight;
+  return input;
+}
+
+function proposalInputWithSelectedBrochureData(count = 6) {
+  const input = proposalInput(count);
+  input.timeline = [
+    { date: "2027-03-28", title: "Departure", description: "Timeline item supplied by the approved model." },
+    { date: "2027-03-29", title: "Arrival", description: "Second timeline item supplied by the approved model." }
+  ];
+  input.optionalExperiences = [
+    {
+      title: "Private Lagoon Dinner",
+      description: "Optional experience supplied by the approved model.",
+      location: "Maldives",
+      duration: "2 hours",
+      priceDisplay: "180 EUR"
+    }
+  ];
+  return input;
+}
+
 function proposalInputWithSelectedImage(imageUrl) {
   const input = proposalInput(1);
   input.hotelOptions[0] = {
@@ -180,6 +204,12 @@ for (const count of [1, 3, 6, 10]) {
   assert.match(selectedHtml, new RegExp(`Print Route Hotel ${Math.min(count, 6)}`), "selected print HTML should include selected hotel");
   assert.match(selectedHtml, new RegExp(`Unique selected print description ${Math.min(count, 6)}`), "selected print HTML should include selected hotel details");
   assert.equal(/Unique selected print description [1-9]/g.test(selectedHtml.replace(`Unique selected print description ${Math.min(count, 6)}`, "")), false, "selected print mode should not render full detail descriptions for every hotel");
+  assert.match(selectedHtml, /gt63-print-flight-page/, "selected print mode should render a flights page when flight data exists");
+  assert.match(selectedHtml, /gt63-print-hotel-page/, "selected print mode should render a selected hotel page");
+  assert.match(selectedHtml, /gt63-print-services-page/, "selected print mode should render supplied service information");
+  assert.doesNotMatch(selectedHtml, /gt63-print-comparison/, "selected print mode should not render the comparison table");
+  assert.doesNotMatch(selectedHtml, /gt63-print-timeline-page/, "selected print mode should omit timeline page without canonical timeline data");
+  assert.doesNotMatch(selectedHtml, /gt63-print-experiences-page/, "selected print mode should omit experiences page without canonical experience data");
 
   const comparisonHtml = printRenderer.renderPrintProposal(input, { mode: "comparison", selectedHotelId: selectedId });
   assertStaticPrintHtml(comparisonHtml);
@@ -188,6 +218,17 @@ for (const count of [1, 3, 6, 10]) {
   }
   assert.doesNotMatch(comparisonHtml, /Unique selected print description/, "comparison print mode should not render full hotel detail panels");
 }
+
+const noFlightSelectedHtml = printRenderer.renderPrintProposal(proposalInputWithoutFlight(6), { mode: "selected", selectedHotelId: "print-hotel-6" });
+assertStaticPrintHtml(noFlightSelectedHtml);
+assert.doesNotMatch(noFlightSelectedHtml, /gt63-print-flight-page/, "selected print mode should omit flights page when no flight data exists");
+
+const richSelectedHtml = printRenderer.renderPrintProposal(proposalInputWithSelectedBrochureData(6), { mode: "selected", selectedHotelId: "print-hotel-6" });
+assertStaticPrintHtml(richSelectedHtml);
+assert.match(richSelectedHtml, /gt63-print-timeline-page/, "selected print mode should render timeline page when canonical timeline data exists");
+assert.match(richSelectedHtml, /gt63-print-experiences-page/, "selected print mode should render experiences page when canonical experience data exists");
+assert.match(richSelectedHtml, /Private Lagoon Dinner/, "selected print mode should render supplied optional experience title");
+assert.match(richSelectedHtml, /180 EUR/, "selected print mode should preserve supplied optional experience price");
 
 assert.match(serverJs, /app\.get\("\/api\/offers\/:id\/print"/, "server should expose a dedicated print route");
 assert.match(serverJs, /renderGt63PrintOfferHtml/, "server should render dedicated Print HTML through a separate wrapper");
