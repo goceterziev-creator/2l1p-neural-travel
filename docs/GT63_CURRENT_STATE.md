@@ -46,7 +46,7 @@ GT63 PRINT PRESENTATION MODE V1 = PASS / PRODUCTION VERIFIED / LOCKED
 
 Facts verified from git history, release report, or live checks on 2026-07-22:
 
-- GitHub main branch: verified aligned to `1c2be86d92ca025e29f52feada7c16255b80f4cb`.
+- At the Print V1 production verification checkpoint, GitHub main was aligned to implementation baseline `1c2be86d92ca025e29f52feada7c16255b80f4cb`.
 - Railway auto deploy: triggered by push to `main`; production checks confirmed the deployed behavior after the new build became active.
 - `/api/health`: live check returned `200`.
 - `/gt63-core/product/`: live check returned `200`.
@@ -122,7 +122,7 @@ Observation:
 
 Every completed milestone must update this file in the same commit or release marker.
 
-Repository HEAD and origin alignment must be verified through Git. This document records implementation and release milestones, not its own future correction commit hash.
+Current repository HEAD and origin alignment must be verified through Git. This document records historical implementation and release milestones, not its own future correction commit hash.
 
 ## New Chat Bootstrap
 
