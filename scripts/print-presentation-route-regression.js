@@ -11,6 +11,10 @@ const { spawn } = require("child_process");
 const printRenderer = require("../gt63-core/renderers/print-presentation");
 const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
 const printRendererJs = fs.readFileSync(path.join(__dirname, "..", "gt63-core", "renderers", "print-presentation.js"), "utf8");
+const debugRoute = (...args) => {
+  if (process.env.GT63_PRINT_ROUTE_DEBUG) console.log("[print-route-regression]", ...args);
+};
+const REGRESSION_HTTP_TIMEOUT_MS = 180000;
 
 function hotelOptions(count) {
   return Array.from({ length: count }, (_, index) => ({
@@ -89,6 +93,13 @@ function proposalInputWithSelectedImage(imageUrl) {
     selected: true
   };
   if (imageUrl !== undefined) input.hotelOptions[0].imageUrls = imageUrl ? [imageUrl] : [];
+  input.hotel = input.hotelOptions[0];
+  return input;
+}
+
+function proposalInputWithSelectedImages(imageUrls = []) {
+  const input = proposalInputWithSelectedImage("");
+  input.hotelOptions[0].imageUrls = imageUrls.filter(Boolean);
   input.hotel = input.hotelOptions[0];
   return input;
 }
@@ -236,6 +247,14 @@ assert.match(serverJs, /new URL\(`\/api\/offers\/\$\{encodeURIComponent\(offer\.
 assert.match(serverJs, /page\.goto\(printUrl\.toString\(\)/, "PDF endpoint should load the dedicated Print HTML route in Puppeteer");
 assert.match(serverJs, /waitUntil:\s*"domcontentloaded"/, "PDF endpoint should not let slow images block navigation readiness");
 assert.equal(/networkidle0/.test(serverJs), false, "PDF endpoint must not wait for networkidle0 because slow images are handled locally");
+assert.match(serverJs, /GT63_PRINT_IMAGE_DNS_TIMEOUT_MS\s*=\s*1500/, "PDF image DNS checks should be bounded");
+assert.match(serverJs, /GT63_PRINT_IMAGE_WAIT_MS\s*=\s*2000/, "PDF image completion wait should be bounded to 2000ms");
+assert.match(serverJs, /isGt63ApprovedLocalPrintImage/, "PDF image policy should allow only approved local static image paths");
+assert.match(serverJs, /addresses\.every\(isGt63PublicIpAddress\)/, "PDF image policy must reject hostnames with any private DNS result");
+assert.match(serverJs, /request\.url\(\)/, "PDF image policy should be applied to each intercepted request, including redirects");
+assert.match(serverJs, /fetchGt63PrintImageForPdf\(request\.url\(\), printUrl\.origin\)/, "PDF endpoint should fetch images through the bounded safe policy");
+assert.match(serverJs, /gt63PrintImageFetchCache/, "PDF image fetch results should be cached in-process to avoid serial repeated waits");
+assert.doesNotMatch(serverJs, /if \(request\.resourceType\(\) === "image"\) {\s*request\.abort\("blockedbyclient"\)/, "PDF endpoint must not blanket-abort all images before policy checks");
 assert.equal(/renderOfferHtml\(offer, \{ forPdf: true \}\)/.test(serverJs), false, "PDF endpoint must not use the interactive HTML pipeline");
 assert.match(serverJs, /\.gt63-print-cta[\s\S]*?break-inside:\s*avoid/, "Print CSS should keep CTA/contact block together");
 assert.match(serverJs, /--gt63-accent/, "Print CSS should define luxury print design tokens");
@@ -248,7 +267,7 @@ assert.match(serverJs, /\.gt63-print-page:last-child[\s\S]*?break-after:\s*auto/
 assert.match(printRendererJs, /Контакт с консултант/, "Print renderer should include contact text inside the CTA block");
 
 async function waitForHealth(baseUrl) {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  for (let attempt = 0; attempt < 360; attempt += 1) {
     try {
       const response = await fetch(`${baseUrl}/api/health`);
       if (response.ok) return;
@@ -261,7 +280,13 @@ async function waitForHealth(baseUrl) {
 }
 
 async function request(baseUrl, pathname) {
-  const response = await fetch(`${baseUrl}${pathname}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REGRESSION_HTTP_TIMEOUT_MS);
+  const response = await fetch(`${baseUrl}${pathname}`, { signal: controller.signal })
+    .catch((error) => {
+      throw new Error(`${pathname} request failed: ${error.message}`);
+    })
+    .finally(() => clearTimeout(timeout));
   const text = await response.text();
   let json = null;
   try {
@@ -273,7 +298,13 @@ async function request(baseUrl, pathname) {
 }
 
 async function requestBuffer(baseUrl, pathname) {
-  const response = await fetch(`${baseUrl}${pathname}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REGRESSION_HTTP_TIMEOUT_MS);
+  const response = await fetch(`${baseUrl}${pathname}`, { signal: controller.signal })
+    .catch((error) => {
+      throw new Error(`${pathname} request failed: ${error.message}`);
+    })
+    .finally(() => clearTimeout(timeout));
   const buffer = Buffer.from(await response.arrayBuffer());
   let json = null;
   try {
@@ -285,8 +316,34 @@ async function requestBuffer(baseUrl, pathname) {
 }
 
 function startImageServer() {
+  const fixtureJpg = fs.readFileSync(path.join(__dirname, "..", "public", "images", "hotels", "162f6716.jpg"));
   const server = http.createServer((req, res) => {
-    if (req.url === "/slow.jpg") return;
+    if (req.url === "/valid.jpg" || req.url === "/second.jpg") {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.end(fixtureJpg);
+      return;
+    }
+    if (req.url === "/slow.jpg") {
+      const timer = setTimeout(() => {
+        if (!res.writableEnded) {
+          res.setHeader("Content-Type", "image/jpeg");
+          res.end(fixtureJpg);
+        }
+      }, 10000);
+      if (typeof timer.unref === "function") timer.unref();
+      return;
+    }
+    if (req.url === "/redirect-private.jpg") {
+      res.statusCode = 302;
+      res.setHeader("Location", `http://127.0.0.1:${server.address().port}/valid.jpg`);
+      res.end();
+      return;
+    }
+    if (req.url === "/not-image.jpg") {
+      res.setHeader("Content-Type", "text/plain");
+      res.end("not an image");
+      return;
+    }
     if (req.url === "/404.jpg") {
       res.statusCode = 404;
       res.end("not found");
@@ -308,7 +365,23 @@ function startImageServer() {
 
 async function closeServer(server) {
   if (!server) return;
-  await new Promise((resolve) => server.close(resolve));
+  if (typeof server.closeAllConnections === "function") server.closeAllConnections();
+  if (typeof server.closeIdleConnections === "function") server.closeIdleConnections();
+  await Promise.race([
+    new Promise((resolve) => server.close(resolve)),
+    new Promise((resolve) => setTimeout(resolve, 3000))
+  ]);
+}
+
+async function closeChild(child) {
+  if (!child || child.exitCode !== null) return;
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill("SIGTERM");
+  await Promise.race([
+    exited,
+    new Promise((resolve) => setTimeout(resolve, 3000))
+  ]);
+  if (child.exitCode === null) child.kill("SIGKILL");
 }
 
 async function routeRegression() {
@@ -321,7 +394,24 @@ async function routeRegression() {
     proposalTemplate: { selected: "multi-hotel", recommended: "multi-hotel" }
   };
   const imageServer = await startImageServer();
+  const port = String(4600 + Math.floor(Math.random() * 500));
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const imageServerPort = new URL(imageServer.baseUrl).port;
+  const validPublicImageUrl = `http://gt63-valid-image.test:${imageServerPort}/valid.jpg`;
+  const secondValidPublicImageUrl = `http://gt63-valid-image.test:${imageServerPort}/second.jpg`;
+  const slowPublicImageUrl = `http://gt63-public-slow.test:${imageServerPort}/slow.jpg`;
+  const redirectPrivateImageUrl = `http://gt63-redirect-image.test:${imageServerPort}/redirect-private.jpg`;
   const imageOffers = [
+    ["OFF-IMAGE-VALID", proposalInputWithSelectedImage(validPublicImageUrl)],
+    ["OFF-IMAGE-MULTI-VALID", proposalInputWithSelectedImages([validPublicImageUrl, secondValidPublicImageUrl])],
+    ["OFF-IMAGE-STATIC", proposalInputWithSelectedImage(`${baseUrl}/images/hotels/162f6716.jpg`)],
+    ["OFF-IMAGE-REDIRECT-PRIVATE", proposalInputWithSelectedImage(redirectPrivateImageUrl)],
+    ["OFF-IMAGE-MIXED-DNS", proposalInputWithSelectedImage("https://gt63-mixed-image.test/mixed.jpg")],
+    ["OFF-IMAGE-DNS-TIMEOUT", proposalInputWithSelectedImage("https://gt63-dns-timeout.test/timeout.jpg")],
+    ["OFF-IMAGE-IPV6-PRIVATE", proposalInputWithSelectedImage(`http://[::1]:${imageServerPort}/valid.jpg`)],
+    ["OFF-IMAGE-SAME-ORIGIN-UNAPPROVED", proposalInputWithSelectedImage(`${baseUrl}/api/health`)],
+    ["OFF-IMAGE-NOT-IMAGE", proposalInputWithSelectedImage(`http://gt63-valid-image.test:${imageServerPort}/not-image.jpg`)],
+    ["OFF-IMAGE-SLOW-PUBLIC", proposalInputWithSelectedImages([slowPublicImageUrl, slowPublicImageUrl, slowPublicImageUrl])],
     ["OFF-IMAGE-SLOW", proposalInputWithSelectedImage(`${imageServer.baseUrl}/slow.jpg`)],
     ["OFF-IMAGE-404", proposalInputWithSelectedImage(`${imageServer.baseUrl}/404.jpg`)],
     ["OFF-IMAGE-INVALID", proposalInputWithSelectedImage("notaurl")],
@@ -345,11 +435,9 @@ async function routeRegression() {
     updatedAt: {}
   }, null, 2));
 
-  const port = String(4600 + Math.floor(Math.random() * 500));
-  const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ["server.js"], {
     cwd: path.join(__dirname, ".."),
-    stdio: "ignore",
+    stdio: process.env.GT63_PRINT_ROUTE_DEBUG ? "inherit" : "ignore",
     env: {
       ...process.env,
       PORT: port,
@@ -358,12 +446,25 @@ async function routeRegression() {
       DATA_DIR: tmpDir,
       REGRESSION_LIBRARY_DIR: path.join(tmpDir, "regression-library"),
       SOURCE_EVIDENCE_DIR: path.join(tmpDir, "source-evidence"),
-      GEMINI_INTAKE_TEST_DIR: path.join(tmpDir, "gemini-intake-test")
+      GEMINI_INTAKE_TEST_DIR: path.join(tmpDir, "gemini-intake-test"),
+      GT63_PRINT_IMAGE_DNS_FIXTURES: JSON.stringify({
+        "gt63-valid-image.test": ["93.184.216.34"],
+        "gt63-public-slow.test": ["93.184.216.34"],
+        "gt63-redirect-image.test": ["93.184.216.34"],
+        "gt63-mixed-image.test": ["93.184.216.34", "10.0.0.7"],
+        "gt63-dns-timeout.test": "timeout"
+      }),
+      GT63_PRINT_IMAGE_FETCH_HOST_OVERRIDES: JSON.stringify({
+        "gt63-valid-image.test": "127.0.0.1",
+        "gt63-public-slow.test": "127.0.0.1",
+        "gt63-redirect-image.test": "127.0.0.1"
+      })
     }
   });
 
   try {
     await waitForHealth(baseUrl);
+    debugRoute("health ok");
     const selected = await request(baseUrl, "/api/offers/OFF-PRINT-ROUTE/print?mode=selected&selectedHotelId=print-hotel-6");
     assert.equal(selected.response.status, 200, `selected print route should return 200, got ${selected.response.status}`);
     assertStaticPrintHtml(selected.text);
@@ -384,6 +485,7 @@ async function routeRegression() {
     assert.equal(invalidMode.response.status, 400, "invalid print mode should return 400");
     assert.equal(invalidMode.json?.error, "GT63_PRINT_INVALID_MODE", "invalid print mode should return controlled error code");
 
+    debugRoute("selected pdf");
     const selectedPdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?mode=selected&selectedHotelId=print-hotel-6");
     assert.equal(selectedPdf.response.status, 200, `selected PDF endpoint should return 200, got ${selectedPdf.response.status}: ${selectedPdf.text.slice(0, 200)}`);
     const selectedPdfText = assertValidPdf(selectedPdf.buffer, "selected mode");
@@ -395,6 +497,7 @@ async function routeRegression() {
     assert.doesNotMatch(selectedPdfText.text, /Предпочитам този хотел|Изпрати избора в WhatsApp|Затвори|Напред|Назад/, "selected PDF text should not contain interactive controls");
     assert.ok(selectedPdfText.pageCount <= 5, "selected PDF should not create an excessive or likely blank trailing page");
 
+    debugRoute("comparison pdf");
     const comparisonPdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?mode=comparison&selectedHotelId=print-hotel-6");
     assert.equal(comparisonPdf.response.status, 200, `comparison PDF endpoint should return 200, got ${comparisonPdf.response.status}: ${comparisonPdf.text.slice(0, 200)}`);
     const comparisonPdfText = assertValidPdf(comparisonPdf.buffer, "comparison mode");
@@ -412,7 +515,55 @@ async function routeRegression() {
     assert.equal(invalidModePdf.response.status, 400, "invalid mode should return 400 from PDF endpoint");
     assert.equal(invalidModePdf.json?.error, "GT63_PRINT_INVALID_MODE", "PDF endpoint should preserve invalid mode error code");
 
-    for (const id of ["OFF-IMAGE-SLOW", "OFF-IMAGE-404", "OFF-IMAGE-INVALID", "OFF-IMAGE-DNS", "OFF-IMAGE-EMPTY"]) {
+    debugRoute("valid image pdf");
+    const validImagePdf = await requestBuffer(baseUrl, "/api/offers/OFF-IMAGE-VALID/pdf?mode=selected&selectedHotelId=image-test-hotel");
+    assert.equal(validImagePdf.response.status, 200, `valid image PDF should return 200, got ${validImagePdf.response.status}: ${validImagePdf.text.slice(0, 200)}`);
+    assertValidPdf(validImagePdf.buffer, "valid image");
+    assert.ok(
+      validImagePdf.buffer.length > selectedPdf.buffer.length + 500,
+      `valid public image should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${validImagePdf.buffer.length}`
+    );
+
+    debugRoute("static image pdf");
+    const staticImagePdf = await requestBuffer(baseUrl, "/api/offers/OFF-IMAGE-STATIC/pdf?mode=selected&selectedHotelId=image-test-hotel");
+    assert.equal(staticImagePdf.response.status, 200, `approved static image PDF should return 200, got ${staticImagePdf.response.status}: ${staticImagePdf.text.slice(0, 200)}`);
+    assertValidPdf(staticImagePdf.buffer, "approved static image");
+    assert.ok(
+      staticImagePdf.buffer.length > selectedPdf.buffer.length + 500,
+      `approved same-origin static image should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${staticImagePdf.buffer.length}`
+    );
+
+    debugRoute("multi valid image pdf");
+    const multiValidImagePdf = await requestBuffer(baseUrl, "/api/offers/OFF-IMAGE-MULTI-VALID/pdf?mode=selected&selectedHotelId=image-test-hotel");
+    assert.equal(multiValidImagePdf.response.status, 200, `multiple valid images PDF should return 200, got ${multiValidImagePdf.response.status}: ${multiValidImagePdf.text.slice(0, 200)}`);
+    assertValidPdf(multiValidImagePdf.buffer, "multiple valid images");
+    assert.ok(
+      multiValidImagePdf.buffer.length > selectedPdf.buffer.length + 500,
+      `multiple valid images should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${multiValidImagePdf.buffer.length}`
+    );
+
+    const slowStart = Date.now();
+    debugRoute("slow public pdf");
+    const slowPublicPdf = await requestBuffer(baseUrl, "/api/offers/OFF-IMAGE-SLOW-PUBLIC/pdf?mode=selected&selectedHotelId=image-test-hotel");
+    const slowElapsed = Date.now() - slowStart;
+    assert.equal(slowPublicPdf.response.status, 200, `several slow public images should degrade to PDF, got ${slowPublicPdf.response.status}: ${slowPublicPdf.text.slice(0, 200)}`);
+    assert.ok(slowElapsed < REGRESSION_HTTP_TIMEOUT_MS, `several slow images should remain bounded by the PDF request timeout; elapsed ${slowElapsed}ms`);
+    assertValidPdf(slowPublicPdf.buffer, "several slow public images");
+
+    for (const id of [
+      "OFF-IMAGE-SLOW",
+      "OFF-IMAGE-404",
+      "OFF-IMAGE-INVALID",
+      "OFF-IMAGE-DNS",
+      "OFF-IMAGE-EMPTY",
+      "OFF-IMAGE-REDIRECT-PRIVATE",
+      "OFF-IMAGE-MIXED-DNS",
+      "OFF-IMAGE-DNS-TIMEOUT",
+      "OFF-IMAGE-IPV6-PRIVATE",
+      "OFF-IMAGE-SAME-ORIGIN-UNAPPROVED",
+      "OFF-IMAGE-NOT-IMAGE"
+    ]) {
+      debugRoute("resilience pdf", id);
       const imagePdf = await requestBuffer(baseUrl, `/api/offers/${id}/pdf?mode=selected&selectedHotelId=image-test-hotel`);
       assert.equal(imagePdf.response.status, 200, `${id} selected PDF should survive unavailable image, got ${imagePdf.response.status}: ${imagePdf.text.slice(0, 200)}`);
       const imagePdfText = assertValidPdf(imagePdf.buffer, id);
@@ -420,7 +571,7 @@ async function routeRegression() {
       assert.match(imagePdfText.compactText, /Вашатаофертаеготова/, `${id} PDF text should still include CTA`);
     }
   } finally {
-    child.kill();
+    await closeChild(child);
     await closeServer(imageServer.server);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -428,7 +579,7 @@ async function routeRegression() {
 
 routeRegression()
   .then(() => {
-    console.log("PRINT PRESENTATION ROUTE REGRESSION PASS");
+    process.stdout.write("PRINT PRESENTATION ROUTE REGRESSION PASS\n", () => process.exit(0));
   })
   .catch((error) => {
     console.error(`PRINT PRESENTATION ROUTE REGRESSION FAIL: ${error.message}`);

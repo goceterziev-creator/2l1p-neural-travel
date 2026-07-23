@@ -7,6 +7,8 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const dns = require("dns");
+const net = require("net");
 const puppeteer = require("puppeteer");
 const multer = require("multer");
 const QRCode = require("qrcode");
@@ -67,6 +69,18 @@ console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const GT63_CORE_DIR = path.join(__dirname, "gt63-core");
 const SMART_IMPORT_FIXTURE_DIR = path.join(__dirname, "test", "fixtures", "smart-import");
+const GT63_PRINT_IMAGE_DNS_TIMEOUT_MS = 1500;
+const GT63_PRINT_IMAGE_WAIT_MS = 2000;
+const GT63_PRINT_IMAGE_DOM_SETTLE_MS = 5000;
+const GT63_PRINT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+const GT63_PRINT_IMAGE_VERDICT_TTL_MS = 5 * 60 * 1000;
+const GT63_PRINT_IMAGE_VERDICT_CACHE_LIMIT = 128;
+const GT63_PRINT_IMAGE_FETCH_CACHE_TTL_MS = 2 * 60 * 1000;
+const GT63_PRINT_IMAGE_FETCH_CACHE_LIMIT = 32;
+let gt63PrintImageDnsFixtureCache = null;
+let gt63PrintImageFetchHostOverrideCache = null;
+const gt63PrintImageVerdictCache = new Map();
+const gt63PrintImageFetchCache = new Map();
 console.log("SERVING FROM:", PUBLIC_DIR);
 if (BETA_AUTH_BYPASS) {
   console.warn("GT63 BETA AUTH BYPASS ENABLED: admin pages and APIs use bootstrap admin context without login.");
@@ -6380,6 +6394,202 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
 </html>`;
 }
 
+function parseGt63PrintImageDnsFixtures() {
+  if (gt63PrintImageDnsFixtureCache !== null) return gt63PrintImageDnsFixtureCache;
+  try {
+    gt63PrintImageDnsFixtureCache = process.env.GT63_PRINT_IMAGE_DNS_FIXTURES
+      ? JSON.parse(process.env.GT63_PRINT_IMAGE_DNS_FIXTURES)
+      : {};
+  } catch (error) {
+    console.warn("GT63 print image DNS fixtures ignored:", error.message);
+    gt63PrintImageDnsFixtureCache = {};
+  }
+  return gt63PrintImageDnsFixtureCache;
+}
+
+function parseGt63PrintImageFetchHostOverrides() {
+  if (gt63PrintImageFetchHostOverrideCache !== null) return gt63PrintImageFetchHostOverrideCache;
+  try {
+    gt63PrintImageFetchHostOverrideCache = process.env.GT63_PRINT_IMAGE_FETCH_HOST_OVERRIDES
+      ? JSON.parse(process.env.GT63_PRINT_IMAGE_FETCH_HOST_OVERRIDES)
+      : {};
+  } catch (error) {
+    console.warn("GT63 print image fetch host overrides ignored:", error.message);
+    gt63PrintImageFetchHostOverrideCache = {};
+  }
+  return gt63PrintImageFetchHostOverrideCache;
+}
+
+function isGt63PrivateIpv4(address) {
+  const parts = String(address || "").split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+  const [a, b] = parts;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a >= 224) return true;
+  return false;
+}
+
+function isGt63PrivateIpv6(address) {
+  const value = String(address || "").toLowerCase().replace(/%.+$/, "");
+  if (!value || value === "::" || value === "::1") return true;
+  if (value.startsWith("fc") || value.startsWith("fd")) return true;
+  if (/^fe[89ab]/.test(value)) return true;
+  if (value.startsWith("ff")) return true;
+  const mapped = value.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return isGt63PrivateIpv4(mapped[1]);
+  if (value.startsWith("2001:db8")) return true;
+  return false;
+}
+
+function isGt63PublicIpAddress(address) {
+  const family = net.isIP(address);
+  if (family === 4) return !isGt63PrivateIpv4(address);
+  if (family === 6) return !isGt63PrivateIpv6(address);
+  return false;
+}
+
+function isGt63ApprovedLocalPrintImage(url, printOrigin) {
+  if (!printOrigin || url.origin !== printOrigin) return false;
+  return /^\/images\/[A-Za-z0-9._~!$&'()*+,;=:@/%-]+\.(?:png|jpe?g|webp|gif|avif)$/i.test(url.pathname);
+}
+
+function cacheGt63PrintImageVerdict(key, value) {
+  if (gt63PrintImageVerdictCache.size >= GT63_PRINT_IMAGE_VERDICT_CACHE_LIMIT) {
+    const firstKey = gt63PrintImageVerdictCache.keys().next().value;
+    if (firstKey) gt63PrintImageVerdictCache.delete(firstKey);
+  }
+  gt63PrintImageVerdictCache.set(key, { value, expiresAt: Date.now() + GT63_PRINT_IMAGE_VERDICT_TTL_MS });
+  return value;
+}
+
+async function resolveGt63PrintImageHost(hostname) {
+  const fixtures = parseGt63PrintImageDnsFixtures();
+  if (Object.prototype.hasOwnProperty.call(fixtures, hostname)) {
+    const fixture = fixtures[hostname];
+    if (fixture === "timeout") {
+      await new Promise((resolve) => setTimeout(resolve, GT63_PRINT_IMAGE_DNS_TIMEOUT_MS + 25));
+      throw new Error("DNS fixture timeout");
+    }
+    if (fixture === "error") throw new Error("DNS fixture failure");
+    return (Array.isArray(fixture) ? fixture : [fixture]).map((address) => ({ address: String(address) }));
+  }
+
+  return Promise.race([
+    dns.promises.lookup(hostname, { all: true, verbatim: true }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("DNS lookup timeout")), GT63_PRINT_IMAGE_DNS_TIMEOUT_MS))
+  ]);
+}
+
+async function isGt63AllowedPublicPrintImageHost(hostname) {
+  const host = String(hostname || "").toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
+  if (!host || host === "localhost" || host.endsWith(".localhost")) return false;
+  const literalFamily = net.isIP(host);
+  if (literalFamily) return isGt63PublicIpAddress(host);
+
+  const cacheKey = `host:${host}`;
+  const cached = gt63PrintImageVerdictCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  try {
+    const records = await resolveGt63PrintImageHost(host);
+    const addresses = records.map((record) => record.address).filter(Boolean);
+    const allowed = addresses.length > 0 && addresses.every(isGt63PublicIpAddress);
+    return cacheGt63PrintImageVerdict(cacheKey, allowed);
+  } catch (error) {
+    console.warn(`GT63 print PDF image host blocked after DNS check: ${host} (${error.message})`);
+    return cacheGt63PrintImageVerdict(cacheKey, false);
+  }
+}
+
+async function isGt63AllowedPrintImageUrl(rawUrl, printOrigin) {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (isGt63ApprovedLocalPrintImage(url, printOrigin)) return true;
+  if (!["https:", "http:"].includes(url.protocol)) return false;
+  return isGt63AllowedPublicPrintImageHost(url.hostname);
+}
+
+function gt63PrintImageFetchUrl(url) {
+  const overrides = parseGt63PrintImageFetchHostOverrides();
+  const override = overrides[url.hostname];
+  if (!override) return url.toString();
+  const fetchUrl = new URL(url.toString());
+  fetchUrl.hostname = String(override);
+  return fetchUrl.toString();
+}
+
+function cacheGt63PrintImageFetchResult(key, value) {
+  if (gt63PrintImageFetchCache.size >= GT63_PRINT_IMAGE_FETCH_CACHE_LIMIT) {
+    const firstKey = gt63PrintImageFetchCache.keys().next().value;
+    if (firstKey) gt63PrintImageFetchCache.delete(firstKey);
+  }
+  gt63PrintImageFetchCache.set(key, { value, expiresAt: Date.now() + GT63_PRINT_IMAGE_FETCH_CACHE_TTL_MS });
+  return value;
+}
+
+async function fetchGt63PrintImageForPdf(rawUrl, printOrigin, redirectDepth = 0) {
+  const cacheKey = redirectDepth === 0 ? `image:${rawUrl}` : "";
+  if (cacheKey) {
+    const cached = gt63PrintImageFetchCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+  }
+
+  const pending = fetchGt63PrintImageForPdfUncached(rawUrl, printOrigin, redirectDepth);
+  if (cacheKey) cacheGt63PrintImageFetchResult(cacheKey, pending);
+  const result = await pending;
+  if (cacheKey) cacheGt63PrintImageFetchResult(cacheKey, result);
+  return result;
+}
+
+async function fetchGt63PrintImageForPdfUncached(rawUrl, printOrigin, redirectDepth = 0) {
+  if (redirectDepth > 3) return null;
+  const allowed = await isGt63AllowedPrintImageUrl(rawUrl, printOrigin);
+  if (!allowed) return null;
+
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GT63_PRINT_IMAGE_WAIT_MS);
+  try {
+    const response = await fetch(gt63PrintImageFetchUrl(url), {
+      redirect: "manual",
+      signal: controller.signal
+    });
+    if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
+      const nextUrl = new URL(response.headers.get("location"), url).toString();
+      return fetchGt63PrintImageForPdf(nextUrl, printOrigin, redirectDepth + 1);
+    }
+    if (!response.ok) return null;
+    const contentType = String(response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    if (!contentType.startsWith("image/")) return null;
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > GT63_PRINT_IMAGE_MAX_BYTES) return null;
+    const body = Buffer.from(await response.arrayBuffer());
+    if (!body.length || body.length > GT63_PRINT_IMAGE_MAX_BYTES) return null;
+    return { contentType, body };
+  } catch (error) {
+    console.warn(`GT63 print PDF image fetch skipped: ${rawUrl} (${error.message})`);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function renderOfferHtml(offer, options = {}) {
   const registryHtml = renderGt63RegistryOfferHtml(offer, options);
   if (registryHtml) return registryHtml;
@@ -8541,9 +8751,25 @@ writeDb(db);
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 1800 });
     await page.setRequestInterception(true);
-    page.on("request", (request) => {
+    page.on("request", async (request) => {
       if (request.resourceType() === "image") {
-        request.abort("blockedbyclient").catch(() => {});
+        const imageResponse = await fetchGt63PrintImageForPdf(request.url(), printUrl.origin).catch((error) => {
+          console.warn(`GT63 print PDF image blocked after fetch policy error: ${request.url()} (${error.message})`);
+          return null;
+        });
+        if (!imageResponse) {
+          request.abort("blockedbyclient").catch(() => {});
+          return;
+        }
+        request.respond({
+          status: 200,
+          headers: {
+            "Content-Type": imageResponse.contentType,
+            "Content-Length": String(imageResponse.body.length),
+            "Cache-Control": "no-store"
+          },
+          body: imageResponse.body
+        }).catch(() => {});
         return;
       }
       request.continue().catch(() => {});
@@ -8570,39 +8796,41 @@ writeDb(db);
 
     await page.evaluate(async () => {
       if (document.fonts?.ready) await document.fonts.ready;
+    });
+    const hasPendingImages = await page.evaluate(() => Array.from(document.images || []).some((image) => !(image.complete && image.naturalWidth > 0)));
+    if (hasPendingImages) {
+      await page.waitForFunction(
+        () => Array.from(document.images || []).every((image) => image.complete),
+        { timeout: GT63_PRINT_IMAGE_DOM_SETTLE_MS, polling: 100 }
+      ).catch(() => {});
+      await page.evaluate(() => window.stop());
+    }
+    await page.evaluate(() => {
       const images = Array.from(document.images || []);
-      await Promise.all(images.map((image) => {
-        if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+      images.forEach((image) => {
         const hideUnavailableImage = () => {
           image.removeAttribute("src");
           image.alt = "";
           image.setAttribute("data-print-image-unavailable", "true");
           image.style.display = "none";
+          const frame = image.closest(".gt63-print-image-frame");
+          if (frame) {
+            frame.classList.add("is-placeholder", "has-unavailable-image");
+            if (!frame.querySelector("[data-print-image-placeholder]")) {
+              const placeholder = document.createElement("span");
+              placeholder.setAttribute("data-print-image-placeholder", "true");
+              placeholder.textContent = "Снимка за потвърждение";
+              frame.appendChild(placeholder);
+            }
+          }
           const wrapper = image.closest(".gt63-print-selected-details");
           if (wrapper) wrapper.classList.add("without-image");
         };
-        if (image.complete && image.naturalWidth <= 0) {
+        if (!image.complete || image.naturalWidth <= 0) {
+          console.warn(`GT63 print PDF image skipped after bounded wait: ${image.currentSrc || image.src || "unknown"}`);
           hideUnavailableImage();
-          return Promise.resolve();
         }
-        return new Promise((resolve) => {
-          const timeout = setTimeout(() => {
-            console.warn(`GT63 print PDF image skipped after timeout: ${image.currentSrc || image.src || "unknown"}`);
-            hideUnavailableImage();
-            resolve();
-          }, 12000);
-          image.addEventListener("load", () => {
-            clearTimeout(timeout);
-            resolve();
-          }, { once: true });
-          image.addEventListener("error", () => {
-            clearTimeout(timeout);
-            console.warn(`GT63 print PDF image skipped after load failure: ${image.currentSrc || image.src || "unknown"}`);
-            hideUnavailableImage();
-            resolve();
-          }, { once: true });
-        });
-      }));
+      });
     });
 
     const pdfBuffer = await page.pdf({
