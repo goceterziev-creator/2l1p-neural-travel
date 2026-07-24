@@ -31,6 +31,21 @@
     return text(value, "");
   }
 
+  function formatPrintDateTime(value) {
+    const raw = nonEmpty(value);
+    if (!raw) return "";
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/);
+    if (!match) return localize(raw);
+    const months = [
+      "януари", "февруари", "март", "април", "май", "юни",
+      "юли", "август", "септември", "октомври", "ноември", "декември"
+    ];
+    const year = match[1];
+    const month = months[Number(match[2]) - 1] || match[2];
+    const day = String(Number(match[3]));
+    return `${day} ${month} ${year} · ${match[4]}:${match[5]}`;
+  }
+
   function imageUrl(hotel = {}) {
     const candidates = [
       ...(Array.isArray(hotel.imageUrls) ? hotel.imageUrls : []),
@@ -42,6 +57,19 @@
       hotel.thumbnail
     ].map((item) => String(item || "").trim()).filter(Boolean);
     return candidates.find((url) => /^https?:\/\//i.test(url)) || "";
+  }
+
+  function imageUrls(item = {}, limit = 3) {
+    const candidates = [
+      ...(Array.isArray(item.imageUrls) ? item.imageUrls : []),
+      ...(Array.isArray(item.images) ? item.images : []),
+      item.heroImage,
+      item.image,
+      item.imageUrl,
+      item.photo,
+      item.thumbnail
+    ].map((value) => String(value || "").trim()).filter((value) => /^https?:\/\//i.test(value));
+    return [...new Set(candidates)].slice(0, limit);
   }
 
   function hotelUrl(hotel = {}) {
@@ -101,16 +129,16 @@
     return `<dl class="gt63-print-fact-grid ${escapeHtml(className)}">${cards}</dl>`;
   }
 
-  function imageFrame(image, alt, label = "") {
+  function imageFrame(image, alt, label = "", className = "") {
     if (!image) {
       return `
-        <div class="gt63-print-image-frame is-placeholder" aria-label="Снимка за потвърждение">
+        <div class="gt63-print-image-frame is-placeholder ${escapeHtml(className)}" aria-label="Снимка за потвърждение">
           <span>Снимка за потвърждение</span>
         </div>
       `;
     }
     return `
-      <figure class="gt63-print-image-frame">
+      <figure class="gt63-print-image-frame ${escapeHtml(className)}">
         <img src="${escapeHtml(image)}" alt="${escapeHtml(alt || "Снимка към офертата")}">
         ${label ? `<figcaption>${escapeHtml(label)}</figcaption>` : ""}
       </figure>
@@ -122,30 +150,51 @@
     const destination = text(input.destination?.name || input.destination?.requested || input.content?.heroTitle, "Персонална оферта");
     const hotelName = text(hotel.name, "Избран хотел");
     const heroImage = imageUrl(hotel);
-    const summary = factGrid([
-      { label: "Хотел", value: hotelName },
-      { label: "Период", value: viewModel.travelDates },
-      { label: "Пътуващи", value: input.client?.travelers },
-      { label: "Изхранване", value: viewModel.selectedMealPlan },
-      { label: "Режим", value: mode === "comparison" ? "Сравнение на варианти" : "Избран хотел" }
-    ], "is-cover");
+    const clientName = nonEmpty(input.client?.name || input.client?.displayName || input.clientName);
+    const preparedFor = clientName ? `Prepared exclusively for ${clientName}` : "Prepared exclusively for your journey";
+    const meta = [viewModel.travelDates, input.client?.travelers ? `${input.client.travelers} travelers` : ""].filter(Boolean).join(" · ");
 
-    return printPage("gt63-print-cover", `
+    return printPage(`gt63-print-cover gt63-print-cover-fullbleed ${heroImage ? "has-cover-image" : "without-cover-image"}`, `
+      <figure class="gt63-print-image-frame gt63-print-cover-art ${heroImage ? "" : "is-placeholder"}">
+        ${heroImage ? `<img class="gt63-print-cover-hero" src="${escapeHtml(heroImage)}" alt="${escapeHtml(`Cover image for ${hotelName}`)}">` : `<span data-print-image-placeholder="true">Journey image for confirmation</span>`}
+      </figure>
+      <div class="gt63-print-cover-shade"></div>
       <header class="gt63-print-cover-copy">
         <p class="gt63-print-brand">AYA Travel · GT63</p>
-        <p class="gt63-print-kicker">Луксозна PDF презентация</p>
+        <p class="gt63-print-kicker">Luxury Journey Book</p>
         <h1>${escapeHtml(destination)}</h1>
         <p class="gt63-print-subtitle">${escapeHtml(hotelName)}</p>
+        <p class="gt63-print-cover-prepared">${escapeHtml(preparedFor)}</p>
+        ${meta ? `<p class="gt63-print-cover-meta">${escapeHtml(localize(meta))}</p>` : ""}
+        <p class="gt63-print-cover-mode">${escapeHtml(mode === "comparison" ? "Comparison edition" : "Selected residence edition")}</p>
       </header>
-      <div class="gt63-print-cover-layout">
-        ${imageFrame(heroImage, `Снимка на ${hotelName}`, hotelName)}
-        <aside class="gt63-print-price-panel">
-          <p>Обща пакетна цена</p>
-          <strong>${escapeHtml(viewModel.selectedPayload.priceDisplay)}</strong>
-          <span>Офертата подлежи на финално потвърждение на наличност и условия.</span>
-        </aside>
-      </div>
-      ${summary}
+    `);
+  }
+
+  function journeyIntroductionPage(viewModel, input = {}) {
+    const hotel = viewModel.selectedHotel || {};
+    const destination = text(input.destination?.name || input.destination?.requested || input.content?.heroTitle, "");
+    const facts = factGrid([
+      { label: "Destination", value: destination },
+      { label: "Selected residence", value: hotel.name },
+      { label: "Travel period", value: viewModel.travelDates },
+      { label: "Travelers", value: input.client?.travelers },
+      { label: "Board basis", value: viewModel.selectedMealPlan }
+    ], "is-compact");
+    const reasons = (viewModel.selectedRecommendationReasons || []).slice(0, 3);
+    const reasonList = reasons.length ? `
+      <ul class="gt63-print-reason-list gt63-print-intro-reasons">
+        ${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}
+      </ul>
+    ` : "";
+    return contentPage("gt63-print-intro-page", `
+      <section class="gt63-print-intro">
+        <p class="gt63-print-kicker">Journey Introduction</p>
+        <h2>${escapeHtml(destination || "Your Journey")}</h2>
+        <p class="gt63-print-editorial-lead">This Journey Book brings the selected residence, travel rhythm and investment into one clear private presentation.</p>
+        ${facts}
+        ${reasonList}
+      </section>
     `);
   }
 
@@ -186,7 +235,7 @@
             <article class="gt63-print-segment">
               <strong>${escapeHtml(localize([segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Полетен сегмент"))}</strong>
               <span>${escapeHtml(text(segment.from || segment.departureAirport, ""))} → ${escapeHtml(text(segment.to || segment.arrivalAirport, ""))}</span>
-              <span>${escapeHtml(localize(text(segment.departure || segment.date, "")))}${segment.arrival ? ` → ${escapeHtml(localize(segment.arrival))}` : ""}</span>
+              <span>${escapeHtml(formatPrintDateTime(segment.departure || segment.date))}${segment.arrival ? ` → ${escapeHtml(formatPrintDateTime(segment.arrival))}` : ""}</span>
               ${segment.duration ? `<small>${escapeHtml(localize(segment.duration))}</small>` : ""}
             </article>
           `).join("")}
@@ -197,7 +246,8 @@
 
   function selectedHotelDetails(viewModel) {
     const hotel = viewModel.selectedHotel || {};
-    const image = imageUrl(hotel);
+    const images = imageUrls(hotel, 3);
+    const image = images[0] || "";
     const url = hotelUrl(hotel);
     const description = localize(text(hotel.description, "Описание на хотела за потвърждение."));
     const facts = factGrid([
@@ -210,12 +260,19 @@
 
     return editorialSection("gt63-print-selected-details", "Избран хотел", text(hotel.name, "Избран хотел за потвърждение"), `
       <div class="gt63-print-editorial-grid">
+        <div class="gt63-print-hotel-imagery">
+          ${imageFrame(image, "Снимка на избрания хотел", "", "is-dominant")}
+          ${images.length > 1 ? `
+            <div class="gt63-print-hotel-thumbs">
+              ${images.slice(1, 3).map((thumb, index) => imageFrame(thumb, `Допълнителна снимка ${index + 1}`, "", "is-thumb")).join("")}
+            </div>
+          ` : ""}
+        </div>
         <div>
           <p>${escapeHtml(description)}</p>
           ${facts}
           ${url ? `<p class="gt63-print-link">Хотел: ${escapeHtml(url)}</p>` : ""}
         </div>
-        ${imageFrame(image, "Снимка на избрания хотел", text(hotel.name, ""))}
       </div>
     `);
   }
@@ -332,6 +389,39 @@
     `);
   }
 
+  function investmentPage(viewModel, input = {}) {
+    const hotel = viewModel.selectedHotel || {};
+    const services = [
+      { label: "Selected residence", value: hotel.name },
+      { label: "Room", value: hotel.room || hotel.roomType },
+      { label: "Board basis", value: viewModel.selectedMealPlan },
+      { label: "Flights", value: input.flight?.airline || input.flight?.route },
+      { label: "Baggage", value: input.flight?.baggage },
+      { label: "Transfer", value: input.transfer?.status || input.transfer?.type || input.transfer?.route || input.transfer?.description }
+    ].filter((item) => nonEmpty(item.value));
+    return contentPage("gt63-print-investment-page", `
+      <section class="gt63-print-investment">
+        <p class="gt63-print-kicker">Journey Investment</p>
+        <h2>Your Journey Investment</h2>
+        <div class="gt63-print-investment-amount">
+          <span>Total package price</span>
+          <strong>${escapeHtml(viewModel.selectedPayload.priceDisplay)}</strong>
+          <p>Availability, final conditions and reservation status require confirmation before booking.</p>
+        </div>
+        ${services.length ? `
+          <div class="gt63-print-investment-list">
+            ${services.map((service) => `
+              <article>
+                <span>${escapeHtml(service.label)}</span>
+                <strong>${escapeHtml(localize(service.value))}</strong>
+              </article>
+            `).join("")}
+          </div>
+        ` : ""}
+      </section>
+    `);
+  }
+
   function comparisonTable(viewModel) {
     if (!viewModel.hotelOptions.length) return "";
     const rows = viewModel.hotelOptions.map((hotel, index) => {
@@ -387,14 +477,27 @@
 
   function ctaBlock(viewModel, input = {}) {
     const contactPhone = nonEmpty(input.contact?.whatsappPhone || input.contact?.phone);
+    const contactEmail = nonEmpty(input.contact?.email);
+    const agency = nonEmpty(input.contact?.agency || input.agency?.name || input.brand?.agencyName || "GT63");
     return `
-      <section class="gt63-print-cta">
-        <p class="gt63-print-kicker">Следваща стъпка</p>
-        <h2>Вашата оферта е готова.</h2>
-        <p>Потвърдете избрания хотел, за да проверим актуалната наличност и финалните условия преди резервация.</p>
-        <div class="gt63-print-cta-row">
-          <strong>${escapeHtml(viewModel.selectedPayload.priceDisplay)}</strong>
-          ${contactPhone ? `<span>Контакт с консултант: ${escapeHtml(contactPhone)}</span>` : ""}
+      <section class="gt63-print-closing">
+        <div class="gt63-print-closing-mark" aria-hidden="true">GT63</div>
+        <div class="gt63-print-closing-copy">
+          <p class="gt63-print-kicker">Your next journey begins here</p>
+          <h2>Вашето пътуване започва оттук.</h2>
+          <p>Потвърдете избрания хотел, за да проверим актуалната наличност и финалните условия преди резервация.</p>
+        </div>
+        <div class="gt63-print-closing-footer">
+          <div>
+            <span>Prepared by</span>
+            <strong>${escapeHtml(agency)}</strong>
+          </div>
+          <div>
+            <span>Journey investment</span>
+            <strong>${escapeHtml(viewModel.selectedPayload.priceDisplay)}</strong>
+          </div>
+          ${contactPhone ? `<div><span>Контакт с консултант</span><strong>${escapeHtml(contactPhone)}</strong></div>` : ""}
+          ${contactEmail ? `<div><span>Email</span><strong>${escapeHtml(contactEmail)}</strong></div>` : ""}
         </div>
       </section>
     `;
@@ -404,17 +507,19 @@
     const viewModel = viewModelApi.buildPresentationViewModel(input, options);
     const mode = viewModel.contract.mode;
     const selectedPages = [
-      contentPage("gt63-print-flight-page", flightBlock(input)),
+      journeyIntroductionPage(viewModel, input),
       contentPage("gt63-print-hotel-page", [
         recommendationBlock(viewModel),
         selectedHotelDetails(viewModel)
       ].filter(Boolean).join("")),
+      contentPage("gt63-print-flight-page", flightBlock(input)),
       contentPage("gt63-print-services-page", [
         includedServicesBlock(viewModel, input),
         transferBlock(input)
       ].filter(Boolean).join("")),
       contentPage("gt63-print-timeline-page", timelineBlock(input)),
-      contentPage("gt63-print-experiences-page", optionalExperiencesBlock(input))
+      contentPage("gt63-print-experiences-page", optionalExperiencesBlock(input)),
+      investmentPage(viewModel, input)
     ].filter(Boolean).join("");
     const comparisonContent = [
       recommendationBlock(viewModel),

@@ -108,8 +108,10 @@ function assertStaticPrintHtml(html) {
   assert.match(html, /gt63-print-proposal/, "print HTML should use the print renderer shell");
   assert.match(html, /gt63-print-page/, "print HTML should use the page-based print shell");
   assert.match(html, /gt63-print-cover/, "print HTML should include the cover page foundation");
+  assert.match(html, /gt63-print-cover-fullbleed/, "print HTML should use a full-bleed Journey Book cover");
   assert.match(html, /gt63-print-image-frame/, "print HTML should use the print image frame system");
   assert.match(html, /gt63-print-final-page/, "print HTML should include a final CTA page shell");
+  assert.match(html, /gt63-print-closing/, "print HTML should include the editorial closing composition");
   assert.doesNotMatch(html, /<script\b/i, "print HTML must not depend on JavaScript");
   assert.doesNotMatch(html, /v11-prefer-option|v11-gallery-dialog|data-gallery-action|js-selected-option/i, "print HTML must not expose interactive controls");
   assert.doesNotMatch(html, /READY|REVIEW|MULTI-HOTEL BRIEF|Review proposal/i, "print HTML must not expose internal workflow labels");
@@ -216,8 +218,11 @@ for (const count of [1, 3, 6, 10]) {
   assert.match(selectedHtml, new RegExp(`Unique selected print description ${Math.min(count, 6)}`), "selected print HTML should include selected hotel details");
   assert.equal(/Unique selected print description [1-9]/g.test(selectedHtml.replace(`Unique selected print description ${Math.min(count, 6)}`, "")), false, "selected print mode should not render full detail descriptions for every hotel");
   assert.match(selectedHtml, /gt63-print-flight-page/, "selected print mode should render a flights page when flight data exists");
+  assert.match(selectedHtml, /gt63-print-intro-page/, "selected print mode should render a Journey Book introduction page");
   assert.match(selectedHtml, /gt63-print-hotel-page/, "selected print mode should render a selected hotel page");
   assert.match(selectedHtml, /gt63-print-services-page/, "selected print mode should render supplied service information");
+  assert.match(selectedHtml, /gt63-print-investment-page/, "selected print mode should render a dedicated journey investment page");
+  assert.doesNotMatch(selectedHtml, /gt63-print-cover-layout|gt63-print-price-panel/, "selected cover should not render dashboard-style layout or price panel");
   assert.doesNotMatch(selectedHtml, /gt63-print-comparison/, "selected print mode should not render the comparison table");
   assert.doesNotMatch(selectedHtml, /gt63-print-timeline-page/, "selected print mode should omit timeline page without canonical timeline data");
   assert.doesNotMatch(selectedHtml, /gt63-print-experiences-page/, "selected print mode should omit experiences page without canonical experience data");
@@ -256,7 +261,7 @@ assert.match(serverJs, /fetchGt63PrintImageForPdf\(request\.url\(\), printUrl\.o
 assert.match(serverJs, /gt63PrintImageFetchCache/, "PDF image fetch results should be cached in-process to avoid serial repeated waits");
 assert.doesNotMatch(serverJs, /if \(request\.resourceType\(\) === "image"\) {\s*request\.abort\("blockedbyclient"\)/, "PDF endpoint must not blanket-abort all images before policy checks");
 assert.equal(/renderOfferHtml\(offer, \{ forPdf: true \}\)/.test(serverJs), false, "PDF endpoint must not use the interactive HTML pipeline");
-assert.match(serverJs, /\.gt63-print-cta[\s\S]*?break-inside:\s*avoid/, "Print CSS should keep CTA/contact block together");
+assert.match(serverJs, /\.gt63-print-closing[\s\S]*?break-inside:\s*avoid/, "Print CSS should keep closing/contact block together");
 assert.match(serverJs, /--gt63-accent/, "Print CSS should define luxury print design tokens");
 assert.match(printRendererJs, /function printPage/, "Print renderer should use a reusable page shell");
 assert.match(printRendererJs, /function editorialSection/, "Print renderer should use reusable print section shells");
@@ -264,7 +269,18 @@ assert.match(printRendererJs, /function imageFrame/, "Print renderer should use 
 assert.match(serverJs, /\.gt63-print-page[\s\S]*?break-after:\s*page/, "Print CSS should define deterministic A4 page shells");
 assert.match(serverJs, /\.gt63-print-image-frame/, "Print CSS should define reusable print image frames");
 assert.match(serverJs, /\.gt63-print-page:last-child[\s\S]*?break-after:\s*auto/, "Print CSS should avoid a forced blank trailing page");
+assert.match(serverJs, /\.gt63-print-cover-hero[\s\S]*?object-fit:\s*cover/, "Print CSS should crop the cover as a cinematic full-page image");
+assert.match(serverJs, /\.gt63-print-cover-shade/, "Print CSS should provide controlled cover text readability overlay");
+assert.match(serverJs, /\.gt63-print-investment/, "Print CSS should define the Journey Investment page");
+assert.match(serverJs, /\.gt63-print-closing/, "Print CSS should define the premium editorial closing page");
+assert.doesNotMatch(serverJs, /\.gt63-print-cover[\s\S]{0,260}grid-template-rows:\s*auto 1fr auto/, "Print cover should not use the old summary-card grid composition");
 assert.match(printRendererJs, /Контакт с консултант/, "Print renderer should include contact text inside the CTA block");
+assert.match(printRendererJs, /Luxury Journey Book/, "Print renderer should label the document as a Journey Book");
+assert.match(printRendererJs, /Prepared exclusively for/, "Print renderer should support a restrained prepared-for line");
+assert.match(printRendererJs, /function journeyIntroductionPage/, "Print renderer should include a dedicated journey introduction page");
+assert.match(printRendererJs, /function investmentPage/, "Print renderer should include a dedicated investment page");
+assert.match(printRendererJs, /function formatPrintDateTime/, "Print renderer should human-format flight date-time values");
+assert.doesNotMatch(richSelectedHtml, /2027-03-28T06:10|2027-03-29T13:15|2027-04-08T22:55/, "selected print HTML should not expose raw ISO flight timestamps");
 
 async function waitForHealth(baseUrl) {
   for (let attempt = 0; attempt < 360; attempt += 1) {
@@ -282,7 +298,7 @@ async function waitForHealth(baseUrl) {
 async function request(baseUrl, pathname) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REGRESSION_HTTP_TIMEOUT_MS);
-  const response = await fetch(`${baseUrl}${pathname}`, { signal: controller.signal })
+  const response = await fetch(`${baseUrl}${pathname}`, { signal: controller.signal, headers: { Connection: "close" } })
     .catch((error) => {
       throw new Error(`${pathname} request failed: ${error.message}`);
     })
@@ -300,7 +316,7 @@ async function request(baseUrl, pathname) {
 async function requestBuffer(baseUrl, pathname) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REGRESSION_HTTP_TIMEOUT_MS);
-  const response = await fetch(`${baseUrl}${pathname}`, { signal: controller.signal })
+  const response = await fetch(`${baseUrl}${pathname}`, { signal: controller.signal, headers: { Connection: "close" } })
     .catch((error) => {
       throw new Error(`${pathname} request failed: ${error.message}`);
     })
@@ -384,47 +400,9 @@ async function closeChild(child) {
   if (child.exitCode === null) child.kill("SIGKILL");
 }
 
-async function routeRegression() {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gt63-print-route-"));
-  const dbFile = path.join(tmpDir, "database.json");
-  const offer = {
-    id: "OFF-PRINT-ROUTE",
-    destination: "Токио",
-    proposalInput: proposalInput(6),
-    proposalTemplate: { selected: "multi-hotel", recommended: "multi-hotel" }
-  };
-  const imageServer = await startImageServer();
-  const port = String(4600 + Math.floor(Math.random() * 500));
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const imageServerPort = new URL(imageServer.baseUrl).port;
-  const validPublicImageUrl = `http://gt63-valid-image.test:${imageServerPort}/valid.jpg`;
-  const secondValidPublicImageUrl = `http://gt63-valid-image.test:${imageServerPort}/second.jpg`;
-  const slowPublicImageUrl = `http://gt63-public-slow.test:${imageServerPort}/slow.jpg`;
-  const redirectPrivateImageUrl = `http://gt63-redirect-image.test:${imageServerPort}/redirect-private.jpg`;
-  const imageOffers = [
-    ["OFF-IMAGE-VALID", proposalInputWithSelectedImage(validPublicImageUrl)],
-    ["OFF-IMAGE-MULTI-VALID", proposalInputWithSelectedImages([validPublicImageUrl, secondValidPublicImageUrl])],
-    ["OFF-IMAGE-STATIC", proposalInputWithSelectedImage(`${baseUrl}/images/hotels/162f6716.jpg`)],
-    ["OFF-IMAGE-REDIRECT-PRIVATE", proposalInputWithSelectedImage(redirectPrivateImageUrl)],
-    ["OFF-IMAGE-MIXED-DNS", proposalInputWithSelectedImage("https://gt63-mixed-image.test/mixed.jpg")],
-    ["OFF-IMAGE-DNS-TIMEOUT", proposalInputWithSelectedImage("https://gt63-dns-timeout.test/timeout.jpg")],
-    ["OFF-IMAGE-IPV6-PRIVATE", proposalInputWithSelectedImage(`http://[::1]:${imageServerPort}/valid.jpg`)],
-    ["OFF-IMAGE-SAME-ORIGIN-UNAPPROVED", proposalInputWithSelectedImage(`${baseUrl}/api/health`)],
-    ["OFF-IMAGE-NOT-IMAGE", proposalInputWithSelectedImage(`http://gt63-valid-image.test:${imageServerPort}/not-image.jpg`)],
-    ["OFF-IMAGE-SLOW-PUBLIC", proposalInputWithSelectedImages([slowPublicImageUrl, slowPublicImageUrl, slowPublicImageUrl])],
-    ["OFF-IMAGE-SLOW", proposalInputWithSelectedImage(`${imageServer.baseUrl}/slow.jpg`)],
-    ["OFF-IMAGE-404", proposalInputWithSelectedImage(`${imageServer.baseUrl}/404.jpg`)],
-    ["OFF-IMAGE-INVALID", proposalInputWithSelectedImage("notaurl")],
-    ["OFF-IMAGE-DNS", proposalInputWithSelectedImage("https://gt63.invalid.example.test/missing.jpg")],
-    ["OFF-IMAGE-EMPTY", proposalInputWithSelectedImage("")]
-  ].map(([id, input]) => ({
-    id,
-    destination: "Токио",
-    proposalInput: input,
-    proposalTemplate: { selected: "multi-hotel", recommended: "multi-hotel" }
-  }));
+function writeRegressionDb(dbFile, offers = []) {
   fs.writeFileSync(dbFile, JSON.stringify({
-    offers: [offer, ...imageOffers],
+    offers,
     users: [],
     agencies: [],
     clients: [],
@@ -434,6 +412,32 @@ async function routeRegression() {
     schemaVersion: {},
     updatedAt: {}
   }, null, 2));
+}
+
+function printImageTestEnv(imageServer) {
+  return {
+    GT63_PRINT_IMAGE_DNS_FIXTURES: JSON.stringify({
+      "gt63-valid-image.test": ["93.184.216.34"],
+      "gt63-public-slow.test": ["93.184.216.34"],
+      "gt63-redirect-image.test": ["93.184.216.34"],
+      "gt63-mixed-image.test": ["93.184.216.34", "10.0.0.7"],
+      "gt63-dns-timeout.test": "timeout"
+    }),
+    GT63_PRINT_IMAGE_FETCH_HOST_OVERRIDES: JSON.stringify({
+      "gt63-valid-image.test": "127.0.0.1",
+      "gt63-public-slow.test": "127.0.0.1",
+      "gt63-redirect-image.test": "127.0.0.1"
+    })
+  };
+}
+
+async function withRegressionServer(label, offersFactory, fn, imageServer = null) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gt63-print-route-"));
+  const dbFile = path.join(tmpDir, "database.json");
+  const port = String(4600 + Math.floor(Math.random() * 500));
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const offers = offersFactory(baseUrl);
+  writeRegressionDb(dbFile, offers);
 
   const child = spawn(process.execPath, ["server.js"], {
     cwd: path.join(__dirname, ".."),
@@ -447,24 +451,96 @@ async function routeRegression() {
       REGRESSION_LIBRARY_DIR: path.join(tmpDir, "regression-library"),
       SOURCE_EVIDENCE_DIR: path.join(tmpDir, "source-evidence"),
       GEMINI_INTAKE_TEST_DIR: path.join(tmpDir, "gemini-intake-test"),
-      GT63_PRINT_IMAGE_DNS_FIXTURES: JSON.stringify({
-        "gt63-valid-image.test": ["93.184.216.34"],
-        "gt63-public-slow.test": ["93.184.216.34"],
-        "gt63-redirect-image.test": ["93.184.216.34"],
-        "gt63-mixed-image.test": ["93.184.216.34", "10.0.0.7"],
-        "gt63-dns-timeout.test": "timeout"
-      }),
-      GT63_PRINT_IMAGE_FETCH_HOST_OVERRIDES: JSON.stringify({
-        "gt63-valid-image.test": "127.0.0.1",
-        "gt63-public-slow.test": "127.0.0.1",
-        "gt63-redirect-image.test": "127.0.0.1"
-      })
+      ...printImageTestEnv(imageServer)
     }
   });
 
+  const startedAt = Date.now();
   try {
     await waitForHealth(baseUrl);
-    debugRoute("health ok");
+    debugRoute("health ok", label, `pid=${child.pid}`);
+    return await fn(baseUrl, { child, tmpDir, startedAt });
+  } catch (error) {
+    error.message = `${label}: ${error.message}`;
+    error.childPid = child.pid;
+    error.childExitCode = child.exitCode;
+    error.childSignalCode = child.signalCode;
+    throw error;
+  } finally {
+    await closeChild(child);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+function imageOfferFor(id, input) {
+  return {
+    id,
+    destination: "Токио",
+    proposalInput: input,
+    proposalTemplate: { selected: "multi-hotel", recommended: "multi-hotel" }
+  };
+}
+
+function imageInputForCase(id, baseUrl, imageServer) {
+  const imageServerPort = new URL(imageServer.baseUrl).port;
+  const validPublicImageUrl = `${baseUrl}/images/hotels/162f6716.jpg`;
+  const secondValidPublicImageUrl = `${baseUrl}/images/hotels/25475402.jpg`;
+  const slowPublicImageUrl = `http://gt63-public-slow.test:${imageServerPort}/slow.jpg`;
+  const redirectPrivateImageUrl = `http://gt63-redirect-image.test:${imageServerPort}/redirect-private.jpg`;
+
+  const inputs = {
+    "OFF-IMAGE-VALID": proposalInputWithSelectedImage(validPublicImageUrl),
+    "OFF-IMAGE-MULTI-VALID": proposalInputWithSelectedImages([validPublicImageUrl, secondValidPublicImageUrl]),
+    "OFF-IMAGE-STATIC": proposalInputWithSelectedImage(`${baseUrl}/images/hotels/162f6716.jpg`),
+    "OFF-IMAGE-REDIRECT-PRIVATE": proposalInputWithSelectedImage(redirectPrivateImageUrl),
+    "OFF-IMAGE-MIXED-DNS": proposalInputWithSelectedImage("https://gt63-mixed-image.test/mixed.jpg"),
+    "OFF-IMAGE-DNS-TIMEOUT": proposalInputWithSelectedImage("https://gt63-dns-timeout.test/timeout.jpg"),
+    "OFF-IMAGE-IPV6-PRIVATE": proposalInputWithSelectedImage(`http://[::1]:${imageServerPort}/valid.jpg`),
+    "OFF-IMAGE-SAME-ORIGIN-UNAPPROVED": proposalInputWithSelectedImage(`${baseUrl}/api/health`),
+    "OFF-IMAGE-NOT-IMAGE": proposalInputWithSelectedImage(`http://gt63-valid-image.test:${imageServerPort}/not-image.jpg`),
+    "OFF-IMAGE-SLOW-PUBLIC": proposalInputWithSelectedImages([slowPublicImageUrl, slowPublicImageUrl, slowPublicImageUrl]),
+    "OFF-IMAGE-SLOW": proposalInputWithSelectedImage(`${imageServer.baseUrl}/slow.jpg`),
+    "OFF-IMAGE-404": proposalInputWithSelectedImage(`${imageServer.baseUrl}/404.jpg`),
+    "OFF-IMAGE-INVALID": proposalInputWithSelectedImage("notaurl"),
+    "OFF-IMAGE-DNS": proposalInputWithSelectedImage("https://gt63.invalid.example.test/missing.jpg"),
+    "OFF-IMAGE-EMPTY": proposalInputWithSelectedImage("")
+  };
+  return inputs[id];
+}
+
+async function runImagePdfCase(id, imageServer, assertCase) {
+  return withRegressionServer(id, (baseUrl) => [
+    imageOfferFor(id, imageInputForCase(id, baseUrl, imageServer))
+  ], async (baseUrl) => {
+    debugRoute("isolated image pdf", id);
+    const startedAt = Date.now();
+    const imagePdf = await requestBuffer(baseUrl, `/api/offers/${id}/pdf?mode=selected&selectedHotelId=image-test-hotel`);
+    assert.equal(imagePdf.response.status, 200, `${id} selected PDF should return 200, got ${imagePdf.response.status}: ${imagePdf.text.slice(0, 200)}`);
+    await assertCase(imagePdf, Date.now() - startedAt);
+    return imagePdf;
+  }, imageServer);
+}
+
+async function routeRegression() {
+  const imageServer = await startImageServer();
+
+  try {
+    const onlyImageCase = String(process.env.GT63_PRINT_ROUTE_ONLY || "").trim();
+    if (onlyImageCase) {
+      await runImagePdfCase(onlyImageCase, imageServer, async (imagePdf) => {
+        const imagePdfText = assertValidPdf(imagePdf.buffer, onlyImageCase);
+        assert.match(imagePdfText.compactText, /ImageResilienceHotel/, `${onlyImageCase} PDF text should include selected hotel`);
+        assert.ok(imagePdf.buffer.length > 100000, `${onlyImageCase} PDF should include meaningful rendered PDF content`);
+      });
+      return;
+    }
+
+    const selectedPdf = await withRegressionServer("core-route-contract", () => [{
+      id: "OFF-PRINT-ROUTE",
+      destination: "Токио",
+      proposalInput: proposalInput(6),
+      proposalTemplate: { selected: "multi-hotel", recommended: "multi-hotel" }
+    }], async (baseUrl) => {
     const selected = await request(baseUrl, "/api/offers/OFF-PRINT-ROUTE/print?mode=selected&selectedHotelId=print-hotel-6");
     assert.equal(selected.response.status, 200, `selected print route should return 200, got ${selected.response.status}`);
     assertStaticPrintHtml(selected.text);
@@ -492,10 +568,11 @@ async function routeRegression() {
     assert.ok(selectedPdfText.pageCount >= 2, "selected PDF should use a deliberate page-based layout");
     assert.match(selectedPdfText.compactText, /PrintRouteHotel6/, `selected PDF text should include selected hotel; extracted: ${selectedPdfText.text.slice(0, 400)}`);
     assert.match(selectedPdfText.compactText, /Токио/, "selected PDF text should include destination");
-    assert.match(selectedPdfText.compactText, /Вашатаофертаеготова/, "selected PDF text should include CTA text");
-    assert.match(selectedPdfText.compactText, /Контактсконсултант/, "selected PDF text should include contact text in the CTA block");
+    assert.match(selectedPdfText.compactText, /Вашетопътуванезапочваоттук/, "selected PDF text should include premium closing text");
+    assert.match(selectedPdfText.compactText, /контактсконсултант/i, "selected PDF text should include contact text in the closing block");
+    assert.doesNotMatch(selectedPdfText.text, /2027-03-28T06:10|2027-03-29T13:15|2027-04-08T22:55/, "selected PDF should not expose raw ISO flight timestamps");
     assert.doesNotMatch(selectedPdfText.text, /Предпочитам този хотел|Изпрати избора в WhatsApp|Затвори|Напред|Назад/, "selected PDF text should not contain interactive controls");
-    assert.ok(selectedPdfText.pageCount <= 5, "selected PDF should not create an excessive or likely blank trailing page");
+    assert.ok(selectedPdfText.pageCount <= 8, "selected PDF should not create an excessive or likely blank trailing page");
 
     debugRoute("comparison pdf");
     const comparisonPdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?mode=comparison&selectedHotelId=print-hotel-6");
@@ -514,41 +591,38 @@ async function routeRegression() {
     const invalidModePdf = await requestBuffer(baseUrl, "/api/offers/OFF-PRINT-ROUTE/pdf?mode=gallery");
     assert.equal(invalidModePdf.response.status, 400, "invalid mode should return 400 from PDF endpoint");
     assert.equal(invalidModePdf.json?.error, "GT63_PRINT_INVALID_MODE", "PDF endpoint should preserve invalid mode error code");
+    return selectedPdf;
+    }, imageServer);
 
-    debugRoute("valid image pdf");
-    const validImagePdf = await requestBuffer(baseUrl, "/api/offers/OFF-IMAGE-VALID/pdf?mode=selected&selectedHotelId=image-test-hotel");
-    assert.equal(validImagePdf.response.status, 200, `valid image PDF should return 200, got ${validImagePdf.response.status}: ${validImagePdf.text.slice(0, 200)}`);
+    const validImagePdf = await runImagePdfCase("OFF-IMAGE-VALID", imageServer, async (validImagePdf) => {
     assertValidPdf(validImagePdf.buffer, "valid image");
     assert.ok(
       validImagePdf.buffer.length > selectedPdf.buffer.length + 500,
-      `valid public image should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${validImagePdf.buffer.length}`
+      `valid deterministic image should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${validImagePdf.buffer.length}`
     );
+    });
 
-    debugRoute("static image pdf");
-    const staticImagePdf = await requestBuffer(baseUrl, "/api/offers/OFF-IMAGE-STATIC/pdf?mode=selected&selectedHotelId=image-test-hotel");
-    assert.equal(staticImagePdf.response.status, 200, `approved static image PDF should return 200, got ${staticImagePdf.response.status}: ${staticImagePdf.text.slice(0, 200)}`);
+    await runImagePdfCase("OFF-IMAGE-STATIC", imageServer, async (staticImagePdf) => {
     assertValidPdf(staticImagePdf.buffer, "approved static image");
     assert.ok(
       staticImagePdf.buffer.length > selectedPdf.buffer.length + 500,
       `approved same-origin static image should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${staticImagePdf.buffer.length}`
     );
+    });
 
-    debugRoute("multi valid image pdf");
-    const multiValidImagePdf = await requestBuffer(baseUrl, "/api/offers/OFF-IMAGE-MULTI-VALID/pdf?mode=selected&selectedHotelId=image-test-hotel");
-    assert.equal(multiValidImagePdf.response.status, 200, `multiple valid images PDF should return 200, got ${multiValidImagePdf.response.status}: ${multiValidImagePdf.text.slice(0, 200)}`);
+    await runImagePdfCase("OFF-IMAGE-MULTI-VALID", imageServer, async (multiValidImagePdf) => {
     assertValidPdf(multiValidImagePdf.buffer, "multiple valid images");
     assert.ok(
       multiValidImagePdf.buffer.length > selectedPdf.buffer.length + 500,
-      `multiple valid images should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${multiValidImagePdf.buffer.length}`
+      `multiple deterministic valid images should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${multiValidImagePdf.buffer.length}`
     );
+    });
 
-    const slowStart = Date.now();
-    debugRoute("slow public pdf");
-    const slowPublicPdf = await requestBuffer(baseUrl, "/api/offers/OFF-IMAGE-SLOW-PUBLIC/pdf?mode=selected&selectedHotelId=image-test-hotel");
-    const slowElapsed = Date.now() - slowStart;
+    await runImagePdfCase("OFF-IMAGE-SLOW-PUBLIC", imageServer, async (slowPublicPdf, slowElapsed) => {
     assert.equal(slowPublicPdf.response.status, 200, `several slow public images should degrade to PDF, got ${slowPublicPdf.response.status}: ${slowPublicPdf.text.slice(0, 200)}`);
     assert.ok(slowElapsed < REGRESSION_HTTP_TIMEOUT_MS, `several slow images should remain bounded by the PDF request timeout; elapsed ${slowElapsed}ms`);
     assertValidPdf(slowPublicPdf.buffer, "several slow public images");
+    });
 
     for (const id of [
       "OFF-IMAGE-SLOW",
@@ -563,17 +637,14 @@ async function routeRegression() {
       "OFF-IMAGE-SAME-ORIGIN-UNAPPROVED",
       "OFF-IMAGE-NOT-IMAGE"
     ]) {
-      debugRoute("resilience pdf", id);
-      const imagePdf = await requestBuffer(baseUrl, `/api/offers/${id}/pdf?mode=selected&selectedHotelId=image-test-hotel`);
-      assert.equal(imagePdf.response.status, 200, `${id} selected PDF should survive unavailable image, got ${imagePdf.response.status}: ${imagePdf.text.slice(0, 200)}`);
+      await runImagePdfCase(id, imageServer, async (imagePdf) => {
       const imagePdfText = assertValidPdf(imagePdf.buffer, id);
       assert.match(imagePdfText.compactText, /ImageResilienceHotel/, `${id} PDF text should still include selected hotel`);
-      assert.match(imagePdfText.compactText, /Вашатаофертаеготова/, `${id} PDF text should still include CTA`);
+      assert.match(imagePdfText.compactText, /Вашетопътуванезапочваоттук/, `${id} PDF text should still include the closing message`);
+      });
     }
   } finally {
-    await closeChild(child);
     await closeServer(imageServer.server);
-    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 

@@ -6,6 +6,7 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const crypto = require("crypto");
 const dns = require("dns");
 const net = require("net");
@@ -6061,14 +6062,100 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       break-after: auto;
     }
     .gt63-print-cover {
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      gap: 10mm;
+      padding: 0;
       height: 297mm;
       overflow: hidden;
+      background: var(--gt63-night);
+    }
+    .gt63-print-cover-fullbleed {
+      display: block;
+      color: #fff;
+    }
+    .gt63-print-cover-art {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      border: 0;
+      background: var(--gt63-night);
+    }
+    .gt63-print-cover-hero,
+    .gt63-print-cover-placeholder {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .gt63-print-cover-art img,
+    .gt63-print-cover-hero {
+      object-fit: cover;
+      object-position: center;
+      width: 100%;
+      height: 100%;
+      aspect-ratio: auto;
+    }
+    .gt63-print-cover-art.is-placeholder,
+    .gt63-print-cover-placeholder {
+      display: grid;
+      place-items: center;
       background:
-        linear-gradient(90deg, rgba(169, 120, 56, .12), transparent 48%),
-        var(--gt63-paper);
+        linear-gradient(140deg, rgba(15, 24, 43, .96), rgba(64, 79, 93, .82)),
+        var(--gt63-night);
+      color: rgba(255,255,255,.68);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10pt;
+      text-transform: uppercase;
+    }
+    .gt63-print-cover-shade {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(6, 12, 24, .18), rgba(6, 12, 24, .2) 38%, rgba(6, 12, 24, .76)),
+        linear-gradient(90deg, rgba(6, 12, 24, .72), rgba(6, 12, 24, .08) 58%);
+    }
+    .gt63-print-cover-copy {
+      position: absolute;
+      left: 18mm;
+      right: 18mm;
+      bottom: 18mm;
+      max-width: 154mm;
+      color: #fff;
+    }
+    .gt63-print-cover-copy h1 {
+      max-width: 160mm;
+      color: #fff;
+      font-size: 48pt;
+      line-height: .98;
+      margin-bottom: 5mm;
+      text-wrap: balance;
+    }
+    .gt63-print-cover-copy .gt63-print-brand,
+    .gt63-print-cover-copy .gt63-print-kicker {
+      color: rgba(255,255,255,.84);
+    }
+    .gt63-print-cover-copy .gt63-print-subtitle {
+      max-width: 138mm;
+      color: rgba(255,255,255,.9);
+      font-size: 18pt;
+      line-height: 1.22;
+      margin-bottom: 9mm;
+    }
+    .gt63-print-cover-prepared,
+    .gt63-print-cover-meta,
+    .gt63-print-cover-mode {
+      max-width: 120mm;
+      margin: 0 0 2mm;
+      color: rgba(255,255,255,.78);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.45;
+    }
+    .gt63-print-cover-mode {
+      color: rgba(255,255,255,.62);
+      text-transform: uppercase;
+      font-size: 7.8pt;
+      letter-spacing: 0;
     }
     .gt63-print-flow-page {
       height: auto;
@@ -6133,8 +6220,22 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       aspect-ratio: 4 / 3;
       object-fit: cover;
     }
-    .gt63-print-cover .gt63-print-image-frame img {
-      aspect-ratio: 16 / 10;
+    .gt63-print-image-frame.is-dominant img {
+      aspect-ratio: 5 / 6;
+    }
+    .gt63-print-hotel-imagery {
+      display: grid;
+      gap: 4mm;
+      break-inside: avoid;
+    }
+    .gt63-print-hotel-thumbs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4mm;
+    }
+    .gt63-print-hotel-thumbs .gt63-print-image-frame img,
+    .gt63-print-image-frame.is-thumb img {
+      aspect-ratio: 1 / 1;
     }
     .gt63-print-image-frame figcaption {
       padding: 2.5mm 3mm;
@@ -6212,6 +6313,28 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     .gt63-print-section:first-child {
       border-top: 0;
       padding-top: 0;
+    }
+    .gt63-print-intro {
+      min-height: 178mm;
+      display: grid;
+      align-content: center;
+      gap: 8mm;
+    }
+    .gt63-print-intro h2 {
+      max-width: 145mm;
+      font-size: 32pt;
+      line-height: 1.05;
+    }
+    .gt63-print-editorial-lead {
+      max-width: 136mm;
+      color: var(--gt63-muted);
+      font-size: 14pt;
+      line-height: 1.5;
+    }
+    .gt63-print-intro-reasons {
+      max-width: 140mm;
+      columns: 2;
+      column-gap: 12mm;
     }
     .gt63-print-section-head {
       margin-bottom: 4mm;
@@ -6340,41 +6463,130 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     .gt63-print-experience-card .gt63-print-image-frame img {
       aspect-ratio: 5 / 4;
     }
-    .gt63-print-cta {
-      min-height: 72mm;
-      display: grid;
-      align-content: center;
-      gap: 4mm;
-      background: var(--gt63-night);
-      color: #fff;
-      padding: 12mm;
-      break-inside: avoid;
-    }
     .gt63-print-final-page {
       height: 297mm;
       display: grid;
       align-items: center;
       overflow: hidden;
+      background:
+        radial-gradient(circle at 78% 22%, rgba(169, 120, 56, .12), transparent 28%),
+        linear-gradient(145deg, #07101e 0%, #101827 58%, #172033 100%);
     }
-    .gt63-print-cta h2 {
+    .gt63-print-closing {
+      width: 100%;
+      min-height: 244mm;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      gap: 18mm;
+      padding: 24mm 18mm 18mm;
       color: #fff;
-      font-size: 26pt;
+      break-inside: avoid;
     }
-    .gt63-print-cta p,
-    .gt63-print-cta span {
-      color: rgba(255,255,255,.82);
+    .gt63-print-closing-mark {
+      position: absolute;
+      top: 20mm;
+      right: 18mm;
+      color: rgba(244,240,232,.12);
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 48pt;
+      letter-spacing: 0;
     }
-    .gt63-print-cta-row {
-      display: flex;
-      justify-content: space-between;
-      gap: 8mm;
-      align-items: end;
-      border-top: 1px solid rgba(255,255,255,.18);
-      padding-top: 5mm;
+    .gt63-print-closing-copy {
+      align-self: center;
+      max-width: 130mm;
     }
-    .gt63-print-cta-row strong {
-      font-size: 22pt;
+    .gt63-print-closing-copy h2 {
+      color: #fff;
+      font-size: 38pt;
+      line-height: 1.05;
+      max-width: 124mm;
+      margin-bottom: 8mm;
+    }
+    .gt63-print-closing-copy p {
+      max-width: 108mm;
+      color: rgba(255,255,255,.78);
+      font-size: 13pt;
+      line-height: 1.55;
+    }
+    .gt63-print-closing-footer {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7mm 12mm;
+      max-width: 160mm;
+      padding-top: 8mm;
+      border-top: 1px solid rgba(244,240,232,.24);
+    }
+    .gt63-print-closing-footer div {
+      break-inside: avoid;
+    }
+    .gt63-print-closing-footer span {
+      display: block;
+      margin-bottom: 1.5mm;
+      color: rgba(255,255,255,.54);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 7.8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .gt63-print-closing-footer strong {
+      display: block;
+      color: #fff;
+      font-size: 13pt;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .gt63-print-investment {
+      min-height: 232mm;
+      display: grid;
+      align-content: center;
+      gap: 10mm;
+    }
+    .gt63-print-investment h2 {
+      max-width: 142mm;
+      font-size: 34pt;
+      line-height: 1.05;
+      margin-bottom: 0;
+    }
+    .gt63-print-investment-amount {
+      padding: 10mm 0;
+      border-top: 1px solid var(--gt63-line);
+      border-bottom: 1px solid var(--gt63-line);
+      break-inside: avoid;
+    }
+    .gt63-print-investment-amount span,
+    .gt63-print-investment-list span {
+      display: block;
+      color: var(--gt63-muted);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .gt63-print-investment-amount strong {
+      display: block;
+      margin: 2mm 0 4mm;
+      font-size: 34pt;
       line-height: 1;
+    }
+    .gt63-print-investment-amount p {
+      max-width: 132mm;
+      color: var(--gt63-muted);
+      margin-bottom: 0;
+    }
+    .gt63-print-investment-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5mm 9mm;
+    }
+    .gt63-print-investment-list article {
+      break-inside: avoid;
+    }
+    .gt63-print-investment-list strong {
+      display: block;
+      margin-top: 1mm;
+      font-size: 12pt;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
     }
     @page { size: A4; margin: 0; }
     @media print {
@@ -8738,9 +8950,12 @@ writeDb(db);
   if (req.query?.selectedHotelId) printUrl.searchParams.set("selectedHotelId", String(req.query.selectedHotelId));
 
   let browser;
+  let browserProfileDir = "";
   try {
+    browserProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), "gt63-pdf-chrome-"));
     browser = await puppeteer.launch({
   headless: true,
+  userDataDir: browserProfileDir,
   args: [
     "--no-sandbox",
     "--disable-setuid-sandbox",
@@ -8851,6 +9066,7 @@ writeDb(db);
     });
   } finally {
     if (browser) await browser.close();
+    if (browserProfileDir) fs.rmSync(browserProfileDir, { recursive: true, force: true });
   }
 });
 
