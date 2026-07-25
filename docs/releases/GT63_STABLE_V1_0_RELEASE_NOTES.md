@@ -43,6 +43,25 @@ The accepted Journey Book structure for Stable v1.0 is:
 
 Journey Book design is frozen for Stable v1.0. Future visual ideas, alternate layouts and new presentation modes belong to GT63 Next.
 
+## Hotel Image Alias Normalization Fix
+
+Hotel image aliases are now merged upstream before persistence. Valid `imageUrls` values are no longer lost when `images` is present as an empty array.
+
+Supported hotel image aliases include:
+
+- `images`;
+- `imageUrls`;
+- `image`;
+- `imageUrl`;
+- `heroImage`;
+- `photo`;
+- `thumbnail`;
+- `gallery`.
+
+The HTML and PDF renderers were not the root cause and required no presentation change. Regression coverage was added for alias preservation and merge/dedup behavior.
+
+Old persisted offers with empty hotel images require re-import/regeneration.
+
 ## PDF Architecture
 
 Stable v1.0 uses the locked Print V1 architecture:

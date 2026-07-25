@@ -9,6 +9,8 @@ const {
   buildProposalInputFromProductModel,
   assertProposalInput
 } = require("../gt63-core/proposal-input-adapter");
+const { buildPresentationViewModel } = require("../gt63-core/presentation-view-model");
+const { renderProposal } = require("../gt63-core/proposal-renderer-registry");
 
 const fixtureDir = path.join(__dirname, "..", "test", "fixtures", "smart-import");
 const outputFixturePath = path.join(__dirname, "..", "test", "fixtures", "proposal-input", "luxury-v11-mixed.json");
@@ -141,6 +143,59 @@ assert.equal(multiHotelProposal.hotelOptions.length, 5, "preview should preserve
 assert.equal(multiHotelProposal.pricing.hotelAmount, 14800, "preview pricing should use selected hotel price");
 assert.equal(multiHotelProposal.proposalTemplate.selected, "multi-hotel", "preview input should preserve selected template");
 assert.equal(multiHotelProposal.proposalTemplate.source, "resolver", "preview input should preserve template source");
+
+const aliasImageProposal = buildProposalInputFromProductModel({
+  readiness: "ready",
+  warnings: [],
+  blockingIssues: [],
+  flight: null,
+  hotel: null,
+  hotelOptions: [{
+    name: "Alias Image Hotel",
+    area: "Alias Bay",
+    room: "Suite",
+    meal: "Breakfast",
+    price: 1000,
+    images: [],
+    imageUrls: ["https://images.example.test/valid-hotel-image.jpg"],
+    selected: true
+  }],
+  proposalTemplate: {
+    recommended: "multi-hotel",
+    selected: "multi-hotel",
+    source: "resolver",
+    reason: "Image alias regression."
+  }
+}, {
+  destination: "Alias Bay",
+  travelers: "2"
+});
+assert.deepEqual(
+  aliasImageProposal.hotelOptions[0].imageUrls,
+  ["https://images.example.test/valid-hotel-image.jpg"],
+  "proposal input should expose imageUrls when source hotel has images: [] and imageUrls populated"
+);
+assert.deepEqual(
+  aliasImageProposal.hotel.imageUrls,
+  ["https://images.example.test/valid-hotel-image.jpg"],
+  "proposal input selected hotel should expose imageUrls"
+);
+const aliasImageViewModel = buildPresentationViewModel(aliasImageProposal);
+assert.deepEqual(
+  aliasImageViewModel.selectedHotel.imageUrls,
+  ["https://images.example.test/valid-hotel-image.jpg"],
+  "presentation view model should receive selected hotel imageUrls"
+);
+const aliasImageHtml = renderProposal(aliasImageProposal);
+assert.ok(
+  aliasImageHtml.includes("https://images.example.test/valid-hotel-image.jpg"),
+  "HTML renderer should use the real selected hotel image URL"
+);
+assert.equal(
+  /photo-1507525428034-b723cf961d3e/.test(aliasImageHtml),
+  false,
+  "HTML renderer should not use the destination fallback image when a valid hotel image exists"
+);
 
 const inferredYearProposal = buildProposalInputFromProductModel({
   readiness: "ready",

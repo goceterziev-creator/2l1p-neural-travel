@@ -39,6 +39,7 @@ const {
   parseBookingLastminuteFlightModal,
   parseDirectRoundTripTicket,
   parseVisionPrice,
+  collectHotelImageAliases,
   parseWizzCheckout,
   readRegressionCaseDetail,
   summarizeRegressionLibrary,
@@ -1250,6 +1251,62 @@ assert.deepEqual(
 assert.deepEqual(
   savedLotTorontoOffer.flights[0].segments.map((segment) => `${segment.from}->${segment.to} ${segment.flightNumber}`),
   ["SOF->WAW LO 632", "WAW->YYZ LO 45", "YYZ->WAW LO 42", "WAW->SOF LO 631"]
+);
+assert.deepEqual(
+  collectHotelImageAliases({
+    images: [],
+    imageUrls: ["valid-hotel-image.jpg"]
+  }),
+  ["valid-hotel-image.jpg"],
+  "hotel image collector should not drop imageUrls when images is an empty array"
+);
+assert.deepEqual(
+  collectHotelImageAliases({
+    images: ["https://images.example.test/a.jpg"],
+    imageUrls: ["https://images.example.test/a.jpg", "https://images.example.test/b.jpg"],
+    heroImage: "https://images.example.test/c.jpg"
+  }),
+  [
+    "https://images.example.test/a.jpg",
+    "https://images.example.test/b.jpg",
+    "https://images.example.test/c.jpg"
+  ],
+  "hotel image collector should merge and dedupe supported aliases in order"
+);
+const aliasImageOffer = normalizeOffer({
+  destination: "Alias Image Destination",
+  hotels: [{
+    name: "Alias Image Hotel",
+    price: 1000,
+    images: [],
+    imageUrls: ["https://images.example.test/valid-hotel-image.jpg"],
+    selected: true
+  }]
+});
+assert.deepEqual(
+  aliasImageOffer.hotels[0].images,
+  ["https://images.example.test/valid-hotel-image.jpg"],
+  "normalizeOffer should persist imageUrls aliases into canonical hotel images"
+);
+const mergedAliasImageOffer = normalizeOffer({
+  destination: "Alias Image Destination",
+  hotels: [{
+    name: "Merged Alias Image Hotel",
+    price: 1000,
+    images: ["https://images.example.test/a.jpg"],
+    imageUrls: ["https://images.example.test/a.jpg", "https://images.example.test/b.jpg"],
+    heroImage: "https://images.example.test/c.jpg",
+    selected: true
+  }]
+});
+assert.deepEqual(
+  mergedAliasImageOffer.hotels[0].images,
+  [
+    "https://images.example.test/a.jpg",
+    "https://images.example.test/b.jpg",
+    "https://images.example.test/c.jpg"
+  ],
+  "normalizeOffer should merge and dedupe supported hotel image aliases"
 );
 assert.ok(!partialLotTorontoParsed.metadata.missingFields.includes("flight.route"));
 assert.ok(!partialLotTorontoParsed.metadata.missingFields.includes("flight.price"));

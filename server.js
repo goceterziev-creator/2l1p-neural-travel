@@ -1341,6 +1341,32 @@ function sanitizeHotelImages(value = [], limit = 6) {
   return { valid, invalid };
 }
 
+function collectHotelImageAliases(hotel = {}) {
+  const values = [];
+  const seen = new Set();
+  const add = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(add);
+      return;
+    }
+    if (value == null) return;
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    values.push(text);
+  };
+
+  add(hotel.images);
+  add(hotel.imageUrls);
+  add(hotel.image);
+  add(hotel.imageUrl);
+  add(hotel.heroImage);
+  add(hotel.photo);
+  add(hotel.thumbnail);
+  add(hotel.gallery);
+  return values;
+}
+
 function hotelImageKey(value = "") {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -1854,7 +1880,7 @@ const hotels = inputHotels.length
       roomsLeft: h.roomsLeft || "",
       description: h.description || "",
       url: h.url || h.link || h.bookingUrl || "",
-      images: uniqueHotelImages(h.images || [], 6, usedInputHotelImageKeys),
+      images: uniqueHotelImages(collectHotelImageAliases(h), 6, usedInputHotelImageKeys),
       selected: hasSelectedHotelInput ? index === selectedHotelInputIndex : index === 0
     })).filter(h =>
       h.name || h.stars || h.area || h.distance || h.room || h.meal || toNumber(h.price, 0) > 0 || h.roomsLeft || h.description || h.images.length
@@ -10892,7 +10918,7 @@ async function buildSmartImportHotelOption(hotel = {}, parsed = {}, destination 
     option.area || destination || "",
     3
   );
-  const existingImages = safeArray(option.images || option.imageUrls);
+  const existingImages = collectHotelImageAliases(option);
   const mergedImages = uniqueHotelImages([...imageUrls, ...existingImages], 3);
   if (mergedImages.length) {
     option.images = mergedImages;
@@ -12059,6 +12085,7 @@ module.exports = {
   parseWizzCheckout,
   normalizeVisionFlightJson,
   parseVisionPrice,
+  collectHotelImageAliases,
   normalizeOffer,
   buildValidationWarnings,
   buildFlightDateSourceTrace,
