@@ -50,6 +50,7 @@
       .replace(/\bcabin baggage included\b/gi, "Включен ръчен багаж")
       .replace(/\bbreakfast included\b/gi, "Включена закуска")
       .replace(/\broom only\b/gi, "Без включено хранене")
+      .replace(/\bnot specified\b/gi, "Не е посочено")
       .replace(/\s+г\.\s*-\s*/g, " г. – ")
       .replace(/\bTokyo\b/g, "Токио")
       .replace(/\bJapan\b/g, "Япония")

@@ -245,6 +245,9 @@ assert.match(richSelectedHtml, /gt63-print-timeline-page/, "selected print mode 
 assert.match(richSelectedHtml, /gt63-print-experiences-page/, "selected print mode should render experiences page when canonical experience data exists");
 assert.match(richSelectedHtml, /Private Lagoon Dinner/, "selected print mode should render supplied optional experience title");
 assert.match(richSelectedHtml, /180 EUR/, "selected print mode should preserve supplied optional experience price");
+const missingValueInput = proposalInputWithSelectedBrochureData(6);
+missingValueInput.flight.baggage = "Not specified";
+const missingValueSelectedHtml = printRenderer.renderPrintProposal(missingValueInput, { mode: "selected", selectedHotelId: "print-hotel-6" });
 
 assert.match(serverJs, /app\.get\("\/api\/offers\/:id\/print"/, "server should expose a dedicated print route");
 assert.match(serverJs, /renderGt63PrintOfferHtml/, "server should render dedicated Print HTML through a separate wrapper");
@@ -282,12 +285,13 @@ assert.match(printRendererJs, /function investmentPage/, "Print renderer should 
 assert.match(printRendererJs, /function formatPrintDateTime/, "Print renderer should human-format flight date-time values");
 assert.doesNotMatch(richSelectedHtml, /2027-03-28T06:10|2027-03-29T13:15|2027-04-08T22:55/, "selected print HTML should not expose raw ISO flight timestamps");
 assert.doesNotMatch(
-  richSelectedHtml,
-  /Luxury Journey Book|Prepared exclusively for|Selected residence edition|Journey Introduction|This Journey Book|Destination|Selected residence|Travel period|Travelers|Board basis|Your Journey Investment|Total package price|Availability, final conditions|Your next journey begins here|Prepared by|Journey investment/i,
+  `${richSelectedHtml}\n${missingValueSelectedHtml}`,
+  /Luxury Journey Book|Prepared exclusively for|Selected residence edition|Journey Introduction|This Journey Book|Destination|Selected residence|Travel period|Travelers|Board basis|Your Journey Investment|Total package price|Availability, final conditions|Your next journey begins here|Prepared by|Journey investment|Not specified/i,
   "selected print HTML should not expose English client-facing Journey Book labels"
 );
 assert.match(richSelectedHtml, /Луксозна книга на пътуването/, "selected print HTML should render Bulgarian cover label");
 assert.match(richSelectedHtml, /Инвестиция във Вашето пътуване/, "selected print HTML should render Bulgarian investment heading");
+assert.match(missingValueSelectedHtml, /Не е посочено/, "selected print HTML should render Bulgarian missing-value fallback");
 
 async function waitForHealth(baseUrl) {
   for (let attempt = 0; attempt < 360; attempt += 1) {
