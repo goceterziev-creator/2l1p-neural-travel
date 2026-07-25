@@ -275,12 +275,19 @@ assert.match(serverJs, /\.gt63-print-investment/, "Print CSS should define the J
 assert.match(serverJs, /\.gt63-print-closing/, "Print CSS should define the premium editorial closing page");
 assert.doesNotMatch(serverJs, /\.gt63-print-cover[\s\S]{0,260}grid-template-rows:\s*auto 1fr auto/, "Print cover should not use the old summary-card grid composition");
 assert.match(printRendererJs, /Контакт с консултант/, "Print renderer should include contact text inside the CTA block");
-assert.match(printRendererJs, /Luxury Journey Book/, "Print renderer should label the document as a Journey Book");
-assert.match(printRendererJs, /Prepared exclusively for/, "Print renderer should support a restrained prepared-for line");
+assert.match(printRendererJs, /Луксозна книга на пътуването/, "Print renderer should label the document in Bulgarian");
+assert.match(printRendererJs, /Подготвено специално за/, "Print renderer should support a Bulgarian prepared-for line");
 assert.match(printRendererJs, /function journeyIntroductionPage/, "Print renderer should include a dedicated journey introduction page");
 assert.match(printRendererJs, /function investmentPage/, "Print renderer should include a dedicated investment page");
 assert.match(printRendererJs, /function formatPrintDateTime/, "Print renderer should human-format flight date-time values");
 assert.doesNotMatch(richSelectedHtml, /2027-03-28T06:10|2027-03-29T13:15|2027-04-08T22:55/, "selected print HTML should not expose raw ISO flight timestamps");
+assert.doesNotMatch(
+  richSelectedHtml,
+  /Luxury Journey Book|Prepared exclusively for|Selected residence edition|Journey Introduction|This Journey Book|Destination|Selected residence|Travel period|Travelers|Board basis|Your Journey Investment|Total package price|Availability, final conditions|Your next journey begins here|Prepared by|Journey investment/i,
+  "selected print HTML should not expose English client-facing Journey Book labels"
+);
+assert.match(richSelectedHtml, /Луксозна книга на пътуването/, "selected print HTML should render Bulgarian cover label");
+assert.match(richSelectedHtml, /Инвестиция във Вашето пътуване/, "selected print HTML should render Bulgarian investment heading");
 
 async function waitForHealth(baseUrl) {
   for (let attempt = 0; attempt < 360; attempt += 1) {
