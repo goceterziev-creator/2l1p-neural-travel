@@ -11,6 +11,8 @@ const {
 } = require("../gt63-core/proposal-input-adapter");
 const { buildPresentationViewModel } = require("../gt63-core/presentation-view-model");
 const { renderProposal } = require("../gt63-core/proposal-renderer-registry");
+const printRenderer = require("../gt63-core/renderers/print-presentation");
+const { normalizeOffer } = require("../server");
 
 const fixtureDir = path.join(__dirname, "..", "test", "fixtures", "smart-import");
 const outputFixturePath = path.join(__dirname, "..", "test", "fixtures", "proposal-input", "luxury-v11-mixed.json");
@@ -195,6 +197,160 @@ assert.equal(
   /photo-1507525428034-b723cf961d3e/.test(aliasImageHtml),
   false,
   "HTML renderer should not use the destination fallback image when a valid hotel image exists"
+);
+
+const zurichImageUrls = [
+  "https://images.example.test/zurich-dolder-grand.jpg",
+  "https://images.example.test/zurich-eden-au-lac.jpg",
+  "https://images.example.test/zurich-storchen.jpg"
+];
+const zurichOffer = normalizeOffer({
+  clientName: "Zurich VIP Client",
+  destination: "Zurich",
+  travelDates: "25 December - 28 December",
+  guests: "2",
+  currency: "EUR",
+  hotels: [
+    {
+      name: "The Dolder Grand",
+      area: "Zurich",
+      room: "Junior Suite",
+      meal: "Breakfast",
+      price: 5000,
+      imageUrls: [zurichImageUrls[0]],
+      selected: true
+    },
+    {
+      name: "Mandarin Oriental Savoy, Zurich",
+      area: "Zurich",
+      room: "Junior Suite",
+      meal: "Breakfast",
+      price: 5200,
+      imageUrls: [zurichImageUrls[1]]
+    },
+    {
+      name: "La Reserve Eden au Lac Zurich",
+      area: "Zurich",
+      room: "Junior Suite",
+      meal: "Breakfast",
+      price: 5100,
+      imageUrls: [zurichImageUrls[2]]
+    }
+  ],
+  proposalTemplate: {
+    recommended: "multi-hotel",
+    selected: "multi-hotel",
+    source: "acceptance-fixture",
+    reason: "Canonical Zurich data fidelity fixture."
+  }
+});
+assert.deepEqual(
+  zurichOffer.hotels.map((hotel) => hotel.images[0]),
+  zurichImageUrls,
+  "normalizeOffer should persist each Zurich hotel option with its own image identity"
+);
+assert.equal(
+  new Set(zurichOffer.hotels.map((hotel) => hotel.images[0])).size,
+  3,
+  "normalizeOffer should not collapse distinct Zurich hotel images into one fallback"
+);
+const zurichProposal = buildProposalInputFromProductModel({
+  readiness: "ready",
+  warnings: [],
+  blockingIssues: [],
+  flight: null,
+  hotel: zurichOffer.hotels[0],
+  hotelOptions: zurichOffer.hotels,
+  proposalTemplate: {
+    recommended: "multi-hotel",
+    selected: "multi-hotel",
+    source: "acceptance-fixture",
+    reason: "Canonical Zurich data fidelity fixture."
+  }
+}, {
+  destination: "Zurich",
+  travelDates: "25 December - 28 December",
+  travelers: "2"
+});
+assert.deepEqual(
+  zurichProposal.hotelOptions.map((hotel) => hotel.imageUrls[0]),
+  zurichImageUrls,
+  "proposal input should preserve unique Zurich hotel option images"
+);
+assert.deepEqual(
+  zurichProposal.hotel.imageUrls,
+  [zurichImageUrls[0]],
+  "proposal input selected hotel should preserve the selected hotel image"
+);
+const zurichViewModel = buildPresentationViewModel(zurichProposal);
+assert.deepEqual(
+  zurichViewModel.hotelOptions.map((hotel) => hotel.imageUrls[0]),
+  zurichImageUrls,
+  "presentation view model should receive the same Zurich hotel image identity"
+);
+assert.deepEqual(
+  zurichViewModel.selectedHotel.imageUrls,
+  [zurichImageUrls[0]],
+  "presentation view model selected hotel should keep the selected image"
+);
+const zurichHtml = renderProposal(zurichProposal);
+const zurichStaticHtml = zurichHtml.replace(/<script[\s\S]*?<\/script>/g, "");
+for (const imageUrl of zurichImageUrls) {
+  assert.ok(zurichHtml.includes(imageUrl), `HTML renderer should include ${imageUrl}`);
+}
+assert.equal(
+  /photo-1507525428034-b723cf961d3e/.test(zurichHtml),
+  false,
+  "HTML renderer should not use generic beach fallback when approved Zurich hotel images exist"
+);
+assert.equal(
+  /data-hotel-image-placeholder/.test(zurichStaticHtml),
+  false,
+  "HTML renderer should not show image placeholders when approved Zurich hotel images exist"
+);
+const zurichPrintHtml = printRenderer.renderPrintProposal(zurichProposal, { mode: "selected" });
+assert.ok(
+  zurichPrintHtml.includes(zurichImageUrls[0]),
+  "Journey Book print HTML should include the selected Zurich hotel image"
+);
+assert.equal(
+  /data-print-image-placeholder="true"|Снимка за потвърждение/.test(zurichPrintHtml),
+  false,
+  "Journey Book print HTML should not show image placeholders when selected hotel image exists"
+);
+
+const noImageProposal = buildProposalInputFromProductModel({
+  readiness: "ready",
+  warnings: [],
+  blockingIssues: [],
+  flight: null,
+  hotel: null,
+  hotelOptions: [
+    { name: "No Image Hotel 1", area: "Zurich", room: "Junior Suite", meal: "Breakfast", price: 1000, selected: true },
+    { name: "No Image Hotel 2", area: "Zurich", room: "Junior Suite", meal: "Breakfast", price: 1200 },
+    { name: "No Image Hotel 3", area: "Zurich", room: "Junior Suite", meal: "Breakfast", price: 1300 }
+  ],
+  proposalTemplate: {
+    recommended: "multi-hotel",
+    selected: "multi-hotel",
+    source: "acceptance-fixture",
+    reason: "No image honesty fixture."
+  }
+}, {
+  destination: "Zurich",
+  travelDates: "25 December - 28 December",
+  travelers: "2"
+});
+const noImageHtml = renderProposal(noImageProposal);
+const noImageStaticHtml = noImageHtml.replace(/<script[\s\S]*?<\/script>/g, "");
+assert.equal(
+  /photo-1507525428034-b723cf961d3e/.test(noImageHtml),
+  false,
+  "HTML renderer should not silently substitute a generic beach image for hotel photography"
+);
+assert.ok(
+  /data-hotel-image-placeholder="true"/.test(noImageStaticHtml),
+  "HTML renderer should show an honest hotel image placeholder when no approved image exists"
 );
 
 const inferredYearProposal = buildProposalInputFromProductModel({

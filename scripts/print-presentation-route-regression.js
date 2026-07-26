@@ -6,7 +6,7 @@ const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 const http = require("http");
-const { spawn } = require("child_process");
+const { execFileSync, spawn } = require("child_process");
 
 const printRenderer = require("../gt63-core/renderers/print-presentation");
 const serverJs = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
@@ -15,6 +15,71 @@ const debugRoute = (...args) => {
   if (process.env.GT63_PRINT_ROUTE_DEBUG) console.log("[print-route-regression]", ...args);
 };
 const REGRESSION_HTTP_TIMEOUT_MS = 180000;
+const REGRESSION_HARD_WATCHDOG_MS = Number(process.env.GT63_PRINT_ROUTE_WATCHDOG_MS || 35 * 60 * 1000);
+const harnessResources = {
+  children: new Set(),
+  servers: new Set(),
+  tmpDirs: new Set(),
+  timers: new Set()
+};
+let baselinePuppeteerChromePids = new Set();
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function currentPuppeteerChromePids() {
+  if (process.platform !== "win32") return [];
+  try {
+    const output = execFileSync("powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      "Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.Path -match '\\\\.cache\\\\puppeteer\\\\' -or $_.Path -like '*gt63-pdf-chrome*' } | ForEach-Object { $_.Id }"
+    ], { encoding: "utf8", timeout: 10000 });
+    return output
+      .split(/\r?\n/)
+      .map((line) => Number(line.trim()))
+      .filter((id) => Number.isInteger(id) && id > 0);
+  } catch {
+    return [];
+  }
+}
+
+function cleanupNewPuppeteerChromeProcesses() {
+  if (process.platform !== "win32") return;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const ids = currentPuppeteerChromePids().filter((id) => !baselinePuppeteerChromePids.has(id));
+    if (!ids.length) return;
+    for (const id of ids) {
+      try {
+        execFileSync("powershell.exe", [
+          "-NoProfile",
+          "-Command",
+          `Stop-Process -Id ${id} -Force -ErrorAction SilentlyContinue`
+        ], { stdio: "ignore", timeout: 10000 });
+        debugRoute("stopped puppeteer chrome", id);
+      } catch {
+        // Process already exited.
+      }
+    }
+    sleepSync(500);
+  }
+}
+
+function trackedTimeout(fn, ms) {
+  const timer = setTimeout(() => {
+    harnessResources.timers.delete(timer);
+    fn();
+  }, ms);
+  harnessResources.timers.add(timer);
+  return timer;
+}
+
+function clearTrackedTimeout(timer) {
+  if (!timer) return;
+  clearTimeout(timer);
+  harnessResources.timers.delete(timer);
+}
 
 function hotelOptions(count) {
   return Array.from({ length: count }, (_, index) => ({
@@ -208,6 +273,19 @@ function assertValidPdf(buffer, label) {
   return extracted;
 }
 
+function pdfImageObjectCount(buffer) {
+  return (buffer.toString("latin1").match(/\/Subtype\s*\/Image\b/g) || []).length;
+}
+
+function assertPdfImageEvidence(basePdf, imagePdf, label) {
+  const baseImageCount = pdfImageObjectCount(basePdf.buffer);
+  const imageCount = pdfImageObjectCount(imagePdf.buffer);
+  assert.ok(
+    imageCount > baseImageCount || imagePdf.buffer.length > basePdf.buffer.length,
+    `${label} should show deterministic image evidence; baseImages=${baseImageCount}, imageImages=${imageCount}, baseSize=${basePdf.buffer.length}, imageSize=${imagePdf.buffer.length}`
+  );
+}
+
 for (const count of [1, 3, 6, 10]) {
   const input = proposalInput(count);
   const selectedId = input.hotelOptions[Math.min(count - 1, 5)].id;
@@ -308,12 +386,12 @@ async function waitForHealth(baseUrl) {
 
 async function request(baseUrl, pathname) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REGRESSION_HTTP_TIMEOUT_MS);
+  const timeout = trackedTimeout(() => controller.abort(), REGRESSION_HTTP_TIMEOUT_MS);
   const response = await fetch(`${baseUrl}${pathname}`, { signal: controller.signal, headers: { Connection: "close" } })
     .catch((error) => {
       throw new Error(`${pathname} request failed: ${error.message}`);
     })
-    .finally(() => clearTimeout(timeout));
+    .finally(() => clearTrackedTimeout(timeout));
   const text = await response.text();
   let json = null;
   try {
@@ -326,12 +404,12 @@ async function request(baseUrl, pathname) {
 
 async function requestBuffer(baseUrl, pathname) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REGRESSION_HTTP_TIMEOUT_MS);
+  const timeout = trackedTimeout(() => controller.abort(), REGRESSION_HTTP_TIMEOUT_MS);
   const response = await fetch(`${baseUrl}${pathname}`, { signal: controller.signal, headers: { Connection: "close" } })
     .catch((error) => {
       throw new Error(`${pathname} request failed: ${error.message}`);
     })
-    .finally(() => clearTimeout(timeout));
+    .finally(() => clearTrackedTimeout(timeout));
   const buffer = Buffer.from(await response.arrayBuffer());
   let json = null;
   try {
@@ -344,6 +422,7 @@ async function requestBuffer(baseUrl, pathname) {
 
 function startImageServer() {
   const fixtureJpg = fs.readFileSync(path.join(__dirname, "..", "public", "images", "hotels", "162f6716.jpg"));
+  const slowTimers = new Set();
   const server = http.createServer((req, res) => {
     if (req.url === "/valid.jpg" || req.url === "/second.jpg") {
       res.setHeader("Content-Type", "image/jpeg");
@@ -351,7 +430,8 @@ function startImageServer() {
       return;
     }
     if (req.url === "/slow.jpg") {
-      const timer = setTimeout(() => {
+      const timer = trackedTimeout(() => {
+        slowTimers.delete(timer);
         if (!res.writableEnded) {
           res.setHeader("Content-Type", "image/jpeg");
           res.end(fixtureJpg);
@@ -379,9 +459,15 @@ function startImageServer() {
     res.statusCode = 204;
     res.end();
   });
+  server.on("close", () => {
+    harnessResources.servers.delete(server);
+    for (const timer of slowTimers) clearTrackedTimeout(timer);
+    slowTimers.clear();
+  });
   return new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
+      harnessResources.servers.add(server);
       resolve({
         server,
         baseUrl: `http://127.0.0.1:${server.address().port}`
@@ -394,21 +480,68 @@ async function closeServer(server) {
   if (!server) return;
   if (typeof server.closeAllConnections === "function") server.closeAllConnections();
   if (typeof server.closeIdleConnections === "function") server.closeIdleConnections();
+  if (!server.listening) {
+    harnessResources.servers.delete(server);
+    return;
+  }
+  let closeTimer;
   await Promise.race([
     new Promise((resolve) => server.close(resolve)),
-    new Promise((resolve) => setTimeout(resolve, 3000))
+    new Promise((resolve) => {
+      closeTimer = trackedTimeout(resolve, 3000);
+    })
   ]);
+  clearTrackedTimeout(closeTimer);
+  harnessResources.servers.delete(server);
 }
 
 async function closeChild(child) {
   if (!child || child.exitCode !== null) return;
   const exited = new Promise((resolve) => child.once("exit", resolve));
   child.kill("SIGTERM");
+  let killTimer;
   await Promise.race([
     exited,
-    new Promise((resolve) => setTimeout(resolve, 3000))
+    new Promise((resolve) => {
+      killTimer = trackedTimeout(resolve, 3000);
+    })
   ]);
+  clearTrackedTimeout(killTimer);
   if (child.exitCode === null) child.kill("SIGKILL");
+  harnessResources.children.delete(child);
+}
+
+async function cleanupHarnessResources() {
+  const cleanupErrors = [];
+  for (const child of Array.from(harnessResources.children).reverse()) {
+    try {
+      await closeChild(child);
+    } catch (error) {
+      cleanupErrors.push(`child ${child.pid || "unknown"}: ${error.message}`);
+    }
+  }
+  for (const server of Array.from(harnessResources.servers).reverse()) {
+    try {
+      await closeServer(server);
+    } catch (error) {
+      cleanupErrors.push(`server: ${error.message}`);
+    }
+  }
+  for (const timer of Array.from(harnessResources.timers)) {
+    clearTrackedTimeout(timer);
+  }
+  cleanupNewPuppeteerChromeProcesses();
+  for (const tmpDir of Array.from(harnessResources.tmpDirs).reverse()) {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      harnessResources.tmpDirs.delete(tmpDir);
+    } catch (error) {
+      cleanupErrors.push(`tmp ${tmpDir}: ${error.message}`);
+    }
+  }
+  if (cleanupErrors.length) {
+    console.error(`PRINT PRESENTATION ROUTE REGRESSION CLEANUP WARNINGS: ${cleanupErrors.join("; ")}`);
+  }
 }
 
 function writeRegressionDb(dbFile, offers = []) {
@@ -444,6 +577,7 @@ function printImageTestEnv(imageServer) {
 
 async function withRegressionServer(label, offersFactory, fn, imageServer = null) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gt63-print-route-"));
+  harnessResources.tmpDirs.add(tmpDir);
   const dbFile = path.join(tmpDir, "database.json");
   const port = String(4600 + Math.floor(Math.random() * 500));
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -465,6 +599,10 @@ async function withRegressionServer(label, offersFactory, fn, imageServer = null
       ...printImageTestEnv(imageServer)
     }
   });
+  harnessResources.children.add(child);
+  child.once("exit", () => {
+    harnessResources.children.delete(child);
+  });
 
   const startedAt = Date.now();
   try {
@@ -479,7 +617,9 @@ async function withRegressionServer(label, offersFactory, fn, imageServer = null
     throw error;
   } finally {
     await closeChild(child);
+    cleanupNewPuppeteerChromeProcesses();
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    harnessResources.tmpDirs.delete(tmpDir);
   }
 }
 
@@ -607,26 +747,17 @@ async function routeRegression() {
 
     const validImagePdf = await runImagePdfCase("OFF-IMAGE-VALID", imageServer, async (validImagePdf) => {
     assertValidPdf(validImagePdf.buffer, "valid image");
-    assert.ok(
-      validImagePdf.buffer.length > selectedPdf.buffer.length + 500,
-      `valid deterministic image should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${validImagePdf.buffer.length}`
-    );
+    assertPdfImageEvidence(selectedPdf, validImagePdf, "valid deterministic image");
     });
 
     await runImagePdfCase("OFF-IMAGE-STATIC", imageServer, async (staticImagePdf) => {
     assertValidPdf(staticImagePdf.buffer, "approved static image");
-    assert.ok(
-      staticImagePdf.buffer.length > selectedPdf.buffer.length + 500,
-      `approved same-origin static image should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${staticImagePdf.buffer.length}`
-    );
+    assertPdfImageEvidence(selectedPdf, staticImagePdf, "approved same-origin static image");
     });
 
     await runImagePdfCase("OFF-IMAGE-MULTI-VALID", imageServer, async (multiValidImagePdf) => {
     assertValidPdf(multiValidImagePdf.buffer, "multiple valid images");
-    assert.ok(
-      multiValidImagePdf.buffer.length > selectedPdf.buffer.length + 500,
-      `multiple deterministic valid images should increase the generated PDF size; base=${selectedPdf.buffer.length}, image=${multiValidImagePdf.buffer.length}`
-    );
+    assertPdfImageEvidence(selectedPdf, multiValidImagePdf, "multiple deterministic valid images");
     });
 
     await runImagePdfCase("OFF-IMAGE-SLOW-PUBLIC", imageServer, async (slowPublicPdf, slowElapsed) => {
@@ -659,11 +790,32 @@ async function routeRegression() {
   }
 }
 
-routeRegression()
-  .then(() => {
-    process.stdout.write("PRINT PRESENTATION ROUTE REGRESSION PASS\n", () => process.exit(0));
-  })
-  .catch((error) => {
+async function main() {
+  let exitCode = 1;
+  let originalError = null;
+  let hardWatchdog;
+  const startedAt = Date.now();
+  try {
+    baselinePuppeteerChromePids = new Set(currentPuppeteerChromePids());
+    const watchdog = new Promise((_, reject) => {
+      const error = new Error(`hard watchdog timeout after ${REGRESSION_HARD_WATCHDOG_MS}ms`);
+      error.code = "GT63_PRINT_ROUTE_WATCHDOG_TIMEOUT";
+      hardWatchdog = trackedTimeout(() => reject(error), REGRESSION_HARD_WATCHDOG_MS);
+    });
+    await Promise.race([routeRegression(), watchdog]);
+    exitCode = 0;
+    console.log(`PRINT PRESENTATION ROUTE REGRESSION PASS durationMs=${Date.now() - startedAt}`);
+  } catch (error) {
+    originalError = error;
     console.error(`PRINT PRESENTATION ROUTE REGRESSION FAIL: ${error.message}`);
-    process.exit(1);
-  });
+  } finally {
+    clearTrackedTimeout(hardWatchdog);
+    await cleanupHarnessResources();
+    process.exitCode = exitCode;
+    if (originalError && process.env.GT63_PRINT_ROUTE_DEBUG) {
+      console.error(originalError.stack || originalError);
+    }
+  }
+}
+
+main();

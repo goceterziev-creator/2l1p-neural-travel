@@ -131,7 +131,7 @@
       hotel?.photo,
       hotel?.thumbnail
     ];
-    return urls.find(isUsableImageUrl) || fallbackImage(input);
+    return urls.find(isUsableImageUrl) || "";
   }
 
   function hotelImages(hotel, input) {
@@ -145,7 +145,21 @@
       hotel?.thumbnail
     ].filter(isUsableImageUrl);
     const unique = [...new Set(urls)];
-    return (unique.length ? unique : [fallbackImage(input)]).slice(0, COMPACT_GALLERY_IMAGE_COUNT);
+    return unique.slice(0, COMPACT_GALLERY_IMAGE_COUNT);
+  }
+
+  function hotelImagePlaceholder() {
+    return '<div class="v11-hotel-image-placeholder" data-hotel-image-placeholder="true"><span>&#1057;&#1085;&#1080;&#1084;&#1082;&#1072;&#1090;&#1072; &#1085;&#1072; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072; &#1097;&#1077; &#1073;&#1098;&#1076;&#1077; &#1087;&#1086;&#1090;&#1074;&#1098;&#1088;&#1076;&#1077;&#1085;&#1072; &#1087;&#1088;&#1077;&#1076;&#1080; &#1088;&#1077;&#1079;&#1077;&#1088;&#1074;&#1072;&#1094;&#1080;&#1103;.</span></div>';
+  }
+
+  function hotelOptionGallery(images = [], label = "") {
+    if (!images.length) return hotelImagePlaceholder();
+    return images.map((image, imageIndex) => `<img src="${escapeHtml(image)}" alt="${imageIndex === 0 ? escapeHtml(`${label} снимка`) : ""}">`).join("");
+  }
+
+  function selectedHotelGallery(images = []) {
+    if (!images.length) return hotelImagePlaceholder();
+    return images.map((image, imageIndex) => `<button type="button" class="v11-gallery-thumb" data-gallery-src="${escapeHtml(image)}" data-gallery-index="${escapeHtml(imageIndex)}"><img src="${escapeHtml(image)}" alt="${imageIndex === 0 ? "Снимка на избрания хотел" : ""}"></button>`).join("");
   }
 
   function hotelUrl(hotel = {}) {
@@ -561,7 +575,7 @@
     return `
       <article class="v11-hotel-option ${selected ? "selected" : ""}" data-option-index="${escapeHtml(index)}">
         <div class="v11-hotel-gallery">
-          ${payload.images.map((image, imageIndex) => `<img src="${escapeHtml(image)}" alt="${imageIndex === 0 ? escapeHtml(`${payload.label} снимка`) : ""}">`).join("")}
+          ${hotelOptionGallery(payload.images, payload.label)}
         </div>
         <div>
           <div class="v11-option-heading">
@@ -651,7 +665,7 @@
     return `
       <article class="v11-selected-hotel-detail ${index === activeIndex ? "active" : ""}" data-selected-detail-index="${escapeHtml(index)}">
         <div class="v11-selected-hotel-gallery">
-          ${payload.images.map((image, imageIndex) => `<button type="button" class="v11-gallery-thumb" data-gallery-src="${escapeHtml(image)}" data-gallery-index="${escapeHtml(imageIndex)}"><img src="${escapeHtml(image)}" alt="${imageIndex === 0 ? "Снимка на избрания хотел" : ""}"></button>`).join("")}
+          ${selectedHotelGallery(payload.images)}
         </div>
         <div class="v11-selected-hotel-copy">
           <p class="v11-kicker js-selected-detail-label">${escapeHtml(payload.label)}</p>
@@ -697,6 +711,7 @@
           var selectedMeal = root.querySelector(".js-selected-option-meal");
           var selectedTransfer = root.querySelector(".js-selected-option-transfer");
           var selectedImage = root.querySelector(".js-selected-option-image");
+          var selectedImagePlaceholder = root.querySelector(".js-selected-option-image-placeholder");
           var selectedWebsite = root.querySelector(".js-selected-option-website");
           var whatsappLinks = root.querySelectorAll(".js-selected-option-whatsapp");
           var heroFactStars = root.querySelector('[data-selected-fact="stars"] strong');
@@ -755,6 +770,10 @@
           }
           function updateDetailGallery(images) {
             if (!detailGallery) return;
+            if (!images.length) {
+              detailGallery.innerHTML = '<div class="v11-hotel-image-placeholder" data-hotel-image-placeholder="true"><span>&#1057;&#1085;&#1080;&#1084;&#1082;&#1072;&#1090;&#1072; &#1085;&#1072; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072; &#1097;&#1077; &#1073;&#1098;&#1076;&#1077; &#1087;&#1086;&#1090;&#1074;&#1098;&#1088;&#1076;&#1077;&#1085;&#1072; &#1087;&#1088;&#1077;&#1076;&#1080; &#1088;&#1077;&#1079;&#1077;&#1088;&#1074;&#1072;&#1094;&#1080;&#1103;.</span></div>';
+              return;
+            }
             detailGallery.innerHTML = images.map(function (image, index) {
               var safeImage = escapeText(image);
               return '<button type="button" class="v11-gallery-thumb" data-gallery-src="' + safeImage + '" data-gallery-index="' + index + '"><img src="' + safeImage + '" alt="' + (index === 0 ? "Снимка на избрания хотел" : "") + '"></button>';
@@ -819,8 +838,18 @@
               }
               if (selectedMeal) selectedMeal.textContent = "Хранене: " + (button.dataset.optionMealCompact || "Хранене за потвърждение");
               if (selectedTransfer) selectedTransfer.textContent = button.dataset.optionTransfer || "";
-              if (selectedImage && button.dataset.optionImage) selectedImage.src = button.dataset.optionImage;
-              if (selectedImage) selectedImage.alt = button.dataset.optionName || "";
+              if (selectedImage) {
+                if (button.dataset.optionImage) {
+                  selectedImage.src = button.dataset.optionImage;
+                  selectedImage.hidden = false;
+                  if (selectedImagePlaceholder) selectedImagePlaceholder.hidden = true;
+                } else {
+                  selectedImage.removeAttribute("src");
+                  selectedImage.hidden = true;
+                  if (selectedImagePlaceholder) selectedImagePlaceholder.hidden = false;
+                }
+                selectedImage.alt = button.dataset.optionName || "";
+              }
               if (selectedWebsite) {
                 if (button.dataset.optionUrl) {
                   selectedWebsite.href = button.dataset.optionUrl;
@@ -920,7 +949,8 @@
             </div>
           </div>
           <div class="v11-hero-visual">
-            <img class="js-selected-option-image" src="${escapeHtml(heroImage)}" alt="${escapeHtml(selectedPayload.name)}">
+            <img class="js-selected-option-image" src="${escapeHtml(heroImage)}" alt="${escapeHtml(selectedPayload.name)}" ${heroImage ? "" : "hidden"}>
+            ${heroImage ? "" : '<div class="v11-hotel-image-placeholder js-selected-option-image-placeholder" data-hotel-image-placeholder="true"><span>&#1057;&#1085;&#1080;&#1084;&#1082;&#1072;&#1090;&#1072; &#1085;&#1072; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072; &#1097;&#1077; &#1073;&#1098;&#1076;&#1077; &#1087;&#1086;&#1090;&#1074;&#1098;&#1088;&#1076;&#1077;&#1085;&#1072; &#1087;&#1088;&#1077;&#1076;&#1080; &#1088;&#1077;&#1079;&#1077;&#1088;&#1074;&#1072;&#1094;&#1080;&#1103;.</span></div>'}
           </div>
           <div class="v11-price-card">
             <span>&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;&#1086;&#1090;&#1077;&#1083;</span>
