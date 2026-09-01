@@ -1,7 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
-const puppeteer = require("puppeteer");
 
 const router = express.Router();
 
@@ -279,30 +278,7 @@ router.get("/:id/pdf", async (req, res) => {
       });
     }
 
-    const generated = generateOffer(normalizeOfferForEngine(offer), {
-      clientBaseUrl: LIVE_BASE_URL
-    });
-
-    const html = renderHtml(generated.offer, generated.whatsappLink);
-
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
-    });
-
-    const page = await browser.newPage();
-
-    await page.setViewport({
-      width: 1400,
-      height: 2200
-    });
-
-    await page.setContent(html, {
-      waitUntil: "domcontentloaded",
-      timeout: 0
-    });
-
-    const pdfBuffer = await page.pdf({
+       const pdfBuffer = await page.pdf({
       format: "A4",
       printBackground: true,
       preferCSSPageSize: true,

@@ -553,3 +553,4 @@ module.exports = {
   renderHtml,
   buildWhatsAppLink
 };
+}
