@@ -594,6 +594,7 @@
             ${payload.url ? `<a href="${escapeHtml(payload.url)}" target="_blank" rel="noreferrer">&#1042;&#1080;&#1078; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072;</a>` : ""}
             <button type="button"
               class="v11-prefer-option"
+              data-option-id="${escapeHtml(presentationViewModel.hotelIdentity(hotel, index))}"
               data-option-index="${escapeHtml(index)}"
               data-option-name="${escapeHtml(payload.name)}"
               data-option-price="${escapeHtml(payload.priceDisplay)}"
@@ -801,6 +802,14 @@
           }
           root.querySelectorAll(".v11-prefer-option").forEach(function (button) {
             button.addEventListener("click", function () {
+              var shell = root.closest(".shell");
+              var pdfLink = shell && shell.querySelector("[data-offer-pdf]");
+              if (pdfLink && button.dataset.optionId) {
+                var pdfUrl = new URL(pdfLink.href, document.baseURI);
+                pdfUrl.searchParams.set("selectedHotelId", button.dataset.optionId);
+                pdfUrl.searchParams.set("mode", "selected");
+                pdfLink.href = pdfUrl.href;
+              }
               root.querySelectorAll(".v11-hotel-option").forEach(function (card) {
                 card.classList.remove("selected");
                 var badge = card.querySelector("[data-selected-badge]");
@@ -1032,3 +1041,4 @@
     renderMultiHotelProposal
   };
 });
+

@@ -27,6 +27,7 @@ globalThis.GT63LuxuryV11Renderer = require("./gt63-core/luxury-v11-renderer");
 globalThis.GT63MultiHotelRenderer = require("./gt63-core/renderers/multi-hotel");
 const gt63PrintPresentationRenderer = require("./gt63-core/renderers/print-presentation");
 const gt63ProposalRendererRegistry = require("./gt63-core/proposal-renderer-registry");
+const { buildLegacyOfferPrintInput } = require("./gt63-core/legacy-offer-print-input");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -5729,7 +5730,7 @@ async function callVisionJson({ imageBuffer, mimeType, prompt }) {
           role: "user",
           content: [
             { type: "input_text", text: prompt },
-            { type: "input_image", image_url: base64Image }
+            { type: "input_image", image_url: base64Image, detail: "high" }
           ]
         }
       ]
@@ -5881,7 +5882,7 @@ function normalizeHotelTextToBulgarian(parsed = {}) {
       .replace(/twin room/i, "Стая с две единични легла")
       .replace(/standard room/i, "Стандартна стая"),
     meal: translateKnown(parsed.meal),
-    price: toNumber(parsed.price, 0),
+    price: parseVisionPrice(parsed.priceText || parsed.price),
     currency: text(parsed.currency || "EUR") || "EUR",
     roomsLeft: text(parsed.roomsLeft)
       .replace(/rooms? left/i, "оставащи стаи")
@@ -5994,13 +5995,14 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
       .shell[data-proposal-template="multi-hotel"] { width: min(100% - 24px, 1180px); padding: 14px 0 24px; }
     }
     .gt63-client-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
-    .gt63-client-actions a { border: 1px solid rgba(148, 163, 184, 0.38); border-radius: 999px; color: #e5e7eb; padding: 8px 12px; text-decoration: none; }
+    .gt63-client-actions a { border: 1px solid #334155; border-radius: 999px; background: #18202c; color: #ffffff; padding: 8px 12px; text-decoration: none; }
+    .gt63-client-actions a:hover, .gt63-client-actions a:focus-visible { background: #1b6866; outline: 2px solid #a97838; outline-offset: 2px; }
   </style>
 </head>
 <body>
   <main class="shell" data-proposal-template="${escapeGt63RegistryHtml(template)}">
     <nav class="gt63-client-actions" aria-label="Client actions">
-      <a href="${escapeGt63RegistryHtml(pdfLink)}">PDF</a>
+      <a data-offer-pdf href="${escapeGt63RegistryHtml(pdfLink)}">PDF</a>
       <a href="https://wa.me/${escapeGt63RegistryHtml(AGENCY_WHATSAPP_PHONE)}?text=${encodeURIComponent(clientLink)}" target="_blank" rel="noreferrer">WhatsApp</a>
     </nav>
     ${body}
@@ -6010,11 +6012,14 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
 }
 
 function renderGt63PrintOfferHtml(offer = {}, options = {}) {
-  const proposalInput = normalizeProposalInputForOffer(offer.proposalInput);
+  const hasProposalInput = offer.proposalInput != null;
+  const proposalInput = hasProposalInput
+    ? normalizeProposalInputForOffer(offer.proposalInput)
+    : buildLegacyOfferPrintInput(offer);
   if (!proposalInput) {
-    const error = new Error("Offer does not contain GT63 proposal input");
+    const error = new Error("Offer proposal input is invalid");
     error.status = 400;
-    error.code = "GT63_PRINT_MISSING_PROPOSAL_INPUT";
+    error.code = "GT63_PRINT_INVALID_PROPOSAL_INPUT";
     throw error;
   }
 
@@ -6841,6 +6846,8 @@ async function renderOfferHtml(offer, options = {}) {
   const pdfLink = `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`;
 
   const autoImages = {
+    london: "https://images.unsplash.com/photo-1513635269975-59663e0ac1ad",
+    "лондон": "https://images.unsplash.com/photo-1513635269975-59663e0ac1ad",
     tokyo: "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf",
     "токио": "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf",
     paris: "https://images.unsplash.com/photo-1502602898657-3e91760cbb34",
@@ -10952,6 +10959,7 @@ Return ONLY strict JSON:
   "room": "",
   "meal": "",
   "price": 0,
+  "priceText": "",
   "currency": "EUR",
   "roomsLeft": "",
   "description": "",
@@ -10962,6 +10970,9 @@ Return ONLY strict JSON:
 }
 Rules:
 - price must be numeric only
+- priceText must transcribe the exact visible TOTAL STAY price, including every decimal digit and currency symbol (for example "€ 59.11" or "59,11 EUR")
+- preserve cents: 59.11 must remain 59.11, never 59; do not round, truncate, estimate, or substitute a nightly or crossed-out price
+- inspect small or raised cents next to the large integer; if the total is not readable, return price 0 and priceText "" so the operator can review it
 - return all human-readable fields in Bulgarian: area, distance, room, meal, roomsLeft, description
 - keep hotel name as the original brand/name if visible
 - area should include visible city/address/area, not empty when an address is visible
@@ -12102,3 +12113,4 @@ module.exports = {
   summarizeRegressionLibrary,
   summarizeBetaHealth
 };
+
