@@ -1,6 +1,6 @@
 "use strict";
 const assert = require("node:assert/strict");
-const { prepareHotelPrintImages } = require("../gt63-core/hotel-print-images");
+const { prepareHotelPrintImages, verifiedHotelImagePath } = require("../gt63-core/hotel-print-images");
 const { renderPrintProposal } = require("../gt63-core/renderers/print-presentation");
 
 const input = {
@@ -35,6 +35,12 @@ async function check(name, fn) { await fn(); checks++; console.log("PASS", name)
     assert.deepEqual(prepared.hotelOptions[1].imageUrls, [`${origin}/images/hotels/eden-au-lac-zurich.jpg`]);
     const london = await prepareHotelPrintImages({ destination: { name: "Лондон" }, hotel: { name: "a&o London Docklands Riverside", price: 59.11 } }, {}, { origin, resolveImage: async () => null, findImages: async () => [] });
     assert.match(london.hotel.imageUrls[0], /ao-london-docklands/);
+  });
+  await check("Maamadi exact-property fallback survives search outage and does not match another destination", async () => {
+    const prepared = await prepareHotelPrintImages({ destination: { name: "Малдиви" }, hotel: { name: "Maamadi Boutique", price: 100 } }, {}, { origin, resolveImage: async () => null, findImages: async () => { throw Error("Search unavailable"); } });
+    assert.equal(prepared.hotel.imageUrls[0], `${origin}/images/hotels/maamadi-boutique.jpg`);
+    assert.equal(verifiedHotelImagePath("Maamadi Boutique", "Paris"), "");
+    assert.match(renderPrintProposal(prepared), /maamadi-boutique.jpg/);
   });
   await check("unknown hotel searches fresh candidates, keeps valid photo and removes stale aliases", async () => {
     let searches = 0;
