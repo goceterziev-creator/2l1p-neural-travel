@@ -95,8 +95,9 @@
     const transferAmount = amount(pricing.transferAmount || input.transfer?.price);
     const marginPercent = amount(pricing.marginPercent);
     const baseAmount = flightAmount + hotelAmount + transferAmount;
-    if (baseAmount <= 0) return 0;
-    return baseAmount + (baseAmount * (marginPercent / 100));
+    const adjustment = Number(pricing.packageAdjustmentAmount);
+    if (baseAmount <= 0) return amount(pricing.totalAmount);
+    return baseAmount + (baseAmount * (marginPercent / 100)) + (Number.isFinite(adjustment) ? adjustment : 0);
   }
 
   function optionPositionSummary(hotel = {}, hotelOptions = [], input = {}) {
@@ -307,3 +308,4 @@
     text
   };
 });
+

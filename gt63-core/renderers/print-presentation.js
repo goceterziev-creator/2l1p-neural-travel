@@ -475,6 +475,8 @@
       <div class="gt63-print-flight-columns">
         ${technicalSegments("Отиване", outbound)}
         ${technicalSegments("Връщане", inbound)}
+        ${!outbound.length && nonEmpty(flight.outbound) ? `<p><strong>Отиване:</strong> ${escapeHtml(localize(flight.outbound))}</p>` : ""}
+        ${!inbound.length && nonEmpty(flight.inbound) ? `<p><strong>Връщане:</strong> ${escapeHtml(localize(flight.inbound))}</p>` : ""}
       </div>
     `);
   }
@@ -544,3 +546,4 @@
     renderPrintProposal
   };
 });
+
