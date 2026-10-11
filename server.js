@@ -28,7 +28,7 @@ globalThis.GT63MultiHotelRenderer = require("./gt63-core/renderers/multi-hotel")
 const gt63PrintPresentationRenderer = require("./gt63-core/renderers/print-presentation");
 const gt63ProposalRendererRegistry = require("./gt63-core/proposal-renderer-registry");
 const { buildLegacyOfferPrintInput } = require("./gt63-core/legacy-offer-print-input");
-const { prepareHotelPrintImages } = require("./gt63-core/hotel-print-images");
+const { prepareHotelPrintImages, verifiedHotelImagePath } = require("./gt63-core/hotel-print-images");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -7452,7 +7452,8 @@ async function renderOfferHtml(offer, options = {}) {
   }).join("");
 
   const hotelsWithImages = await Promise.all(hotels.map(async (hotel) => {
-    const existingImages = uniqueHotelImages(hotel.images || [], 6);
+    const verifiedImage = verifiedHotelImagePath(hotel.name, destinationName);
+    const existingImages = uniqueHotelImages([...(hotel.images || []), ...(verifiedImage ? [new URL(verifiedImage, LIVE_BASE_URL).href] : [])], 6);
     if (existingImages.length >= 3 || !hotel.name) {
       return { ...hotel, images: existingImages };
     }

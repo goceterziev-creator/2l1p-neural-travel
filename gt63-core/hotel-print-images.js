@@ -2,12 +2,17 @@
 
 const { buildPresentationViewModel } = require("./presentation-view-model");
 
-// These are photos of the named properties, never generic hotel/room imagery.
+// Verified photos of the named properties, never generic imagery.
 const verifiedPhotos = [
   { name: "a&o london docklands riverside", destination: /london|лондон/i, path: "/images/hotels/ao-london-docklands.jpg" },
-  { name: "la reserve eden au lac zurich", destination: /zurich|zürich|цюрих/i, path: "/images/hotels/eden-au-lac-zurich.jpg" }
+  { name: "la reserve eden au lac zurich", destination: /zurich|zürich|цюрих/i, path: "/images/hotels/eden-au-lac-zurich.jpg" },
+  { name: "maamadi boutique", destination: /maldives|малдиви|maafushi/i, path: "/images/hotels/maamadi-boutique.jpg" }
 ];
 const normalize = value => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+function verifiedHotelImagePath(name, destination) {
+  return verifiedPhotos.find(photo => normalize(name) === photo.name && photo.destination.test(String(destination || "")))?.path || "";
+}
 
 function hotelImageCandidates(hotel = {}) {
   return [...new Set([
@@ -30,8 +35,8 @@ async function prepareHotelPrintImages(input, options, { resolveImage, findImage
     if (!hotel) return;
     const existing = hotelImageCandidates(hotel);
     let images = (await Promise.all(existing.map(resolveImage))).filter(Boolean);
-    const verified = verifiedPhotos.find(photo => normalize(hotel.name) === photo.name && photo.destination.test(destination));
-    if (images.length < 3 && verified) images.push(new URL(verified.path, origin).href);
+    const verified = verifiedHotelImagePath(hotel.name, destination);
+    if (images.length < 3 && verified) images.push(new URL(verified, origin).href);
     if (!images.length && hotel.name) {
       const found = await findImages(hotel.name, destination, 6);
       images = (await Promise.all(found.slice(0, 6).map(resolveImage))).filter(Boolean);
@@ -45,4 +50,4 @@ async function prepareHotelPrintImages(input, options, { resolveImage, findImage
   return copy;
 }
 
-module.exports = { hotelImageCandidates, prepareHotelPrintImages };
+module.exports = { hotelImageCandidates, prepareHotelPrintImages, verifiedHotelImagePath };
