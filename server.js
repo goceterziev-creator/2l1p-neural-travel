@@ -28,6 +28,7 @@ globalThis.GT63MultiHotelRenderer = require("./gt63-core/renderers/multi-hotel")
 const gt63PrintPresentationRenderer = require("./gt63-core/renderers/print-presentation");
 const gt63ProposalRendererRegistry = require("./gt63-core/proposal-renderer-registry");
 const { buildLegacyOfferPrintInput } = require("./gt63-core/legacy-offer-print-input");
+const { prepareHotelPrintImages } = require("./gt63-core/hotel-print-images");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -69,10 +70,11 @@ const SOURCE_EVIDENCE_DIR = process.env.SOURCE_EVIDENCE_DIR
   : path.join(__dirname, "storage", "source-evidence");
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
+const HOTEL_PRINT_IMAGE_DIR = path.resolve(DATA_DIR, "HOTEL_PRINT_IMAGES");
 const GT63_CORE_DIR = path.join(__dirname, "gt63-core");
 const SMART_IMPORT_FIXTURE_DIR = path.join(__dirname, "test", "fixtures", "smart-import");
 const GT63_PRINT_IMAGE_DNS_TIMEOUT_MS = 1500;
-const GT63_PRINT_IMAGE_WAIT_MS = 2000;
+const GT63_PRINT_IMAGE_WAIT_MS = 5000;
 const GT63_PRINT_IMAGE_DOM_SETTLE_MS = 5000;
 const GT63_PRINT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const GT63_PRINT_IMAGE_VERDICT_TTL_MS = 5 * 60 * 1000;
@@ -114,6 +116,10 @@ app.get(["/gt63-core/product", "/gt63-core/product/"], requireAuthPage, (req, re
 app.use("/gt63-core/fixtures/smart-import", requireAuthPage, express.static(SMART_IMPORT_FIXTURE_DIR));
 app.use("/gt63-core", requireAuthPage, express.static(GT63_CORE_DIR));
 app.use(express.static(PUBLIC_DIR));
+app.get("/images/hotel-cache/:file", (req, res) => {
+  if (!/^[a-f0-9]{64}\.jpg$/.test(req.params.file)) return res.sendStatus(404);
+  res.sendFile(path.join(HOTEL_PRINT_IMAGE_DIR, req.params.file), { maxAge: "30d" });
+});
 
 ensureDb();
 
@@ -6806,6 +6812,25 @@ async function fetchGt63PrintImageForPdfUncached(rawUrl, printOrigin, redirectDe
     return null;
   }
 
+  // Read our verified images directly, without a second network round trip.
+  if (isGt63ApprovedLocalPrintImage(url, printOrigin)) {
+    try {
+      let filename;
+      if (/^\/images\/hotel-cache\/[a-f0-9]{64}\.jpg$/.test(url.pathname)) {
+        filename = path.join(HOTEL_PRINT_IMAGE_DIR, path.basename(url.pathname));
+      } else {
+        const imagesDir = path.resolve(PUBLIC_DIR, "images");
+        filename = path.resolve(PUBLIC_DIR, `.${decodeURIComponent(url.pathname)}`);
+        if (!filename.startsWith(`${imagesDir}${path.sep}`)) return null;
+      }
+      const stat = fs.statSync(filename);
+      if (!stat.isFile() || stat.size > GT63_PRINT_IMAGE_MAX_BYTES) return null;
+      const body = fs.readFileSync(filename);
+      const types = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif", ".avif": "image/avif" };
+      return { contentType: types[path.extname(filename).toLowerCase()], body };
+    } catch { return null; }
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GT63_PRINT_IMAGE_WAIT_MS);
   try {
@@ -6830,6 +6855,40 @@ async function fetchGt63PrintImageForPdfUncached(rawUrl, printOrigin, redirectDe
     return null;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function resolveGt63HotelPrintImage(rawUrl) {
+  const filename = crypto.createHash("sha256").update(rawUrl).digest("hex") + ".jpg";
+  const cachedPath = path.join(HOTEL_PRINT_IMAGE_DIR, filename);
+  const cachedUrl = new URL(`/images/hotel-cache/${filename}`, LIVE_BASE_URL).href;
+  try {
+    const stat = fs.statSync(cachedPath);
+    if (stat.size > 0 && stat.size <= GT63_PRINT_IMAGE_MAX_BYTES && Date.now() - stat.mtimeMs < 30 * 86400000) return cachedUrl;
+  } catch { /* No durable image yet. */ }
+  const image = await fetchGt63PrintImageForPdf(rawUrl, new URL(LIVE_BASE_URL).origin);
+  if (!image) return null;
+  try {
+    // Decode and store an ordinary JPEG, excluding SVG/HTML and oversized rasters.
+    const body = await sharp(image.body, { limitInputPixels: 25000000 }).rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+    fs.mkdirSync(HOTEL_PRINT_IMAGE_DIR, { recursive: true });
+    fs.writeFileSync(cachedPath, body);
+    const entries = fs.readdirSync(HOTEL_PRINT_IMAGE_DIR).filter(name => /^[a-f0-9]{64}\.jpg$/.test(name)).map(name => {
+      const file = path.join(HOTEL_PRINT_IMAGE_DIR, name);
+      const stat = fs.statSync(file);
+      return { file, size: stat.size, time: stat.mtimeMs };
+    }).sort((a, b) => a.time - b.time);
+    let total = entries.reduce((sum, entry) => sum + entry.size, 0);
+    for (const entry of entries) {
+      if (total <= 64 * 1024 * 1024) break;
+      if (entry.file === cachedPath) continue;
+      fs.unlinkSync(entry.file);
+      total -= entry.size;
+    }
+    return cachedUrl;
+  } catch (error) {
+    console.warn("GT63 hotel print image could not be decoded or cached:", error.message);
+    return null;
   }
 }
 
@@ -8952,10 +9011,18 @@ app.get("/api/offers/:id/print", async (req, res) => {
   if (!offer) return res.status(404).send("Offer not found");
 
   try {
-    const html = renderGt63PrintOfferHtml(offer, {
+    const printOptions = {
       mode: req.query?.mode,
       selectedHotelId: req.query?.selectedHotelId
+    };
+    const input = offer.proposalInput != null ? normalizeProposalInputForOffer(offer.proposalInput) : buildLegacyOfferPrintInput(offer);
+    if (!input) return res.status(400).json({ error: "GT63_PRINT_INVALID_PROPOSAL_INPUT", message: "Offer proposal input is invalid" });
+    const prepared = await prepareHotelPrintImages(input, printOptions, {
+      origin: LIVE_BASE_URL,
+      resolveImage: resolveGt63HotelPrintImage,
+      findImages: findHotelImagesWithSerpApi
     });
+    const html = renderGt63PrintOfferHtml({ ...offer, proposalInput: prepared }, printOptions);
     res.setHeader("Content-Type", "text/html; charset=UTF-8");
     res.send(html);
   } catch (error) {
