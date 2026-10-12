@@ -87,6 +87,24 @@ async function check(name, fn) {
     assert.match(print, /Zurich Second Hotel/);
     assert.match(print, /438\.32 EUR/);
   });
+  await check("standard HTML hotel choice keeps original IDs and sends matching price to PDF", async () => {
+    const offer={...legacy,hotels:[{name:"First",price:50},{name:"Second",price:100,selected:true},{name:"Third",price:150}],hotelPrice:100,finalPrice:500};
+    const before=JSON.stringify(offer);
+    const html=await api.renderOfferHtml(offer);
+    assert.match(html,/data-hotel-id="legacy-hotel-2"/);
+    assert.match(html,/data-hotel-id="legacy-hotel-1"/);
+    assert.match(html,/Предпочитам този хотел/);
+    assert.match(html,/offer-hotel-selection.js/);
+    const cards=[...html.matchAll(/data-hotel-id="([^"]+)" data-client-price="([^"]+)"/g)].map(m=>({dataset:{hotelId:m[1],clientPrice:m[2]},classList:{toggle(){}},querySelector:()=>null}));
+    const pdf={href:"https://aya.test/api/offers/QA/pdf?keep=1"}; const price={textContent:""};
+    const context={URL,window:{location:{href:"https://aya.test/view?selectedHotelId=legacy-hotel-3"},history:{replaceState(){}}},document:{querySelectorAll:selector=>selector==="[data-hotel-choice-card]"?cards:selector==="[data-client-price]"?[price]:[pdf]}};
+    require("node:vm").runInNewContext(fs.readFileSync(path.join(__dirname,"../public/offer-hotel-selection.js"),"utf8"),context);
+    assert.equal(new URL(pdf.href).searchParams.get("selectedHotelId"),"legacy-hotel-3");
+    assert.equal(new URL(pdf.href).searchParams.get("keep"),"1");
+    assert.match(price.textContent,/552[,.]50/);
+    const print=api.renderGt63PrintOfferHtml(offer,{selectedHotelId:"legacy-hotel-3"});
+    assert.match(print,/Third/);assert.match(print,/552\.50 EUR/);assert.equal(JSON.stringify(offer),before);
+  });
   await check("existing proposal price calculation is preserved", () => {
     assert.equal(viewModel.optionPackageTotal({ price: 59.11 }, { pricing: { flightAmount: 317.45, marginPercent: 5 } }).toFixed(2), "395.39");
   });

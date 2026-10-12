@@ -7492,8 +7492,11 @@ async function renderOfferHtml(offer, options = {}) {
     return { ...hotel, images: mergedImages };
   }));
   const selectedHotelIndex = hotelsWithImages.findIndex((hotel) => Boolean(hotel.selected));
+  const printSelectionInput = offer.proposalInput != null ? normalizeProposalInputForOffer(offer.proposalInput) : buildLegacyOfferPrintInput(offer);
+  const printSelectionHotels = printSelectionInput?.hotelOptions || [];
   const normalizedHotels = hotelsWithImages.map((hotel, index) => ({
     ...hotel,
+    printSelectionId: require("./gt63-core/presentation-view-model").hotelIdentity(printSelectionHotels.find(item=>item.name===hotel.name && item.room===hotel.room && Number(item.price)===Number(hotel.price)) || printSelectionHotels[index] || {id:hotel.id || `legacy-hotel-${index+1}`}, index),
     selected: selectedHotelIndex >= 0 ? index === selectedHotelIndex : index === 0
   }));
   const hasSelectedHotel = normalizedHotels.some((hotel) => Boolean(hotel.selected));
@@ -7503,10 +7506,11 @@ async function renderOfferHtml(offer, options = {}) {
     : toNumber(offer.flightPrice, 0);
   const transferOptionBase = toNumber(offer.transferPrice, 0);
   const markupMultiplier = 1 + toNumber(offer.markupPercent, 0) / 100;
+  const optionPriceAdjustment = Number(buildLegacyOfferPrintInput(offer).pricing.packageAdjustmentAmount || 0);
   const usedRenderedHotelImageKeys = new Set();
   const hotelOptionPrices = orderedHotels.map((hotel) => {
     const hotelPrice = toNumber(hotel.price, 0);
-    const calculatedOptionPrice = (flightOptionBase + hotelPrice + transferOptionBase) * markupMultiplier;
+    const calculatedOptionPrice = (flightOptionBase + hotelPrice + transferOptionBase) * markupMultiplier + optionPriceAdjustment;
     return hotel.selected && toNumber(offer.finalPrice, 0) > 0
       ? toNumber(offer.finalPrice, 0)
       : calculatedOptionPrice;
@@ -7548,7 +7552,7 @@ async function renderOfferHtml(offer, options = {}) {
       ? "\u0412\u0430\u0448\u0438\u044F\u0442 \u0445\u043E\u0442\u0435\u043B"
       : `\u0425\u043e\u0442\u0435\u043b \u043e\u043f\u0446\u0438\u044f ${index + 1}`;
     const hotelPrice = toNumber(hotel.price, 0);
-    const calculatedOptionPrice = (flightOptionBase + hotelPrice + transferOptionBase) * markupMultiplier;
+    const calculatedOptionPrice = (flightOptionBase + hotelPrice + transferOptionBase) * markupMultiplier + optionPriceAdjustment;
     const clientOptionPrice = isSelected && toNumber(offer.finalPrice, 0) > 0
       ? toNumber(offer.finalPrice, 0)
       : calculatedOptionPrice;
@@ -7561,7 +7565,7 @@ async function renderOfferHtml(offer, options = {}) {
     };
 
     return `
-      <article class="card hotel-card hotel-option-card${isSelected ? " selected" : ""}">
+      <article class="card hotel-card hotel-option-card${isSelected ? " selected" : ""}" data-hotel-choice-card data-hotel-id="${escapeAttr(hotel.printSelectionId)}" data-client-price="${escapeAttr(formatMoney(clientOptionPrice, offer.currency || "EUR"))}">
         <div class="option-badge">${escapeHtml(optionLabel)}</div>
         <div class="option-meta ${escapeAttr(optionTone.toneClass)}">${escapeHtml(optionTone.label)}</div>
         ${clientOptionPrice > 0 ? `<div class="option-price"><small>Крайна цена</small>${formatMoney(clientOptionPrice, hotel.currency || offer.currency || "EUR")}</div>` : ""}
@@ -7583,6 +7587,7 @@ async function renderOfferHtml(offer, options = {}) {
         </div>
 
         <p>${escapeHtml(description)}</p>
+        ${!forPdf && orderedHotels.length > 1 ? `<button type="button" data-hotel-choice aria-pressed="${isSelected}" style="display:block;width:100%;padding:14px;border:0;border-radius:10px;background:#1d4ed8;color:white;font:inherit;font-weight:700;cursor:pointer;margin:16px 0">${isSelected ? "Избран хотел" : "Предпочитам този хотел"}</button>` : ""}
 
         <div class="benefit-list">
           <span>Отлична локация</span>
@@ -8218,11 +8223,11 @@ h1 {
         <div><strong>Период:</strong> ${escapeHtml(offer.travelDates || "-")}</div>
         <div><strong>Гости:</strong> ${escapeHtml(offer.guests || "-")}</div>
       </div>
-      <div class="price">${formatMoney(offer.finalPrice, offer.currency)}</div>
+      <div class="price" data-client-price>${formatMoney(offer.finalPrice, offer.currency)}</div>
       <div class="included">
         ${included.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}
       </div>
-      ${forPdf ? "" : `<div class="actions"><a href="${pdfLink}" target="_blank">PDF</a><a href="${whatsappLink}" target="_blank">WhatsApp</a></div>`}
+      ${forPdf ? "" : `<div class="actions"><a href="${pdfLink}" data-selected-hotel-pdf target="_blank">PDF</a><a href="${whatsappLink}" target="_blank">WhatsApp</a></div>`}
     </div>
   </section>
 
@@ -8266,7 +8271,7 @@ h1 {
     </div>
   </section>
 </main>
-${forPdf ? "" : `<script>
+${forPdf ? "" : `<script src="/offer-hotel-selection.js"></script><script>
 async function dismissOfferWarning() {
   const warning = document.getElementById("offerWarning");
   if (warning) warning.style.display = "none";
