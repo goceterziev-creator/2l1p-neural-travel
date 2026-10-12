@@ -2811,8 +2811,14 @@
           <div class="upload-box">
             <label>Travel Screenshots</label>
             <input id="smartImportImage" type="file" accept="image/*" multiple />
-            <label for="smartImportHotelLink">Линк към хотела — по желание</label>
-            <input id="smartImportHotelLink" type="url" placeholder="Публичен линк към хотела" />
+            <label>Линкове към хотелите — по желание</label>
+            <div id="smartImportHotelLinks">
+              <div data-hotel-link-row style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                <input id="smartImportHotelLink" data-hotel-import-link type="url" aria-label="Линк към хотел" placeholder="Публичен линк към хотела" />
+                <button type="button" class="secondary" onclick="this.closest('[data-hotel-link-row]').remove()">Премахни</button>
+              </div>
+            </div>
+            <button type="button" class="secondary" onclick="addSmartImportHotelLink()">+ Добави хотелски линк</button>
             <div class="muted">Помага за разпознаване на хотела. Цената и условията се вземат от скрийншотите.</div>
             <div class="actions">
               <button type="button" class="success" data-capability="imports.run" data-capability-label="Your role cannot run imports" onclick="uploadSmartImport()">Smart Import</button>
