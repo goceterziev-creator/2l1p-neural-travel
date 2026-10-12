@@ -1890,6 +1890,8 @@ const hotels = inputHotels.length
       sourcePrice: h.sourcePrice,
       sourceCurrency: h.sourceCurrency,
       exchangeRate: h.exchangeRate,
+      exchangeRateDate: h.exchangeRateDate,
+      exchangeRateSource: h.exchangeRateSource,
       roomsLeft: h.roomsLeft || "",
       description: h.description || "",
       url: h.url || h.link || h.bookingUrl || "",
@@ -11246,6 +11248,17 @@ app.post("/api/import-image-gemini-test", requireCapability("imports.run"), requ
       message: error.message
     });
   }
+});
+
+const getOfferExchangeRates = require("./server/exchange-rates").createExchangeRateService({cacheFile:path.join(DATA_DIR,"EXCHANGE_RATES","eur.json")});
+app.get("/api/exchange-rates", requireCapability("imports.run"), async (req,res) => {
+  const currencies = [...new Set(String(req.query.currencies || "").split(",").filter(c=>/^[A-Z]{3}$/.test(c)))].slice(0,20);
+  if (!currencies.length) return res.status(400).json({error:"Specify source currencies"});
+  try {
+    const quote=await getOfferExchangeRates();
+    const rates=Object.fromEntries(currencies.filter(c=>quote.rates[c]).map(c=>[c,quote.rates[c]]));
+    res.json({base:quote.base,rates,updatedAt:quote.updatedAt,provider:quote.provider,missing:currencies.filter(c=>!rates[c])});
+  } catch(error) {res.status(503).json({error:"Курсът не е достъпен. Въведете ръчно проверен курс.",details:error.message});}
 });
 
 app.post("/api/smart-import", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {
