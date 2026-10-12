@@ -94,6 +94,8 @@ function addHotel(hotel = {}) {
     sourcePrice: hotel.sourcePrice,
     sourceCurrency: hotel.sourceCurrency,
     exchangeRate: hotel.exchangeRate,
+    exchangeRateDate: hotel.exchangeRateDate,
+    exchangeRateSource: hotel.exchangeRateSource,
     roomsLeft: hotel.roomsLeft || "",
     description: hotel.description || "",
     images: uniqueHotelImages(hotel.images || []),
@@ -2945,7 +2947,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
       </div>
 
       ${hotelOptions.length ? `<section><h3>Всички хотелски варианти</h3>${hotelOptions.map((h,i)=>`<label>${escapeHtml(h.name || "Без име")} — ${escapeHtml(h.currency || "неизвестна валута")}<input id="reviewHotelPrice${i}" type="number" step="0.01" value="${Number(h.price || 0)}" /></label>`).join("")}</section>` : ""}
-      ${sourceCurrencies.length ? `<section class="warning"><h3>Превалутиране към EUR</h3><p>Въведете избрания курс: колко единици от изходната валута са 1 EUR. Сумите се запазват в оригиналната валута и се превалутират само с този курс.</p>${sourceCurrencies.map((c,i)=>`<label>1 EUR = ${escapeHtml(c)}<input id="reviewExchangeRate${i}" type="number" step="any" min="0" placeholder="Курс" /></label>`).join("")}</section>` : ""}
+      ${sourceCurrencies.length ? `<section class="warning"><h3>Превалутиране към EUR</h3><div id="reviewExchangeRateStatus">Зареждане на дневните курсове…</div><p>Проверете или променете курса: колко единици от изходната валута са 1 EUR. Сумите се запазват в оригиналната валута и се превалутират само с този курс.</p>${sourceCurrencies.map((c,i)=>`<label>1 EUR = ${escapeHtml(c)}<input id="reviewExchangeRate${i}" type="number" step="any" min="0" placeholder="Курс" /></label>`).join("")}</section>` : ""}
       <div class="actions" style="margin-top: 12px;">
         <button type="button" onclick="applyUniversalTravelIntakeResult()">Use Result</button>
         <button type="button" class="secondary" onclick="$('${escapeHtml(reviewTarget)}').innerHTML=''">Cancel</button>
@@ -2969,6 +2971,24 @@ function renderUniversalTravelReview(data = {}, files = []) {
       </details>
     </div>
   `;
+  if (sourceCurrencies.length) loadReviewExchangeRates(data, sourceCurrencies);
+}
+
+async function loadReviewExchangeRates(data, currencies) {
+  const status = $("reviewExchangeRateStatus");
+  try {
+    const quote = await fetchJson("/api/exchange-rates?currencies=" + currencies.join(","));
+    if (latestUniversalTravelIntake !== data || !status?.isConnected) return;
+    currencies.forEach((currency,index)=> {
+      const input=$("reviewExchangeRate"+index);
+      if (input && !input.value && quote.rates[currency]>0) {
+        input.value=quote.rates[currency];
+        input.dataset.quoteRate=String(quote.rates[currency]);
+        input.dataset.quoteDate=quote.updatedAt;
+      }
+    });
+    status.innerHTML=`Дневен ориентировъчен курс от ${escapeHtml(new Date(quote.updatedAt).toLocaleString("bg-BG"))}. <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates By Exchange Rate API</a>${quote.missing.length ? " · Няма курс за: "+escapeHtml(quote.missing.join(", ")) : ""}`;
+  } catch(error) { if(latestUniversalTravelIntake===data && status?.isConnected) status.textContent="Автоматичният курс не е достъпен. Въведете ръчно проверен курс."; }
 }
 
 function renderUniversalTravelError(error = {}) {
@@ -3103,7 +3123,9 @@ function applyUniversalTravelIntakeResult() {
     const sourceCurrency = item.currency || "EUR";
     const sourcePrice = item.price;
     const exchangeRate = sourceCurrency === "EUR" ? 1 : rates[sourceCurrency];
-    return {...item, sourcePrice, sourceCurrency, exchangeRate, currency:"EUR", price: Math.round(sourcePrice / exchangeRate * 100) / 100};
+    const rateInput=$("reviewExchangeRate"+currencies.indexOf(sourceCurrency));
+    const automatic = rateInput?.dataset?.quoteRate === String(exchangeRate);
+    return {...item, sourcePrice, sourceCurrency, exchangeRate, exchangeRateDate:automatic ? rateInput.dataset.quoteDate : new Date().toISOString(), exchangeRateSource:automatic ? "ExchangeRate-API" : "operator", currency:"EUR", price: Math.round(sourcePrice / exchangeRate * 100) / 100};
   }
   const convertedHotels = reviewedHotels.map(inEuro);
   Object.assign(flight, inEuro(flight));
@@ -3633,6 +3655,8 @@ function addHotel(hotel = {}) {
     sourcePrice: hotel.sourcePrice,
     sourceCurrency: hotel.sourceCurrency,
     exchangeRate: hotel.exchangeRate,
+    exchangeRateDate: hotel.exchangeRateDate,
+    exchangeRateSource: hotel.exchangeRateSource,
     roomsLeft: hotel.roomsLeft || "",
     description: hotel.description || "",
     images: uniqueHotelImages(Array.isArray(hotel.images) ? hotel.images : []),
