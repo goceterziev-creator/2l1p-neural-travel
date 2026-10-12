@@ -13,3 +13,14 @@ console.log('PASS URL name hint requires review and never overwrites an existing
 
 assert.equal(attachHotelImportLink([{name:"The Plaza Doha, LXR Hotels & Resorts",price:150988.6}],readHotelImportLink("https://www.booking.com/hotel/qa/the-plaza-doha-lxr-hotels-and-resorts.html")).records[0].url,"https://www.booking.com/hotel/qa/the-plaza-doha-lxr-hotels-and-resorts.html");
 console.log("PASS brand ampersand matches public URL wording");
+
+const {attachHotelImportLinks}=require('../server/hotel-import-link');
+const manyHotels=Array.from({length:16},(_,i)=>({name:`Hotel ${i+1}`,room:'Suite',price:50+i,currency:'EUR'}));
+const manyLinks=manyHotels.map((h,i)=>`https://www.booking.com/hotel/bg/hotel-${i+1}.html?token=discard`);
+const manyBefore=JSON.stringify(manyHotels);const many=attachHotelImportLinks(manyHotels,[...manyLinks,manyLinks[0],'bad-link']);
+assert.equal(many.links.length,16);assert.equal(many.records.length,16);
+many.records.forEach((h,i)=>{assert.equal(h.url,`https://www.booking.com/hotel/bg/hotel-${i+1}.html`);assert.equal(h.price,50+i);});
+assert.equal(JSON.stringify(manyHotels),manyBefore);
+assert.ok(many.warnings.length);assert.equal(attachHotelImportLinks(manyHotels,[]).records.length,16);
+const ambiguous=attachHotelImportLinks([{name:'',room:'Suite',price:20}],manyLinks.slice(0,2));assert.equal(ambiguous.records[0].name,'');
+console.log('PASS 16 links are preserved and matched independently; invalid/duplicate/ambiguous links leave prices intact');

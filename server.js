@@ -1895,6 +1895,7 @@ const hotels = inputHotels.length
       roomsLeft: h.roomsLeft || "",
       description: h.description || "",
       url: h.url || h.link || h.bookingUrl || "",
+      sourceLinks: safeArray(h.sourceLinks),
       images: uniqueHotelImages(collectHotelImageAliases(h), 6, usedInputHotelImageKeys),
       selected: hasSelectedHotelInput ? index === selectedHotelInputIndex : index === 0
     })).filter(h =>
@@ -5887,6 +5888,7 @@ function normalizeHotelTextToBulgarian(parsed = {}) {
   return {
     name: text(parsed.name),
     url: text(parsed.url),
+    sourceLinks: safeArray(parsed.sourceLinks),
     stars: text(parsed.stars),
     area: text(parsed.area || parsed.location || parsed.address),
     distance: text(parsed.distance)
@@ -11023,7 +11025,7 @@ async function buildSmartImportHotelOption(hotel = {}, parsed = {}, destination 
   return option;
 }
 
-async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true, hotelLink = "" } = {}) {
+async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true, hotelLink = "", hotelLinks = [] } = {}) {
   const parsedHotels = [];
   const rawParsedHotels = [];
   for (const file of imageFiles) {
@@ -11084,7 +11086,7 @@ Rules:
   }
 
   const linkTools = require("./server/hotel-import-link");
-  const linked = linkTools.attachHotelImportLink(rawParsedHotels, linkTools.readHotelImportLink(hotelLink));
+  const linked = linkTools.attachHotelImportLinks(rawParsedHotels, [...safeArray(hotelLinks),hotelLink].filter(Boolean));
   const grouped = groupHotelScreenshots(linked.records);
   const hotelOptions = await Promise.all(grouped.hotels.map((parsed, index) => buildSmartImportHotelOption(
     normalizeHotelTextToBulgarian(parsed), parsed, destination || "", index
@@ -11122,7 +11124,8 @@ Rules:
     source: metadata.source,
     missingFields: metadata.missingFields,
     operatorWarnings,
-    rawParsedHotels
+    rawParsedHotels,
+    hotelLinks: linked.links
   };
 }
 
@@ -11193,6 +11196,7 @@ function buildSmartImportResponse({
     warnings: safeArray(warnings),
     evidence: evidence && typeof evidence === "object" ? evidence : {},
     universalIntakeDeprecated: true,
+    hotelLinks: safeArray(hotelResult?.hotelLinks),
     flight: flightResult?.canonical || null,
     hotel: hotelResult ? {
       metadata: hotelResult.metadata || {},
@@ -11314,7 +11318,9 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
     let hotelResult = null;
     if (hotelFiles.length) {
       try {
-        hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false, hotelLink:req.body?.hotelLink || "" });
+        let hotelLinks=[];
+        try {hotelLinks=JSON.parse(req.body?.hotelLinks || "[]");} catch {warnings.push("Линковете не са разчетени. Импортът продължава със скрийншотите.");}
+        hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false, hotelLink:req.body?.hotelLink || "", hotelLinks });
         offerHotel = hotelResult.hotel || {};
         offerHotelOptions = safeArray(hotelResult.hotelOptions);
         warnings.push(...safeArray(hotelResult.operatorWarnings));

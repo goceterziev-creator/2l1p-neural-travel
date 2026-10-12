@@ -21,11 +21,27 @@ function attachHotelImportLink(records,link) {
     copy.forEach(h=>{h.name=link.nameHint;h.url=link.url;});
     warnings.push('Името на хотела е подсказано от линка. Потвърдете го спрямо скрийншота.');
   } else {
-    const matches=copy.filter(h=>link.nameHint && (key(h.name).includes(key(link.nameHint))||key(link.nameHint).includes(key(h.name))) && key(h.name));
+    const matches=copy.filter(h=>link.nameHint && key(h.name)===key(link.nameHint) && key(h.name));
     if(matches.length) matches.forEach(h=>{h.url=link.url;});
     else if(names.length===1 && !link.nameHint) {copy.filter(h=>h.name).forEach(h=>{h.url=link.url;});warnings.push('Проверете дали линкът е към разпознатия хотел.');}
     else warnings.push('Линкът не е свързан еднозначно с хотел. Данните от скрийншотите са запазени.');
   }
   return {records:copy,warnings};
 }
-module.exports={readHotelImportLink,attachHotelImportLink};
+function attachHotelImportLinks(records, values = []) {
+  const inputs = Array.isArray(values) ? values : [values];
+  const links = [...new Map(inputs.map(readHotelImportLink).filter(link=>link.url || link.warning).map(link=>[link.url || String(link.warning),link])).values()];
+  let copy=records.map(h=>({...h}));const warnings=[];
+  for(const link of links) {
+    if(links.filter(item=>item.url).length>1 && !copy.some(h=>h.name)) {warnings.push('Няколко линка без разпознати хотелски имена. Свържете ги след преглед на скрийншотите.');continue;}
+    const result=attachHotelImportLink(copy,link);
+    warnings.push(...result.warnings);
+    copy=result.records.map((hotel,index)=> {
+      if(hotel.url!==link.url || !link.url) return hotel;
+      const sourceLinks=[...new Set([...(copy[index].sourceLinks || []),copy[index].url,link.url].filter(Boolean))];
+      return {...hotel,url:sourceLinks[0],sourceLinks};
+    });
+  }
+  return {records:copy,warnings:[...new Set(warnings)],links:links.filter(link=>link.url).map(link=>link.url)};
+}
+module.exports={readHotelImportLink,attachHotelImportLink,attachHotelImportLinks};
