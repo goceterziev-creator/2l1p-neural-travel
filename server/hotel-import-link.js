@@ -11,7 +11,7 @@ function readHotelImportLink(value) {
     return {url:u.origin+u.pathname,nameHint,warning:''};
   } catch {return {url:'',nameHint:'',warning:'Линкът не е публичен хотелски адрес. Импортът продължава със скрийншотите.'};}
 }
-const key=s=>String(s||'').toLowerCase().replace(/[^\p{L}\p{N}]/gu,'');
+const key=s=>String(s||'').toLowerCase().replace(/&/g,'and').replace(/[^\p{L}\p{N}]/gu,'');
 function attachHotelImportLink(records,link) {
   const copy=records.map(h=>({...h}));const warnings=link.warning?[link.warning]:[];
   if(!link.url) return {records:copy,warnings};

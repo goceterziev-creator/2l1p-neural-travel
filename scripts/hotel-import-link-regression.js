@@ -10,3 +10,6 @@ console.log('PASS invalid/private checkout links cannot block screenshot import'
 const hint=attachHotelImportLink([{name:'',room:'Suite',price:100}],link);assert.equal(hint.records[0].name,'maamadi boutique');assert.ok(hint.warnings.length);
 assert.equal(attachHotelImportLink([{name:'Different Hotel',price:100}],link).records[0].name,'Different Hotel');
 console.log('PASS URL name hint requires review and never overwrites an existing brand');
+
+assert.equal(attachHotelImportLink([{name:"The Plaza Doha, LXR Hotels & Resorts",price:150988.6}],readHotelImportLink("https://www.booking.com/hotel/qa/the-plaza-doha-lxr-hotels-and-resorts.html")).records[0].url,"https://www.booking.com/hotel/qa/the-plaza-doha-lxr-hotels-and-resorts.html");
+console.log("PASS brand ampersand matches public URL wording");
