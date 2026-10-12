@@ -5886,6 +5886,7 @@ function normalizeHotelTextToBulgarian(parsed = {}) {
 
   return {
     name: text(parsed.name),
+    url: text(parsed.url),
     stars: text(parsed.stars),
     area: text(parsed.area || parsed.location || parsed.address),
     distance: text(parsed.distance)
@@ -11017,7 +11018,7 @@ async function buildSmartImportHotelOption(hotel = {}, parsed = {}, destination 
   return option;
 }
 
-async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true } = {}) {
+async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true, hotelLink = "" } = {}) {
   const parsedHotels = [];
   const rawParsedHotels = [];
   for (const file of imageFiles) {
@@ -11077,7 +11078,9 @@ Rules:
     ));
   }
 
-  const grouped = groupHotelScreenshots(rawParsedHotels);
+  const linkTools = require("./server/hotel-import-link");
+  const linked = linkTools.attachHotelImportLink(rawParsedHotels, linkTools.readHotelImportLink(hotelLink));
+  const grouped = groupHotelScreenshots(linked.records);
   const hotelOptions = await Promise.all(grouped.hotels.map((parsed, index) => buildSmartImportHotelOption(
     normalizeHotelTextToBulgarian(parsed), parsed, destination || "", index
   )));
@@ -11089,7 +11092,7 @@ Rules:
   );
 
   const metadata = normalizeHotelProfileMetadata(hotel, rawParsedHotels[0] || {});
-  const operatorWarnings = hotelReviewWarnings(hotelOptions, grouped.unresolved);
+  const operatorWarnings = [...hotelReviewWarnings(hotelOptions, grouped.unresolved), ...linked.warnings];
 
   if (archive) {
     await archiveRegressionCaseSafe({
@@ -11306,7 +11309,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
     let hotelResult = null;
     if (hotelFiles.length) {
       try {
-        hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false });
+        hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false, hotelLink:req.body?.hotelLink || "" });
         offerHotel = hotelResult.hotel || {};
         offerHotelOptions = safeArray(hotelResult.hotelOptions);
         warnings.push(...safeArray(hotelResult.operatorWarnings));
