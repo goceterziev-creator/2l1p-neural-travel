@@ -97,7 +97,7 @@ async function check(name, fn) {
     assert.match(html,/offer-hotel-selection.js/);
     const cards=[...html.matchAll(/data-hotel-id="([^"]+)" data-client-price="([^"]+)"/g)].map(m=>({dataset:{hotelId:m[1],clientPrice:m[2]},classList:{toggle(){}},querySelector:()=>null}));
     const pdf={href:"https://aya.test/api/offers/QA/pdf?keep=1"}; const price={textContent:""};
-    const context={URL,window:{location:{href:"https://aya.test/view?selectedHotelId=legacy-hotel-3"},history:{replaceState(){}}},document:{querySelectorAll:selector=>selector==="[data-hotel-choice-card]"?cards:selector==="[data-client-price]"?[price]:[pdf]}};
+    const context={URL,window:{location:{href:"https://aya.test/view?selectedHotelId=legacy-hotel-3"},history:{replaceState(){}}},document:{querySelectorAll:selector=>selector==="[data-hotel-choice-card]"?cards:selector===".price[data-client-price]"?[price]:[pdf]}};
     require("node:vm").runInNewContext(fs.readFileSync(path.join(__dirname,"../public/offer-hotel-selection.js"),"utf8"),context);
     assert.equal(new URL(pdf.href).searchParams.get("selectedHotelId"),"legacy-hotel-3");
     assert.equal(new URL(pdf.href).searchParams.get("keep"),"1");

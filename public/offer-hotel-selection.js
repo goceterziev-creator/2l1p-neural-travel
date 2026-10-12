@@ -10,7 +10,7 @@
       const badge = item.querySelector('.option-badge');
       if (badge) badge.textContent = selected ? 'Вашият хотел' : 'Хотелска опция';
     });
-    document.querySelectorAll('[data-client-price]').forEach(item => { item.textContent = card.dataset.clientPrice; });
+    document.querySelectorAll('.price[data-client-price]').forEach(item => { item.textContent = card.dataset.clientPrice; });
     document.querySelectorAll('[data-selected-hotel-pdf]').forEach(link => {
       const url = new URL(link.href, window.location.href);
       url.searchParams.set('selectedHotelId', card.dataset.hotelId);
