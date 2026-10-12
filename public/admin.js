@@ -2873,6 +2873,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
   const hotel = data.offerHotel || {};
   const hotelAuthority = hotel.sourceAuthority || {};
   const hotelOptions = data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : []);
+  const hotelSourceLink = hotel.url || "";
   const sourceCurrencies = [...new Set([flight.currency, ...hotelOptions.map(h=>h.currency)].filter(c=>c && c !== "EUR"))];
   const warnings = Array.from(new Set((data.warnings || []).map(universalWarningText).filter(Boolean)));
   const sources = Array.isArray(data.sources) ? data.sources : [];
@@ -2900,6 +2901,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
         </div>
       ` : `<div class="muted">Няма критични предупреждения от Gemini.</div>`}
 
+      ${hotelSourceLink ? `<div class="muted">Линк към хотела: <a href="${escapeHtml(hotelSourceLink)}" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">${escapeHtml(hotelSourceLink)}</a></div>` : ""}
       <div class="muted" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin: 10px 0;">
         <div><strong>Flight source:</strong> ${escapeHtml(flight.sourceAuthority?.flightPrimary || hotelAuthority.flightPrimary || "gemini-vision")}</div>
         <div><strong>Hotel source:</strong> ${escapeHtml(hotelAuthority.hotelPrimary || "operator-review")}</div>
@@ -3031,6 +3033,7 @@ async function uploadSmartImport() {
 
     smartImportInProgress = true;
     if ($("homeLastIntake")) $("homeLastIntake").textContent = "PROCESSING";
+    formData.append("hotelLink", $("smartImportHotelLink")?.value.trim() || "");
     const data = await fetchJson("/api/smart-import", {
       method: "POST",
       body: formData
@@ -3659,6 +3662,7 @@ function addHotel(hotel = {}) {
     exchangeRateSource: hotel.exchangeRateSource,
     roomsLeft: hotel.roomsLeft || "",
     description: hotel.description || "",
+    url: hotel.url || "",
     images: uniqueHotelImages(Array.isArray(hotel.images) ? hotel.images : []),
     selected: hotels.length === 0
   });
@@ -3720,6 +3724,7 @@ function clearForm() {
   if ($("basePrice")) $("basePrice").value = "0";
   if ($("markupPercent")) $("markupPercent").value = "5";
   if ($("currency")) $("currency").value = "EUR";
+  if ($("smartImportHotelLink")) $("smartImportHotelLink").value = "";
   if ($("validForDays")) $("validForDays").value = "1";
   if ($("status")) $("status").value = "draft";
   flights = [];
