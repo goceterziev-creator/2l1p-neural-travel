@@ -30,6 +30,8 @@ const gt63ProposalRendererRegistry = require("./gt63-core/proposal-renderer-regi
 const { buildLegacyOfferPrintInput } = require("./gt63-core/legacy-offer-print-input");
 const { prepareHotelPrintImages, verifiedHotelImagePath } = require("./gt63-core/hotel-print-images");
 
+const { normalizeHotelMoney, groupHotelScreenshots, hotelReviewWarnings } = require("./server/smart-import-hotel-review");
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 const LIVE_BASE_URL = process.env.LIVE_BASE_URL || `http://localhost:${PORT}`;
@@ -1884,6 +1886,10 @@ const hotels = inputHotels.length
       room: h.room || "",
       meal: h.meal || "",
       price: toNumber(h.price, 0),
+      currency: h.currency || body.currency || "EUR",
+      sourcePrice: h.sourcePrice,
+      sourceCurrency: h.sourceCurrency,
+      exchangeRate: h.exchangeRate,
       roomsLeft: h.roomsLeft || "",
       description: h.description || "",
       url: h.url || h.link || h.bookingUrl || "",
@@ -5888,8 +5894,8 @@ function normalizeHotelTextToBulgarian(parsed = {}) {
       .replace(/twin room/i, "Стая с две единични легла")
       .replace(/standard room/i, "Стандартна стая"),
     meal: translateKnown(parsed.meal),
-    price: parseVisionPrice(parsed.priceText || parsed.price),
-    currency: text(parsed.currency || "EUR") || "EUR",
+    price: normalizeHotelMoney(parsed).price,
+    currency: normalizeHotelMoney(parsed).currency,
     roomsLeft: text(parsed.roomsLeft)
       .replace(/rooms? left/i, "оставащи стаи")
       .replace(/only/i, "само"),
@@ -11013,7 +11019,7 @@ async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", 
   const parsedHotels = [];
   const rawParsedHotels = [];
   for (const file of imageFiles) {
-    const parsed = await callVisionJson({
+    let parsed = await callVisionJson({
       imageBuffer: file.buffer,
       mimeType: file.mimetype || "image/png",
       prompt: `
@@ -11037,6 +11043,8 @@ Return ONLY strict JSON:
   "amenities": []
 }
 Rules:
+- currency must be the visible source currency, including MKD or QAR; never relabel it EUR and never convert it
+- for checkout pages read the left price-summary panel, including small totals
 - price must be numeric only
 - priceText must transcribe the exact visible TOTAL STAY price, including every decimal digit and currency symbol (for example "€ 59.11" or "59,11 EUR")
 - preserve cents: 59.11 must remain 59.11, never 59; do not round, truncate, estimate, or substitute a nightly or crossed-out price
@@ -11050,6 +11058,15 @@ Rules:
 - if not visible, use empty string or 0
 `
     });
+    parsed = normalizeHotelMoney(parsed);
+    if (parsed.name && !(parsed.price > 0)) {
+      try {
+      const metadata = await sharp(file.buffer).metadata();
+      const pricePanel = await sharp(file.buffer).extract({ left: 0, top: 0, width: Math.ceil(metadata.width * 0.42), height: metadata.height }).resize({ width: 1000 }).jpeg().toBuffer();
+      const recovered = await callVisionJson({ imageBuffer: pricePanel, mimeType: "image/jpeg", prompt: 'Read only the TOTAL STAY price from this hotel checkout price summary. Return strict JSON with priceText (exact visible total and currency), price (numeric), currency (visible currency, never assume EUR). Exclude crossed-out prices, discounts, cancellation fees and alternate payment-currency amounts. If unreadable return price 0 and priceText "".' });
+      if (recovered.priceText) parsed = normalizeHotelMoney({ ...parsed, ...recovered });
+      } catch (error) { console.warn("Hotel price panel review unavailable:", error.message); }
+    }
     rawParsedHotels.push(parsed);
     parsedHotels.push(enrichHotelImportFallbacks(
       normalizeHotelTextToBulgarian(parsed),
@@ -11058,9 +11075,10 @@ Rules:
     ));
   }
 
-  const hotelOptions = uniqueImportedHotelOptions(await Promise.all(parsedHotels.map((hotel, index) => (
-    buildSmartImportHotelOption(hotel, rawParsedHotels[index] || {}, destination || "", index)
-  ))));
+  const grouped = groupHotelScreenshots(rawParsedHotels);
+  const hotelOptions = await Promise.all(grouped.hotels.map((parsed, index) => buildSmartImportHotelOption(
+    normalizeHotelTextToBulgarian(parsed), parsed, destination || "", index
+  )));
   const hotel = hotelOptions[0] || await buildSmartImportHotelOption(
     mergeImportedHotelRecords(parsedHotels),
     rawParsedHotels[0] || parsedHotels[0] || {},
@@ -11069,9 +11087,7 @@ Rules:
   );
 
   const metadata = normalizeHotelProfileMetadata(hotel, rawParsedHotels[0] || {});
-  const operatorWarnings = metadata.missingFields.includes("hotel.price")
-    ? ["Hotel price is not visible in the screenshot. Enter it manually."]
-    : [];
+  const operatorWarnings = hotelReviewWarnings(hotelOptions, grouped.unresolved);
 
   if (archive) {
     await archiveRegressionCaseSafe({
