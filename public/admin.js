@@ -90,6 +90,10 @@ function addHotel(hotel = {}) {
     room: hotel.room || "",
     meal: hotel.meal || "",
     price: Number(hotel.price || 0),
+    currency: hotel.currency || "EUR",
+    sourcePrice: hotel.sourcePrice,
+    sourceCurrency: hotel.sourceCurrency,
+    exchangeRate: hotel.exchangeRate,
     roomsLeft: hotel.roomsLeft || "",
     description: hotel.description || "",
     images: uniqueHotelImages(hotel.images || []),
@@ -2846,6 +2850,7 @@ async function uploadFlightImageGeminiTest() {
 function universalWarningText(warning = "") {
   const text = String(warning || "").trim();
   if (!text) return "";
+  if (/[А-Яа-я]/.test(text)) return text;
   if (/price|fare|amount|currency/i.test(text)) return "Проверете цената.";
   if (/date|time|departure|arrival/i.test(text)) return "Проверете датите и часовете.";
   if (/hotel|room|check/i.test(text)) return "Проверете данните за хотела.";
@@ -2865,6 +2870,8 @@ function renderUniversalTravelReview(data = {}, files = []) {
   const flight = data.offerFlight || {};
   const hotel = data.offerHotel || {};
   const hotelAuthority = hotel.sourceAuthority || {};
+  const hotelOptions = data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : []);
+  const sourceCurrencies = [...new Set([flight.currency, ...hotelOptions.map(h=>h.currency)].filter(c=>c && c !== "EUR"))];
   const warnings = Array.from(new Set((data.warnings || []).map(universalWarningText).filter(Boolean)));
   const sources = Array.isArray(data.sources) ? data.sources : [];
   const hasFlight = Boolean(flight.route || flight.airline || (flight.outboundSegments || []).length || (flight.inboundSegments || []).length);
@@ -2911,7 +2918,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
             <input id="universalFlightArrival" value="${escapeHtml(flight.arrival || "")}" />
             <label>Baggage</label>
             <input id="universalFlightBaggage" value="${escapeHtml(flight.baggage || "")}" />
-            <label>Flight Price</label>
+            <label>Flight Price (${escapeHtml(flight.currency || "неизвестна валута")})</label>
             <input id="universalFlightPrice" type="number" step="0.01" value="${Number(flight.price || 0)}" />
             ${flight.displayBg?.itineraryText ? `<pre class="flight-segment-summary" style="white-space:pre-wrap; line-height:1.45;">${escapeHtml(flight.displayBg.itineraryText)}</pre>` : ""}
           ` : `<div class="muted">Не е открит видим полет.</div>`}
@@ -2928,8 +2935,8 @@ function renderUniversalTravelReview(data = {}, files = []) {
             <input id="universalHotelRoom" value="${escapeHtml(hotel.room || "")}" />
             <label>Meal</label>
             <input id="universalHotelMeal" value="${escapeHtml(hotel.meal || "")}" />
-            <label>Hotel Price</label>
-            <input id="universalHotelPrice" type="number" step="0.01" value="${Number(hotel.price || 0)}" />
+            <label>Hotel Price (${escapeHtml(hotel.currency || "неизвестна валута")})</label>
+            <input id="universalHotelPrice" readonly type="number" step="0.01" value="${Number(hotel.price || 0)}" />
             <label>Description</label>
             <textarea id="universalHotelDescription" rows="4">${escapeHtml(hotel.description || "")}</textarea>
             ${hotelAuthority.serpApiImages ? `<div class="muted">SerpAPI images: ${Number(hotelAuthority.serpApiImages || 0)}</div>` : ""}
@@ -2937,6 +2944,8 @@ function renderUniversalTravelReview(data = {}, files = []) {
         </section>
       </div>
 
+      ${hotelOptions.length ? `<section><h3>Всички хотелски варианти</h3>${hotelOptions.map((h,i)=>`<label>${escapeHtml(h.name || "Без име")} — ${escapeHtml(h.currency || "неизвестна валута")}<input id="reviewHotelPrice${i}" type="number" step="0.01" value="${Number(h.price || 0)}" /></label>`).join("")}</section>` : ""}
+      ${sourceCurrencies.length ? `<section class="warning"><h3>Превалутиране към EUR</h3><p>Въведете избрания курс: колко единици от изходната валута са 1 EUR. Сумите се запазват в оригиналната валута и се превалутират само с този курс.</p>${sourceCurrencies.map((c,i)=>`<label>1 EUR = ${escapeHtml(c)}<input id="reviewExchangeRate${i}" type="number" step="any" min="0" placeholder="Курс" /></label>`).join("")}</section>` : ""}
       <div class="actions" style="margin-top: 12px;">
         <button type="button" onclick="applyUniversalTravelIntakeResult()">Use Result</button>
         <button type="button" class="secondary" onclick="$('${escapeHtml(reviewTarget)}').innerHTML=''">Cancel</button>
@@ -2980,7 +2989,9 @@ function renderUniversalTravelError(error = {}) {
   `;
 }
 
+let smartImportInProgress = false;
 async function uploadSmartImport() {
+  if (smartImportInProgress) return;
   if (!hasCapability("imports.run")) {
     alert("Your role cannot run imports.");
     return;
@@ -2998,16 +3009,20 @@ async function uploadSmartImport() {
     files.slice(0, 8).forEach((file) => formData.append("image", file));
     formData.append("destination", $("destination")?.value || "");
 
+    smartImportInProgress = true;
+    if ($("homeLastIntake")) $("homeLastIntake").textContent = "PROCESSING";
     const data = await fetchJson("/api/smart-import", {
       method: "POST",
       body: formData
     });
 
+    smartImportInProgress = false;
     console.log("SMART IMPORT DATA:", data);
     data.reviewTarget = "smartImportReview";
-    if ($("homeLastIntake")) $("homeLastIntake").textContent = "PASS";
+    if ($("homeLastIntake")) $("homeLastIntake").textContent = data.warnings?.length ? "REVIEW" : "PASS";
     renderUniversalTravelReview(data, files.slice(0, 8));
   } catch (error) {
+    smartImportInProgress = false;
     console.error("Smart Import failed:", error);
     if ($("homeLastIntake")) $("homeLastIntake").textContent = "FAILED";
     renderUniversalTravelError({
@@ -3078,6 +3093,20 @@ function applyUniversalTravelIntakeResult() {
   if ($("universalHotelPrice")) hotel.price = Number($("universalHotelPrice").value || 0);
   if ($("universalHotelDescription")) hotel.description = $("universalHotelDescription").value.trim();
 
+  const reviewedHotels = (data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : [])).map((h,i)=>({ ...h, price: Number($("reviewHotelPrice"+i)?.value ?? h.price) }));
+  if (reviewedHotels.length) reviewedHotels[0] = { ...reviewedHotels[0], name: hotel.name, area: hotel.area, room: hotel.room, meal: hotel.meal, description: hotel.description };
+  const currencies = [...new Set([flight.currency, ...reviewedHotels.map(h=>h.currency)].filter(c=>c && c !== "EUR"))];
+  const rates = Object.fromEntries(currencies.map((c,i)=>[c,Number($("reviewExchangeRate"+i)?.value || 0)]));
+  if (currencies.some(c=>!(rates[c]>0))) { alert("Въведете положителен курс за всяка изходна валута. Не могат да се събират различни валути."); return; }
+  if (reviewedHotels.some(h=>!h.name || !(h.price>0) || !h.currency)) { alert("Проверете име, крайна цена и валута за всеки хотел."); return; }
+  function inEuro(item) {
+    const sourceCurrency = item.currency || "EUR";
+    const sourcePrice = item.price;
+    const exchangeRate = sourceCurrency === "EUR" ? 1 : rates[sourceCurrency];
+    return {...item, sourcePrice, sourceCurrency, exchangeRate, currency:"EUR", price: Math.round(sourcePrice / exchangeRate * 100) / 100};
+  }
+  const convertedHotels = reviewedHotels.map(inEuro);
+  Object.assign(flight, inEuro(flight));
   if (flight.route || flight.airline || Number(flight.price || 0) > 0) {
     addFlight(flight);
     if ($("flightAirline")) $("flightAirline").value = flight.airline || "";
@@ -3089,8 +3118,9 @@ function applyUniversalTravelIntakeResult() {
     if ($("flightPrice")) $("flightPrice").value = Number(flight.price || 0).toFixed(2);
   }
 
-  if (hotel.name || hotel.area || Number(hotel.price || 0) > 0) {
-    addHotel(hotel);
+  if (convertedHotels.length) {
+    Object.assign(hotel, convertedHotels[0]);
+    convertedHotels.forEach(addHotel);
     if ($("hotelName")) $("hotelName").value = hotel.name || "";
     if ($("hotelArea")) $("hotelArea").value = hotel.area || "";
     if ($("hotelRoom")) $("hotelRoom").value = hotel.room || "";
@@ -3599,6 +3629,10 @@ function addHotel(hotel = {}) {
     room: hotel.room || "",
     meal: hotel.meal || "",
     price: Number(hotel.price || 0),
+    currency: hotel.currency || "EUR",
+    sourcePrice: hotel.sourcePrice,
+    sourceCurrency: hotel.sourceCurrency,
+    exchangeRate: hotel.exchangeRate,
     roomsLeft: hotel.roomsLeft || "",
     description: hotel.description || "",
     images: uniqueHotelImages(Array.isArray(hotel.images) ? hotel.images : []),
@@ -4473,3 +4507,4 @@ document
 
 renderFlightCards();
 renderHotelCards();
+
