@@ -333,6 +333,12 @@ function getOfferWarnings(offer = {}) {
     : (Array.isArray(offer.hotelOptions) ? offer.hotelOptions : []);
   const selectedHotel = hotels.find((hotel) => hotel?.selected) || hotels[0] || null;
   if (!String(offer.guests || "").trim()) warnings.push("[WARNING] Липсва потвърден брой пътуващи.");
+  const hotelGuestEvidence = String(selectedHotel?.description || "");
+  const explicitChildren = /(?:\d+\s*(?:деца|children|kids)|(?:две|три|четири|пет)\s+деца|едно\s+дете)/i.test(hotelGuestEvidence);
+  const guestsIncludeChildren = /(?:\d+\s*(?:деца|children|kids)|(?:две|три|четири|пет)\s+деца|едно\s+дете)/i.test(String(offer.guests || ""));
+  if (explicitChildren && !guestsIncludeChildren) {
+    warnings.push("[WARNING] Хотелският източник посочва деца, но те липсват в полето за гости.");
+  }
   if (selectedHotel && !String(selectedHotel.meal || selectedHotel.board || "").trim()) {
     warnings.push("[WARNING] Не е потвърдено изхранването за избрания хотел.");
   }
