@@ -5865,6 +5865,9 @@ async function findDestinationImageWithSerpApi(destination = "") {
 
 function normalizeHotelTextToBulgarian(parsed = {}) {
   const mealMap = new Map([
+    ["breakfast and dinner", "Закуска и вечеря"],
+    ["breakfast & dinner", "Закуска и вечеря"],
+    ["breakfast and evening meal", "Закуска и вечеря"],
     ["breakfast included", "Включена закуска"],
     ["breakfast", "Закуска"],
     ["room only", "Без включено изхранване"],
