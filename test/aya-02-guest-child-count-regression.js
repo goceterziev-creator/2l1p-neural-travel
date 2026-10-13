@@ -13,4 +13,6 @@ assert.equal(context.parseChildren("2 възрастни и 2 деца"), 2);
 assert.equal(context.parseChildren("2 adults and 2 children"), 2);
 assert.equal(context.parseChildren("2 възрастни"), null);
 assert.equal(context.parseChildren("деца: 3"), 3);
+assert.equal(context.parseChildren("безплатно настаняване за две деца"), 2);
+assert.equal(context.parseChildren("едно дете"), 1);
 console.log("AYA-02 child-count extraction: PASS");
