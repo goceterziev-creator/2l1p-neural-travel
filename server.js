@@ -8229,7 +8229,7 @@ h1 {
       <div class="included">
         ${included.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}
       </div>
-      ${forPdf ? "" : `<div class="actions"><a href="${pdfLink}" data-selected-hotel-pdf target="_blank">PDF</a><a href="${whatsappLink}" target="_blank">WhatsApp</a></div>`}
+      ${forPdf ? "" : `<div class="actions"><a href="${pdfLink}" data-selected-hotel-pdf target="_blank">PDF</a><a href="${whatsappLink}" data-selected-hotel-whatsapp target="_blank">WhatsApp</a></div>`}
     </div>
   </section>
 
