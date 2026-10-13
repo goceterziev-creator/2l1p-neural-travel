@@ -331,16 +331,22 @@ function getOfferWarnings(offer = {}) {
   const hotels = Array.isArray(offer.hotels) && offer.hotels.length
     ? offer.hotels
     : (Array.isArray(offer.hotelOptions) ? offer.hotelOptions : []);
-  const selectedHotel = hotels.find((hotel) => hotel?.selected) || hotels[0] || null;
   if (!String(offer.guests || "").trim()) warnings.push("[WARNING] Липсва потвърден брой пътуващи.");
-  const hotelGuestEvidence = String(selectedHotel?.description || "");
-  const explicitChildren = /(?:\d+\s*(?:деца|children|kids)|(?:две|три|четири|пет)\s+деца|едно\s+дете)/i.test(hotelGuestEvidence);
-  const guestsIncludeChildren = /(?:\d+\s*(?:деца|children|kids)|(?:две|три|четири|пет)\s+деца|едно\s+дете)/i.test(String(offer.guests || ""));
-  if (explicitChildren && !guestsIncludeChildren) {
+  if (!String(offer.travelDates || "").trim()) warnings.push("[WARNING] Липсват потвърдени дати на пътуването.");
+  const childPattern = /(?:\d+\s*(?:деца|children|kids)|(?:две|три|четири|пет)\s+деца|едно\s+дете)/i;
+  const guestsIncludeChildren = childPattern.test(String(offer.guests || ""));
+  if (!guestsIncludeChildren && hotels.some((hotel) => childPattern.test(String(hotel?.room || "") + " " + String(hotel?.description || "")))) {
     warnings.push("[WARNING] Хотелският източник посочва деца, но те липсват в полето за гости.");
   }
-  if (selectedHotel && !String(selectedHotel.meal || selectedHotel.board || "").trim()) {
-    warnings.push("[WARNING] Не е потвърдено изхранването за избрания хотел.");
+  if (hotels.some((hotel) => !String(hotel?.meal || hotel?.board || "").trim())) {
+    warnings.push("[WARNING] Не е потвърдено изхранването за поне един хотел.");
+  }
+  if (hotels.some((hotel) => ![
+    ...(Array.isArray(hotel?.images) ? hotel.images : []),
+    ...(Array.isArray(hotel?.imageUrls) ? hotel.imageUrls : []),
+    hotel?.heroImage, hotel?.image, hotel?.imageUrl, hotel?.photo, hotel?.thumbnail
+  ].some((value) => /^https?:\/\//i.test(String(value || "").trim())))) {
+    warnings.push("[WARNING] Поне един хотел няма запазени адреси на снимки; проверете PDF.");
   }
   return [...new Set(warnings)];
 }
