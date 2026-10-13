@@ -3183,6 +3183,16 @@ function applyUniversalTravelIntakeResult() {
     if ($("hotelPrice")) $("hotelPrice").value = Number(hotel.price || 0).toFixed(2);
   }
 
+  const importedHotelGuestText = convertedHotels.map((h) => `${h.room || ""} ${h.description || ""}`).join(" ");
+  const importedChildren = importedHotelGuestText.match(/(?:\d+\s*(?:деца|children|kids)|(?:две|три|четири|пет)\s+деца|едно\s+дете)/i);
+  const currentGuests = String($("guests")?.value || "").trim();
+  if (importedChildren && !/(?:\d+\s*(?:деца|children|kids)|(?:две|три|четири|пет)\s+деца|едно\s+дете)/i.test(currentGuests)) {
+    mergeCurrentValidationWarnings(["[WARNING] Smart Import: хотелските данни посочват деца, но полето за гости не ги включва. Потвърдете броя и възрастите преди запис."]);
+  }
+  if (convertedHotels.some((h) => !String(h.meal || "").trim())) {
+    mergeCurrentValidationWarnings(["[WARNING] Smart Import: храненето за поне един хотел не е потвърдено."]);
+  }
+
   calculatePricing();
   alert(`${data.mode === "GT63_SMART_IMPORT" ? "Smart Import" : "Universal Travel Intake"} result applied. Review and save the offer.`);
 }
