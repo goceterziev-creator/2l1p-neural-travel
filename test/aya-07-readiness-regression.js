@@ -13,4 +13,6 @@ assert(warnings({ guests: "", hotels: [{ selected: true, meal: "" }] }).some(x =
 assert(warnings({ guests: "2 възрастни", hotels: [{ selected: true, meal: "" }] }).some(x => x.includes("изхранването")));
 assert.equal(warnings({ guests: "2 възрастни", hotels: [{ selected: true, meal: "Закуска" }] }).length, 0);
 assert.equal(warnings({ guests: "2 възрастни", hotels: [{ selected: true, meal: "Закуска" }], validationWarnings: ["[INFO] Airport DOH"] }).length, 1);
+assert(warnings({ guests: "2 възрастни", hotels: [{ selected: true, meal: "Закуска", description: "За 2 възрастни и 2 деца" }] }).some(x => x.includes("деца")));
+assert(!warnings({ guests: "2 възрастни и 2 деца", hotels: [{ selected: true, meal: "Закуска", description: "За 2 възрастни и 2 деца" }] }).some(x => x.includes("деца")));
 console.log("AYA-07 missing-data warning regression: PASS");
