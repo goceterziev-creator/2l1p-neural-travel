@@ -37,9 +37,12 @@ async function prepareHotelPrintImages(input, options, { resolveImage, findImage
     let images = (await Promise.all(existing.map(resolveImage))).filter(Boolean);
     const verified = verifiedHotelImagePath(hotel.name, destination);
     if (images.length < 3 && verified) images.push(new URL(verified, origin).href);
-    if (!images.length && hotel.name) {
+    if (images.length < 3 && hotel.name) {
+      // Resolve additional photos of the exact named hotel when stored links
+      // are missing or unusable. Never substitute generic destination imagery.
       const found = await findImages(hotel.name, destination, 6);
-      images = (await Promise.all(found.slice(0, 6).map(resolveImage))).filter(Boolean);
+      const resolved = (await Promise.all(found.slice(0, 6).map(resolveImage))).filter(Boolean);
+      images = [...new Set([...images, ...resolved])].slice(0, 3);
     }
     const prepared = { ...hotel, imageUrls: [...new Set(images)].slice(0, 3), images: [] };
     for (const key of ["heroImage", "image", "imageUrl", "photo", "thumbnail"]) delete prepared[key];
