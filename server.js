@@ -1698,6 +1698,11 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     }
   }
 
+  const selectedHotelForImages = hotels.find((hotel) => hotel.selected) || hotels[0];
+  if (selectedHotelForImages && !safeArray(selectedHotelForImages.images).length) {
+    warnings.push(createQaFinding({ severity: "WARNING", message: "Избраният хотел няма запазени снимки. PDF може да показва placeholder; проверете снимките преди изпращане." }));
+  }
+
   if (invalidHotelImages.length) {
     warnings.push(createQaFinding({ severity: "INFO", message: `${invalidHotelImages.length} hotel image URL(s) \u043d\u0435 \u0441\u0430 direct image links \u0438 \u0431\u044f\u0445\u0430 \u043f\u0440\u043e\u043f\u0443\u0441\u043d\u0430\u0442\u0438.` }));
   }
