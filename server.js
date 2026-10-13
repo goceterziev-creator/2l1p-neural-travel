@@ -1710,9 +1710,15 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     }));
   }
 
-  const selectedHotelForImages = hotels.find((hotel) => hotel.selected) || hotels[0];
-  if (selectedHotelForImages && !safeArray(selectedHotelForImages.images).length) {
-    warnings.push(createQaFinding({ severity: "WARNING", message: "Избраният хотел няма запазени снимки. PDF може да показва placeholder; проверете снимките преди изпращане." }));
+  const hotelsWithoutImages = hotels.filter((hotel) => {
+    const imageCandidates = collectHotelImageAliases(hotel);
+    return !imageCandidates.some((value) => /^https?:\/\//i.test(String(value || "").trim()));
+  });
+  if (hotelsWithoutImages.length) {
+    warnings.push(createQaFinding({
+      severity: "WARNING",
+      message: `${hotelsWithoutImages.length} хотел(а) нямат запазени адреси на снимки. Проверете кориците на PDF преди изпращане.`
+    }));
   }
 
   if (invalidHotelImages.length) {
