@@ -1649,7 +1649,7 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
   // source hotel evidence explicitly mentions a child count.
   const explicitChildCount = (value = "") => {
     const text = String(value || "");
-    const match = text.match(/(?:\\b(\\d+)\\s*(?:children|kids)\\b|(\\d+)\\s*деца\\b|\\b(?:children|kids)\\s*[:=]\\s*(\\d+)|\\bдеца\\s*[:=]\\s*(\\d+))/i);
+    const match = text.match(/(?:(\d+)\s*(?:children|kids)\b|(\d+)\s*деца|\b(?:children|kids)\s*[:=]\s*(\d+)|деца\s*[:=]\s*(\d+))/i);
     return match ? Number(match[1] || match[2] || match[3] || match[4]) : null;
   };
   const offerChildren = explicitChildCount(offer.guests);
