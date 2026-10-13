@@ -17,6 +17,16 @@
       url.searchParams.set('mode', 'selected');
       link.href = url.href;
     });
+    document.querySelectorAll('[data-selected-hotel-whatsapp]').forEach(link => {
+      const whatsappUrl = new URL(link.href, window.location.href);
+      const message = whatsappUrl.searchParams.get('text') || '';
+      const lineBreak = message.lastIndexOf('\n');
+      if (lineBreak < 0) return;
+      const selectedOfferUrl = new URL(window.location.href);
+      selectedOfferUrl.searchParams.set('selectedHotelId', card.dataset.hotelId);
+      whatsappUrl.searchParams.set('text', message.slice(0, lineBreak + 1) + selectedOfferUrl.href);
+      link.href = whatsappUrl.href;
+    });
     if (updateAddress) {
       const url = new URL(window.location.href);
       url.searchParams.set('selectedHotelId', card.dataset.hotelId);
@@ -25,6 +35,7 @@
   }
   cards.forEach(card => card.querySelector('[data-hotel-choice]')?.addEventListener('click', () => choose(card, true)));
   const selectedId = new URL(window.location.href).searchParams.get('selectedHotelId');
-  const selected = cards.find(card => card.dataset.hotelId === selectedId);
+  const selected = cards.find(card => card.dataset.hotelId === selectedId)
+    || cards.find(card => card.classList.contains('selected'));
   if (selected) choose(selected, false);
 })();
