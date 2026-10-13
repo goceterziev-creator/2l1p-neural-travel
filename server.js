@@ -1650,7 +1650,10 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
   const explicitChildCount = (value = "") => {
     const text = String(value || "");
     const match = text.match(/(?:(\d+)\s*(?:children|kids)\b|(\d+)\s*деца|\b(?:children|kids)\s*[:=]\s*(\d+)|деца\s*[:=]\s*(\d+))/i);
-    return match ? Number(match[1] || match[2] || match[3] || match[4]) : null;
+    if (match) return Number(match[1] || match[2] || match[3] || match[4]);
+    const words = text.match(/(?:едно|едно\s+дете|две|три|четири|пет)\s+деца?/i);
+    if (words) return ({ едно: 1, две: 2, три: 3, четири: 4, пет: 5 })[words[0].split(/\s+/)[0]] ?? null;
+    return null;
   };
   const offerChildren = explicitChildCount(offer.guests);
   const hotelChildCounts = hotels.map((hotel) => explicitChildCount(`${hotel.room || ""} ${hotel.description || ""}`)).filter((count) => count !== null);
