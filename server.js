@@ -1645,6 +1645,19 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     }
   }
 
+  // QA: do not silently treat an adults-only offer as a family booking when
+  // source hotel evidence explicitly mentions a child count.
+  const explicitChildCount = (value = "") => {
+    const text = String(value || "");
+    const match = text.match(/(?:\\b(\\d+)\\s*(?:children|kids)\\b|(\\d+)\\s*деца\\b|\\b(?:children|kids)\\s*[:=]\\s*(\\d+)|\\bдеца\\s*[:=]\\s*(\\d+))/i);
+    return match ? Number(match[1] || match[2] || match[3] || match[4]) : null;
+  };
+  const offerChildren = explicitChildCount(offer.guests);
+  const hotelChildCounts = hotels.map((hotel) => explicitChildCount(`${hotel.room || ""} ${hotel.description || ""}`)).filter((count) => count !== null);
+  if (hotelChildCounts.length && (offerChildren === null || hotelChildCounts.some((count) => count !== offerChildren))) {
+    warnings.push(createQaFinding({ severity: "WARNING", message: "Хотелският източник посочва деца, но броят им не е потвърден или не съвпада с полето за гости. Проверете възрастните и децата преди изпращане." }));
+  }
+
   const offerAdults = parseAdultCount(offer.guests);
   const flightAdults = parseAdultCount(flightText);
   const hotelAdults = parseAdultCount(`${hotelText} ${rawHotelImages}`);
