@@ -64,6 +64,7 @@
     if (/all\s*inclusive|всичко включено/i.test(raw)) return "All Inclusive";
     if (/half\s*board|полупансион/i.test(raw)) return "Полупансион";
     if (/full\s*board|пълен пансион/i.test(raw)) return "Пълен пансион";
+    if (/(?:breakfast|закуска)/i.test(raw) && /(?:dinner|вечеря)/i.test(raw)) return "Закуска и вечеря";
     if (/breakfast|закуска/i.test(raw)) return "Закуска";
     if (/room\s*only|без хранене/i.test(raw)) return "Без включено хранене";
     return raw.length > 34 ? "Хранене за потвърждение" : localizeClientText(raw);
