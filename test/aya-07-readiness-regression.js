@@ -1,0 +1,16 @@
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(require("node:path").join(__dirname, "../public/admin.js"), "utf8");
+const start = source.indexOf("function getOfferWarnings(");
+const end = source.indexOf("function displayWarning(", start);
+assert(start >= 0 && end > start, "QA helpers must exist");
+const context = vm.createContext({});
+vm.runInContext(source.slice(start, end) + "\nthis.getOfferWarnings = getOfferWarnings;", context);
+const warnings = (offer) => Array.from(context.getOfferWarnings(offer));
+assert(warnings({ guests: "", hotels: [{ selected: true, meal: "" }] }).some(x => x.includes("пътуващи")));
+assert(warnings({ guests: "2 възрастни", hotels: [{ selected: true, meal: "" }] }).some(x => x.includes("изхранването")));
+assert.equal(warnings({ guests: "2 възрастни", hotels: [{ selected: true, meal: "Закуска" }] }).length, 0);
+assert.equal(warnings({ guests: "2 възрастни", hotels: [{ selected: true, meal: "Закуска" }], validationWarnings: ["[INFO] Airport DOH"] }).length, 1);
+console.log("AYA-07 missing-data warning regression: PASS");
