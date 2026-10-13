@@ -1701,6 +1701,15 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     }
   }
 
+  // Missing meal is a client-facing uncertainty, not a confirmed board plan.
+  const missingMealHotels = hotels.filter((hotel) => !String(hotel.meal || hotel.board || "").trim());
+  if (missingMealHotels.length) {
+    warnings.push(createQaFinding({
+      severity: "WARNING",
+      message: `Не е потвърдено изхранването за ${missingMealHotels.length} хотел(а). Проверете преди изпращане.`
+    }));
+  }
+
   const selectedHotelForImages = hotels.find((hotel) => hotel.selected) || hotels[0];
   if (selectedHotelForImages && !safeArray(selectedHotelForImages.images).length) {
     warnings.push(createQaFinding({ severity: "WARNING", message: "Избраният хотел няма запазени снимки. PDF може да показва placeholder; проверете снимките преди изпращане." }));
