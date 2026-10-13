@@ -327,7 +327,16 @@ function escapeHtml(value = "") {
 }
 
 function getOfferWarnings(offer = {}) {
-  return Array.isArray(offer.validationWarnings) ? offer.validationWarnings.filter(Boolean) : [];
+  const warnings = Array.isArray(offer.validationWarnings) ? offer.validationWarnings.filter(Boolean) : [];
+  const hotels = Array.isArray(offer.hotels) && offer.hotels.length
+    ? offer.hotels
+    : (Array.isArray(offer.hotelOptions) ? offer.hotelOptions : []);
+  const selectedHotel = hotels.find((hotel) => hotel?.selected) || hotels[0] || null;
+  if (!String(offer.guests || "").trim()) warnings.push("[WARNING] Липсва потвърден брой пътуващи.");
+  if (selectedHotel && !String(selectedHotel.meal || selectedHotel.board || "").trim()) {
+    warnings.push("[WARNING] Не е потвърдено изхранването за избрания хотел.");
+  }
+  return [...new Set(warnings)];
 }
 
 function warningSeverity(warning = "") {
