@@ -83,6 +83,7 @@ function addFlight(flight = {}) {
 
 function addHotel(hotel = {}) {
   hotels.push({
+    occupancy: globalThis.AYAHotelOccupancy.normalize({ ...hotel.occupancy, confirmed: false }),
     name: hotel.name || "",
     stars: hotel.stars || "",
     area: hotel.area || "",
@@ -328,15 +329,18 @@ function escapeHtml(value = "") {
 
 function getOfferWarnings(offer = {}) {
   const warnings = Array.isArray(offer.validationWarnings) ? offer.validationWarnings.filter(Boolean) : [];
+  const occupancyWarning = globalThis.AYAHotelOccupancy.warning(offer);
+  if (occupancyWarning) warnings.push(occupancyWarning);
   const hotels = Array.isArray(offer.hotels) && offer.hotels.length
     ? offer.hotels
     : (Array.isArray(offer.hotelOptions) ? offer.hotelOptions : []);
   if (!String(offer.guests || "").trim()) warnings.push("[WARNING] Липсва потвърден брой пътуващи.");
   if (!String(offer.travelDates || "").trim()) warnings.push("[WARNING] Липсват потвърдени дати на пътуването.");
   const childPattern = /(?:\d+\s*(?:деца|children|kids)|(?:две|три|четири|пет)\s+деца|едно\s+дете)/i;
-  const guestsIncludeChildren = childPattern.test(String(offer.guests || ""));
-  if (!guestsIncludeChildren && hotels.some((hotel) => childPattern.test(String(hotel?.room || "") + " " + String(hotel?.description || "")))) {
-    warnings.push("[WARNING] Хотелският източник посочва деца, но те липсват в полето за гости.");
+  const selectedHotelSource = globalThis.AYAHotelOccupancy.selected(offer) || {};
+  const guestsIncludeChildren = globalThis.AYAHotelOccupancy.normalize(selectedHotelSource.occupancy).children > 0;
+  if (!guestsIncludeChildren && childPattern.test(String(selectedHotelSource.room || "") + " " + String(selectedHotelSource.description || ""))) {
+    warnings.push("[WARNING] Хотелският източник посочва деца, но те липсват в хотелската заетост.");
   }
   if (hotels.some((hotel) => !String(hotel?.meal || hotel?.board || "").trim())) {
     warnings.push("[WARNING] Не е потвърдено изхранването за поне един хотел.");
@@ -1226,7 +1230,8 @@ function offerNeedsReview(offer = {}) {
 
 function offerReadyToSend(offer = {}) {
   const status = String(offer.status || "draft").toLowerCase();
-  return ["draft", "review"].includes(status) && !offerNeedsReview(offer);
+  // An explicit review status still requires review; INFO alone is not a blocker.
+  return status === "draft" && qaTone(qaScore(offer), getOfferWarnings(offer)) === "ready";
 }
 
 function syncHomeFieldsToCreateSurface() {
@@ -3621,6 +3626,20 @@ function removeFlight(index) {
   updateAutoPrice();
 }
 
+function setHotelOccupancyField(index, field, value) {
+  const occupancy = { ...(hotels[index].occupancy || {}), confirmed: false };
+  occupancy[field] = field === "childAges"
+    ? (value.trim() ? value.split(",").map(age => age.trim()) : null)
+    : value;
+  hotels[index].occupancy = globalThis.AYAHotelOccupancy.normalize(occupancy);
+  renderHotelCards();
+}
+
+function confirmHotelOccupancy(index, checked) {
+  hotels[index].occupancy = globalThis.AYAHotelOccupancy.normalize({ ...hotels[index].occupancy, confirmed: checked });
+  renderHotelCards();
+}
+
 function renderHotelCards() {
   const box = document.getElementById("hotelCards");
 
@@ -3632,7 +3651,7 @@ function renderHotelCards() {
     <div class="hotel-card">
 
       <label>Hotel Name
-        <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;updateAutoPrice();" />
+        <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;hotels[${i}].occupancy={...hotels[${i}].occupancy,confirmed:false};renderHotelCards();updateAutoPrice();" />
       </label>
       <label>Stars
         <input placeholder="Not specified" value="${escapeHtml(h.stars || "")}" onchange="hotels[${i}].stars=this.value;updateAutoPrice();" />
@@ -3644,11 +3663,25 @@ function renderHotelCards() {
         <input placeholder="Not specified" value="${escapeHtml(h.distance || "")}" onchange="hotels[${i}].distance=this.value;updateAutoPrice();" />
       </label>
       <label>Room
-        <input placeholder="Not specified" value="${escapeHtml(h.room || "")}" onchange="hotels[${i}].room=this.value;updateAutoPrice();" />
+        <input placeholder="Not specified" value="${escapeHtml(h.room || "")}" onchange="hotels[${i}].room=this.value;hotels[${i}].occupancy={...hotels[${i}].occupancy,confirmed:false};renderHotelCards();updateAutoPrice();" />
       </label>
       <label>Meal
         <input placeholder="Not specified" value="${escapeHtml(h.meal || "")}" onchange="hotels[${i}].meal=this.value;updateAutoPrice();" />
       </label>
+      <fieldset>
+        <legend>Хотелска заетост — отделно от полетните пътници</legend>
+        ${[['adults', 'Възрастни', 1], ['children', 'Деца (включително бебета)', 0], ['rooms', 'Брой стаи', 1]].map(([field, label, min]) => `
+          <label>${label}<input type="number" min="${min}" step="1" value="${escapeHtml(String(h.occupancy?.[field] ?? ''))}"
+            onchange="setHotelOccupancyField(${i}, '${field}', this.value)" /></label>
+        `).join('')}
+        <label>Възрасти на децата, ако са известни (разделени със запетая)
+          <input value="${escapeHtml(Array.isArray(h.occupancy?.childAges) ? h.occupancy.childAges.join(', ') : '')}"
+            onchange="setHotelOccupancyField(${i}, 'childAges', this.value)" />
+        </label>
+        <label><input type="checkbox" ${h.occupancy?.confirmed === true ? 'checked' : ''}
+          onchange="confirmHotelOccupancy(${i}, this.checked)" /> Потвърждавам хотелските гости и броя стаи по хотелския източник</label>
+        <small>${escapeHtml(globalThis.AYAHotelOccupancy.label(h.occupancy))}</small>
+      </fieldset>
       <label>Rooms Left
         <input placeholder="Not specified" value="${escapeHtml(h.roomsLeft || "")}" onchange="hotels[${i}].roomsLeft=this.value;updateAutoPrice();" />
       </label>
@@ -3692,6 +3725,8 @@ function renderHotelCards() {
 
 function addHotel(hotel = {}) {
   hotels.push({
+    id: hotel.id || "",
+    occupancy: globalThis.AYAHotelOccupancy.normalize({ ...hotel.occupancy, confirmed: false }),
     name: hotel.name || "",
     stars: hotel.stars || "",
     area: hotel.area || "",

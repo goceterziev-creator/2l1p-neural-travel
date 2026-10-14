@@ -7,6 +7,8 @@
   }
   root.GT63PresentationViewModel = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPresentationViewModel() {
+  const occupancyQa = globalThis.AYAHotelOccupancy || (typeof require === "function" ? require("../public/hotel-occupancy") : null);
+  const hotelOccupancyLabel = value => occupancyQa ? occupancyQa.label(value) : "Хотелска заетост за потвърждение";
   const VALID_PRINT_MODES = new Set(["selected", "comparison"]);
 
   function asArray(value) {
@@ -303,6 +305,7 @@
     resolvePrintModeContract,
     resolveSelectedHotel,
     resolvedMealPlan,
+    hotelOccupancyLabel,
     selectedHotelIndex,
     selectedOptionPayload,
     supportedRecommendationReasons,
