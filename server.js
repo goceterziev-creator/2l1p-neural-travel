@@ -2035,6 +2035,7 @@ function summarizeOfferForList(offer) {
     hotelPrice: getHotelPriceFromOffer(offer),
     transferPrice: toNumber(offer.transferPrice, 0),
     finalPrice: toNumber(offer.finalPrice || offer.price, 0),
+    markupPercent: toNumber(offer.markupPercent, 0),
     margin: toNumber(offer.margin || offer.marginAmount, 0),
     validationWarnings: safeArray(offer.validationWarnings)
   };
