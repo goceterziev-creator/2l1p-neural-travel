@@ -35,11 +35,19 @@ async function prepareHotelPrintImages(input, options, { resolveImage, findImage
     if (!hotel) return;
     const existing = hotelImageCandidates(hotel);
     let images = (await Promise.all(existing.map(resolveImage))).filter(Boolean);
+    const hadStoredImages = images.length > 0;
     const verified = verifiedHotelImagePath(hotel.name, destination);
-    if (images.length < 3 && verified) images.push(new URL(verified, origin).href);
-    if (!images.length && hotel.name) {
-      const found = await findImages(hotel.name, destination, 6);
-      images = (await Promise.all(found.slice(0, 6).map(resolveImage))).filter(Boolean);
+    if (!images.length && verified) images.push(new URL(verified, origin).href);
+    if (hotel.name && (!images.length || (hadStoredImages && images.length < 3))) {
+      // Replenish stored photos with results for this hotel only. A failed
+      // optional lookup preserves existing photos or the explicit placeholder.
+      try {
+        const found = await findImages(hotel.name, destination, 6);
+        const resolved = (await Promise.all(found.slice(0, 6).map(resolveImage))).filter(Boolean);
+        images = [...new Set([...images, ...resolved])].slice(0, 3);
+      } catch {
+        // Preserve validated images. Empty arrays render the existing placeholder.
+      }
     }
     const prepared = { ...hotel, imageUrls: [...new Set(images)].slice(0, 3), images: [] };
     for (const key of ["heroImage", "image", "imageUrl", "photo", "thumbnail"]) delete prepared[key];

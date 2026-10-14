@@ -1,0 +1,18 @@
+"use strict";
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(require("node:path").join(__dirname, "../server.js"), "utf8");
+const start = source.indexOf("  const explicitChildCount = (value = \"\") => {");
+const end = source.indexOf("  const offerChildren = explicitChildCount(offer.guests);", start);
+assert(start !== -1 && end > start, "child count helper must exist");
+const helper = source.slice(start, end);
+const context = vm.createContext({});
+vm.runInContext(helper + "\nthis.parseChildren = explicitChildCount;", context);
+assert.equal(context.parseChildren("2 възрастни и 2 деца"), 2);
+assert.equal(context.parseChildren("2 adults and 2 children"), 2);
+assert.equal(context.parseChildren("2 възрастни"), null);
+assert.equal(context.parseChildren("деца: 3"), 3);
+assert.equal(context.parseChildren("безплатно настаняване за две деца"), 2);
+assert.equal(context.parseChildren("едно дете"), 1);
+console.log("AYA-02 child-count extraction: PASS");

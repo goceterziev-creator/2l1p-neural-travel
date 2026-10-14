@@ -1645,6 +1645,22 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     }
   }
 
+  // QA: do not silently treat an adults-only offer as a family booking when
+  // source hotel evidence explicitly mentions a child count.
+  const explicitChildCount = (value = "") => {
+    const text = String(value || "");
+    const match = text.match(/(?:(\d+)\s*(?:children|kids)\b|(\d+)\s*деца|\b(?:children|kids)\s*[:=]\s*(\d+)|деца\s*[:=]\s*(\d+))/i);
+    if (match) return Number(match[1] || match[2] || match[3] || match[4]);
+    const words = text.match(/(?:едно\s+дете|две\s+деца|три\s+деца|четири\s+деца|пет\s+деца)/i);
+    if (words) return ({ едно: 1, две: 2, три: 3, четири: 4, пет: 5 })[words[0].split(/\s+/)[0]] ?? null;
+    return null;
+  };
+  const offerChildren = explicitChildCount(offer.guests);
+  const hotelChildCounts = hotels.map((hotel) => explicitChildCount(`${hotel.room || ""} ${hotel.description || ""}`)).filter((count) => count !== null);
+  if (hotelChildCounts.length && (offerChildren === null || hotelChildCounts.some((count) => count !== offerChildren))) {
+    warnings.push(createQaFinding({ severity: "WARNING", message: "Хотелският източник посочва деца, но броят им не е потвърден или не съвпада с полето за гости. Проверете възрастните и децата преди изпращане." }));
+  }
+
   const offerAdults = parseAdultCount(offer.guests);
   const flightAdults = parseAdultCount(flightText);
   const hotelAdults = parseAdultCount(`${hotelText} ${rawHotelImages}`);
@@ -1683,6 +1699,26 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     if (/няма налич|няма свобод|not available|no availability|sold out|unavailable/.test(availability)) {
       warnings.push(createQaFinding({ severity: "WARNING", message: `\u0425\u043e\u0442\u0435\u043b\u044a\u0442 "${hotel.name || "Hotel"}" \u043f\u043e\u043a\u0430\u0437\u0432\u0430 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0430 \u0438\u043b\u0438 \u043b\u0438\u043f\u0441\u0432\u0430\u0449\u0430 \u043d\u0430\u043b\u0438\u0447\u043d\u043e\u0441\u0442. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.` }));
     }
+  }
+
+  // Missing meal is a client-facing uncertainty, not a confirmed board plan.
+  const missingMealHotels = hotels.filter((hotel) => !String(hotel.meal || hotel.board || "").trim());
+  if (missingMealHotels.length) {
+    warnings.push(createQaFinding({
+      severity: "WARNING",
+      message: `Не е потвърдено изхранването за ${missingMealHotels.length} хотел(а). Проверете преди изпращане.`
+    }));
+  }
+
+  const hotelsWithoutImages = hotels.filter((hotel) => {
+    const imageCandidates = collectHotelImageAliases(hotel);
+    return !imageCandidates.some((value) => /^https?:\/\//i.test(String(value || "").trim()));
+  });
+  if (hotelsWithoutImages.length) {
+    warnings.push(createQaFinding({
+      severity: "WARNING",
+      message: `${hotelsWithoutImages.length} хотел(а) нямат запазени адреси на снимки. Проверете кориците на PDF преди изпращане.`
+    }));
   }
 
   if (invalidHotelImages.length) {
@@ -1999,6 +2035,7 @@ function summarizeOfferForList(offer) {
     hotelPrice: getHotelPriceFromOffer(offer),
     transferPrice: toNumber(offer.transferPrice, 0),
     finalPrice: toNumber(offer.finalPrice || offer.price, 0),
+    markupPercent: toNumber(offer.markupPercent, 0),
     margin: toNumber(offer.margin || offer.marginAmount, 0),
     validationWarnings: safeArray(offer.validationWarnings)
   };
@@ -5865,6 +5902,9 @@ async function findDestinationImageWithSerpApi(destination = "") {
 
 function normalizeHotelTextToBulgarian(parsed = {}) {
   const mealMap = new Map([
+    ["breakfast and dinner", "Закуска и вечеря"],
+    ["breakfast & dinner", "Закуска и вечеря"],
+    ["breakfast and evening meal", "Закуска и вечеря"],
     ["breakfast included", "Включена закуска"],
     ["breakfast", "Закуска"],
     ["room only", "Без включено изхранване"],
