@@ -2026,6 +2026,8 @@ function summarizeOfferForList(offer) {
     clientName: offer.clientName || "",
     clientPhone: offer.clientPhone || "",
     destination: offer.destination || "",
+    travelDates: offer.travelDates || "",
+    guests: offer.guests || "",
     status: offer.status || "draft",
     currency: offer.currency || "EUR",
     createdAt: offer.createdAt,
