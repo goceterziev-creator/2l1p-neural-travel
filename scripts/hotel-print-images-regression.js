@@ -15,15 +15,17 @@ const origin = "https://aya.example.test";
 let checks = 0;
 async function check(name, fn) { await fn(); checks++; console.log("PASS", name); }
 (async () => {
-  await check("selected hotel falls back to next valid photo without changing saved offer or price", async () => {
+  await check("selected hotel retains valid photo during optional search outage without changing saved offer or price", async () => {
     const before = JSON.stringify(input);
     const resolved = [];
+    let searches = 0;
     const prepared = await prepareHotelPrintImages(input, { selectedHotelId: "eden" }, {
       origin, resolveImage: async url => { resolved.push(url); return url.includes("working") ? `${origin}/images/hotel-cache/working.jpg` : null; },
-      findImages: async () => { throw Error("Unnecessary search"); }
+      findImages: async (name) => { searches++; assert.equal(name, "La Réserve Eden au Lac Zurich"); throw Error("Simulated optional search outage"); }
     });
     assert.equal(JSON.stringify(input), before);
     assert.equal(resolved.length, 2);
+    assert.equal(searches, 1);
     assert.match(prepared.hotelOptions[1].imageUrls[0], /working/);
     assert.deepEqual(prepared.hotelOptions[0], input.hotelOptions[0]);
     const html = renderPrintProposal(prepared, { selectedHotelId: "eden" });
