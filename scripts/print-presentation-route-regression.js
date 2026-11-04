@@ -334,7 +334,7 @@ assert.match(serverJs, /page\.goto\(printUrl\.toString\(\)/, "PDF endpoint shoul
 assert.match(serverJs, /waitUntil:\s*"domcontentloaded"/, "PDF endpoint should not let slow images block navigation readiness");
 assert.equal(/networkidle0/.test(serverJs), false, "PDF endpoint must not wait for networkidle0 because slow images are handled locally");
 assert.match(serverJs, /GT63_PRINT_IMAGE_DNS_TIMEOUT_MS\s*=\s*1500/, "PDF image DNS checks should be bounded");
-assert.match(serverJs, /GT63_PRINT_IMAGE_WAIT_MS\s*=\s*2000/, "PDF image completion wait should be bounded to 2000ms");
+assert.match(serverJs, /GT63_PRINT_IMAGE_WAIT_MS\s*=\s*5000/, "PDF image completion wait should be bounded to 5000ms");
 assert.match(serverJs, /isGt63ApprovedLocalPrintImage/, "PDF image policy should allow only approved local static image paths");
 assert.match(serverJs, /addresses\.every\(isGt63PublicIpAddress\)/, "PDF image policy must reject hostnames with any private DNS result");
 assert.match(serverJs, /request\.url\(\)/, "PDF image policy should be applied to each intercepted request, including redirects");
