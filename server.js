@@ -21,6 +21,7 @@ const {
 const {
   normalizeTravelDate
 } = require("./server/travel-normalizers/date-normalizer");
+const hotelOccupancyQa = require("./public/hotel-occupancy");
 const gt63FlightDisplayBg = require("./gt63-core/flight-display-bg");
 globalThis.GT63FlightDisplayBg = gt63FlightDisplayBg;
 globalThis.GT63LuxuryV11Renderer = require("./gt63-core/luxury-v11-renderer");
@@ -1610,7 +1611,6 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     hotel.description,
     safeArray(hotel.images).join(" ")
   ].join(" ")).join(" ");
-  const rawHotelImages = safeArray(rawBody.hotelImages).join(" ");
   const destination = normalizeSearchText(offer.destination);
   const legacyDestinationAliases = {
     rome: ["rome", "roma", "рим", "fco", "fiumicino"],
@@ -1655,22 +1655,23 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     if (words) return ({ едно: 1, две: 2, три: 3, четири: 4, пет: 5 })[words[0].split(/\s+/)[0]] ?? null;
     return null;
   };
-  const offerChildren = explicitChildCount(offer.guests);
-  const hotelChildCounts = hotels.map((hotel) => explicitChildCount(`${hotel.room || ""} ${hotel.description || ""}`)).filter((count) => count !== null);
-  if (hotelChildCounts.length && (offerChildren === null || hotelChildCounts.some((count) => count !== offerChildren))) {
-    warnings.push(createQaFinding({ severity: "WARNING", message: "Хотелският източник посочва деца, но броят им не е потвърден или не съвпада с полето за гости. Проверете възрастните и децата преди изпращане." }));
+  const selectedOccupancy = hotelOccupancyQa.normalize(hotelOccupancyQa.selected(offer)?.occupancy);
+  const selectedHotelSource = hotelOccupancyQa.selected(offer) || {};
+  const hotelChildren = explicitChildCount(`${selectedHotelSource.room || ""} ${selectedHotelSource.description || ""}`);
+  if (hotelChildren !== null && (!selectedOccupancy.confirmed || hotelChildren !== selectedOccupancy.children)) {
+    warnings.push(createQaFinding({ severity: "WARNING", message: "Хотелският източник посочва деца, но хотелската заетост не е потвърдена или не съвпада. Проверете хотелските гости отделно от полетните пътници." }));
   }
 
   const offerAdults = parseAdultCount(offer.guests);
   const flightAdults = parseAdultCount(flightText);
-  const hotelAdults = parseAdultCount(`${hotelText} ${rawHotelImages}`);
+  const hotelAdults = parseAdultCount(`${selectedHotelSource.room || ""} ${selectedHotelSource.description || ""}`);
 
   if (offerAdults && flightAdults && offerAdults !== flightAdults) {
     warnings.push(createQaFinding({ severity: "WARNING", message: `\u0411\u0440\u043e\u044f\u0442 \u0433\u043e\u0441\u0442\u0438 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.guests || "-"}", \u043d\u043e \u043f\u043e\u043b\u0435\u0442\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${flightAdults} \u0432\u044a\u0437\u0440\u0430\u0441\u0442\u043d\u0438. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0431\u0440\u043e\u044f \u043f\u044a\u0442\u043d\u0438\u0446\u0438.` }));
   }
 
-  if (offerAdults && hotelAdults && offerAdults !== hotelAdults) {
-    warnings.push(createQaFinding({ severity: "WARNING", message: `\u0411\u0440\u043e\u044f\u0442 \u0433\u043e\u0441\u0442\u0438 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.guests || "-"}", \u043d\u043e \u0445\u043e\u0442\u0435\u043b\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${hotelAdults} \u0432\u044a\u0437\u0440\u0430\u0441\u0442\u043d\u0438. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0431\u0440\u043e\u044f \u0433\u043e\u0441\u0442\u0438.` }));
+  if (selectedOccupancy.confirmed && hotelAdults && selectedOccupancy.adults !== hotelAdults) {
+    warnings.push(createQaFinding({ severity: "WARNING", message: "Потвърдените хотелски възрастни не съвпадат с хотелския източник. Проверете хотелската заетост." }));
   }
 
   const offerYear = inferYearFromText(offer.travelDates) || inferYearFromText(flightText);
@@ -1915,6 +1916,8 @@ const usedInputHotelImageKeys = new Set();
 
 const hotels = inputHotels.length
   ? inputHotels.map((h, index) => ({
+      id: h.id || "",
+      occupancy: hotelOccupancyQa.normalize(h.occupancy),
       name: h.name || "",
       stars: h.stars || "",
       area: h.area || "",
@@ -1939,6 +1942,7 @@ const hotels = inputHotels.length
     )
   : [
       {
+        occupancy: hotelOccupancyQa.normalize(body.hotelOccupancy),
         name: body.hotelName || "",
         stars: body.hotelStars || "",
         area: body.hotelArea || "",
@@ -2023,6 +2027,7 @@ function summarizeStats(offers) {
 function summarizeOfferForList(offer) {
   return {
     id: offer.id,
+    hotelOccupancyStatus: hotelOccupancyQa.summary(offer),
     clientName: offer.clientName || "",
     clientPhone: offer.clientPhone || "",
     destination: offer.destination || "",
@@ -6017,7 +6022,7 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
   const proposalInput = normalizeProposalInputForOffer(offer.proposalInput);
   if (!proposalInput || !offer.proposalTemplate?.selected) return "";
 
-  const input = cloneJsonSafe(proposalInput);
+  const input = hotelOccupancyQa.applyToInput(proposalInput, offer);
   if (!input) return "";
   input.contact = {
     ...(input.contact || {}),
@@ -6082,7 +6087,7 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     throw error;
   }
 
-  const input = cloneJsonSafe(proposalInput);
+  const input = hotelOccupancyQa.applyToInput(proposalInput, offer);
   if (!input) {
     const error = new Error("Offer proposal input is invalid");
     error.status = 400;
@@ -7626,6 +7631,7 @@ async function renderOfferHtml(offer, options = {}) {
         <div class="detail-grid">
           <div><strong>Стая</strong><br>${escapeHtml(detailValue(hotel.room))}</div>
           <div><strong>Изхранване</strong><br>${escapeHtml(detailValue(hotel.meal))}</div>
+          <div><strong>Хотелска заетост</strong><br>${escapeHtml(hotelOccupancyQa.label(hotel.occupancy))}</div>
           <div><strong>Локация</strong><br>${escapeHtml(detailValue(cleanBrochureLocation(hotel.area, destinationName)))}</div>
           <div><strong>Наличност</strong><br>${escapeHtml(detailValue(hotel.roomsLeft))}</div>
         </div>
@@ -8265,7 +8271,7 @@ h1 {
       </div>
       <div class="hero-meta">
         <div><strong>Период:</strong> ${escapeHtml(offer.travelDates || "-")}</div>
-        <div><strong>Гости:</strong> ${escapeHtml(offer.guests || "-")}</div>
+        <div><strong>Полетни пътници:</strong> ${escapeHtml(offer.guests || "-")}</div>
       </div>
       <div class="price" data-client-price>${formatMoney(offer.finalPrice, offer.currency)}</div>
       <div class="included">
@@ -8818,7 +8824,7 @@ app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).json({ error: "Offer not found" });
   if (!canAccessOffer(req, offer)) return res.status(403).json({ error: "Forbidden" });
-  res.json({ success: true, offer: withBulgarianOfferFlightDisplay(offer) });
+  res.json({ success: true, offer: { ...withBulgarianOfferFlightDisplay(offer), hotelOccupancyStatus: hotelOccupancyQa.summary(offer) } });
 });
 
 app.post("/api/offers", requireCapability("offers.create"), async (req, res) => {
@@ -9074,7 +9080,8 @@ app.get("/api/offers/:id/print", async (req, res) => {
       mode: req.query?.mode,
       selectedHotelId: req.query?.selectedHotelId
     };
-    const input = offer.proposalInput != null ? normalizeProposalInputForOffer(offer.proposalInput) : buildLegacyOfferPrintInput(offer);
+    const rawInput = offer.proposalInput != null ? normalizeProposalInputForOffer(offer.proposalInput) : buildLegacyOfferPrintInput(offer);
+    const input = rawInput ? hotelOccupancyQa.applyToInput(rawInput, offer) : null;
     if (!input) return res.status(400).json({ error: "GT63_PRINT_INVALID_PROPOSAL_INPUT", message: "Offer proposal input is invalid" });
     const prepared = await prepareHotelPrintImages(input, printOptions, {
       origin: LIVE_BASE_URL,

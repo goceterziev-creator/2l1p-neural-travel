@@ -44,7 +44,7 @@ function extract(source, startName, endName) {
 }
 const server = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
 const admin = fs.readFileSync(path.join(__dirname, '../public/admin.js'), 'utf8');
-const api = vm.createContext({
+const api = vm.createContext({ hotelOccupancyQa: require("../public/hotel-occupancy"), AYAHotelOccupancy: require("../public/hotel-occupancy"),
   getFlightPriceFromOffer: value => value.flightPrice,
   getHotelPriceFromOffer: value => value.hotelPrice,
   toNumber: (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback,

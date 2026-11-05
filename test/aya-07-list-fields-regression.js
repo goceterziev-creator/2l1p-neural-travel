@@ -10,7 +10,7 @@ function section(source, start, end) {
   assert(from >= 0 && to > from);
   return source.slice(from, to);
 }
-const ctx = vm.createContext({
+const ctx = vm.createContext({ hotelOccupancyQa: require("../public/hotel-occupancy"), AYAHotelOccupancy: require("../public/hotel-occupancy"),
   toNumber: (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback,
   safeArray: v => Array.isArray(v) ? v : [],
   getFlightPriceFromOffer: o => o.flightPrice,
@@ -22,7 +22,7 @@ vm.runInContext(section(server, 'function summarizeOfferForList(', 'function ext
 const summarize = o => ctx.summarizeOfferForList(o);
 const warnings = o => Array.from(ctx.getOfferWarnings(o));
 const tone = o => ctx.qaTone(ctx.qaScore(o), ctx.getOfferWarnings(o));
-const base = { id: 'SYNTHETIC-QA', destination: 'Synthetic destination', flightPrice: 100, hotelPrice: 50,
+const base = { hotels: [{ id: 'synthetic-hotel', selected: true, occupancy: { adults: 2, children: 2, rooms: 1, confirmed: true } }], id: 'SYNTHETIC-QA', destination: 'Synthetic destination', flightPrice: 100, hotelPrice: 50,
   finalPrice: 157.5, markupPercent: 5, travelDates: '20–27 October 2026', guests: '2 възрастни, 1 дете и 1 бебе' };
 const listed = summarize(base);
 assert.equal(listed.travelDates, base.travelDates);
@@ -49,7 +49,7 @@ for (const offer of [unresolved, summarize(unresolved)]) {
   assert.notEqual(tone(offer), 'ready');
 }
 assert.equal(summarize(unresolved).guests, base.guests);
-assert.equal(unresolved.hotels, undefined, 'Do not manufacture hotel occupancy');
+assert.equal(summarize(unresolved).hotels, undefined, 'Do not manufacture hotel records in the list');
 const missing = summarize({ ...base, travelDates: undefined, guests: undefined });
 assert.equal(missing.travelDates, '');
 assert.equal(missing.guests, '');

@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const source = fs.readFileSync(require("node:path").join(__dirname, "../server.js"), "utf8");
 const start = source.indexOf("  const explicitChildCount = (value = \"\") => {");
-const end = source.indexOf("  const offerChildren = explicitChildCount(offer.guests);", start);
+const end = source.indexOf("  const selectedOccupancy =", start);
 assert(start !== -1 && end > start, "child count helper must exist");
 const helper = source.slice(start, end);
 const context = vm.createContext({});

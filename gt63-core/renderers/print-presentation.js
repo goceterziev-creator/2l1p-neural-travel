@@ -183,6 +183,7 @@
       { label: "Избран хотел", value: hotel.name },
       { label: "Период на пътуване", value: viewModel.travelDates },
       { label: "Пътуващи", value: input.client?.travelers },
+      { label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) },
       { label: "Изхранване", value: viewModel.selectedMealPlan }
     ], "is-compact");
     const reasons = (viewModel.selectedRecommendationReasons || []).slice(0, 3);
@@ -257,6 +258,7 @@
     const facts = factGrid([
       { label: "Категория", value: starsLabel(hotel) },
       { label: "Стая", value: hotel.room || hotel.roomType || "Стая за потвърждение" },
+      { label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) },
       { label: "Изхранване", value: viewModel.selectedMealPlan },
       { label: "Локация", value: hotel.area || hotel.location || hotel.city || "Локация за потвърждение" },
       { label: "Крайна цена", value: viewModel.selectedPayload.priceDisplay }
@@ -398,6 +400,7 @@
     const services = [
       { label: "Избран хотел", value: hotel.name },
       { label: "Стая", value: hotel.room || hotel.roomType },
+      { label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) },
       { label: "Изхранване", value: viewModel.selectedMealPlan },
       { label: "Полети", value: input.flight?.airline || input.flight?.route },
       { label: "Багаж", value: input.flight?.baggage },
