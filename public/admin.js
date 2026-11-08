@@ -3932,7 +3932,7 @@ const DESTINATION_QA_PROFILES = [
   {
     key: "rome",
     label: "Рим",
-    aliases: ["rome", "roma", "rim", "рим"],
+    aliases: ["rome", "roma", "rim", "рим", "rom"],
     airports: ["fco", "fiumicino", "cia", "ciampino"],
     districts: ["trionfale", "triunfale", "трионфале", "триумфале", "prati", "прати", "vatican", "ватикан"]
   },
@@ -3966,10 +3966,18 @@ const DESTINATION_QA_PROFILES = [
   }
 ];
 
+function matchesDestinationQaNeedle(text, needle) {
+  const normalized = normalizeText(text);
+  const signal = normalizeText(needle);
+  return signal === "rom"
+    ? /(?:^|[^\p{L}\p{N}_])rom(?=$|[^\p{L}\p{N}_])/u.test(normalized)
+    : normalized.includes(signal);
+}
+
 function getDestinationQaProfile(destination = "") {
   const text = normalizeText(destination);
   return DESTINATION_QA_PROFILES.find((profile) =>
-    [...profile.aliases, ...profile.airports, ...profile.districts].some((needle) => text.includes(normalizeText(needle)))
+    [...profile.aliases, ...profile.airports, ...profile.districts].some((needle) => matchesDestinationQaNeedle(text, needle))
   ) || null;
 }
 
@@ -3977,7 +3985,7 @@ function findDestinationQaSignal(profile, value = "", groups = ["aliases", "airp
   const text = normalizeText(typeof value === "string" ? value : JSON.stringify(value || {}));
   if (!profile || !text) return null;
   for (const group of groups) {
-    const match = (profile[group] || []).find((needle) => text.includes(normalizeText(needle)));
+    const match = (profile[group] || []).find((needle) => matchesDestinationQaNeedle(text, needle));
     if (match) return { group, match };
   }
   return null;
@@ -4015,7 +4023,7 @@ function destinationMatchesFlight(destination, flight = {}) {
   const text = normalizeText(JSON.stringify(flight));
 
   if (d.includes("rome") || d.includes("рим")) {
-    return text.includes("rome") || text.includes("roma") || text.includes("рим") || text.includes("fco") || text.includes("fiumicino");
+    return text.includes("rome") || text.includes("roma") || text.includes("рим") || text.includes("fco") || text.includes("fiumicino") || matchesDestinationQaNeedle(text, "rom");
   }
 
   if (d.includes("tokyo") || d.includes("токио")) {
