@@ -1490,7 +1490,7 @@ const DESTINATION_INTELLIGENCE = [
   {
     key: "rome",
     label: "\u0420\u0438\u043c",
-    aliases: ["rome", "roma", "rim", "\u0440\u0438\u043c"],
+    aliases: ["rome", "roma", "rim", "\u0440\u0438\u043c", "rom"],
     airports: ["fco", "fiumicino", "ciampino", "cia"],
     districts: ["trionfale", "triunfale", "\u0442\u0440\u0438\u043e\u043d\u0444\u0430\u043b\u0435", "\u0442\u0440\u0438\u0443\u043c\u0444\u0430\u043b\u0435", "prati", "\u043f\u0440\u0430\u0442\u0438", "vatican", "\u0432\u0430\u0442\u0438\u043a\u0430\u043d"]
   },
@@ -1524,11 +1524,19 @@ const DESTINATION_INTELLIGENCE = [
   }
 ];
 
+function matchesDestinationNeedle(text, needle) {
+  const normalized = normalizeSearchText(text);
+  const signal = normalizeSearchText(needle);
+  return signal === "rom"
+    ? /(?:^|[^\p{L}\p{N}_])rom(?=$|[^\p{L}\p{N}_])/u.test(normalized)
+    : normalized.includes(signal);
+}
+
 function destinationProfile(destination = "") {
   const text = normalizeSearchText(destination);
   if (!text) return null;
   const knownProfile = DESTINATION_INTELLIGENCE.find((profile) =>
-    [...profile.aliases, ...profile.airports, ...profile.districts].some((needle) => text.includes(normalizeSearchText(needle)))
+    [...profile.aliases, ...profile.airports, ...profile.districts].some((needle) => matchesDestinationNeedle(text, needle))
   );
   if (knownProfile) return knownProfile;
 
@@ -1551,7 +1559,7 @@ function findDestinationSignal(profile, text = "", groups = ["aliases", "airport
   const normalized = normalizeSearchText(text);
   if (!profile || !normalized) return null;
   for (const group of groups) {
-    const match = safeArray(profile[group]).find((needle) => normalized.includes(normalizeSearchText(needle)));
+    const match = safeArray(profile[group]).find((needle) => matchesDestinationNeedle(normalized, needle));
     if (match) return { group, match };
   }
   return null;
@@ -1631,8 +1639,8 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     const hotelSignal = profile ? findDestinationSignal(profile, hotelText, ["aliases", "districts", "airports"]) : null;
     const airportSignal = profile ? findDestinationSignal(profile, flightText, ["airports"]) : null;
     const districtSignal = profile ? findDestinationSignal(profile, hotelText, ["districts"]) : null;
-    const flightHasDestination = Boolean(flightSignal) || destinationNeedles.some((needle) => normalizeSearchText(flightText).includes(needle));
-    const hotelHasDestination = Boolean(hotelSignal) || destinationNeedles.some((needle) => normalizeSearchText(hotelText).includes(needle));
+    const flightHasDestination = Boolean(flightSignal) || destinationNeedles.some((needle) => matchesDestinationNeedle(flightText, needle));
+    const hotelHasDestination = Boolean(hotelSignal) || destinationNeedles.some((needle) => matchesDestinationNeedle(hotelText, needle));
     if (flightText && !flightHasDestination) {
       warnings.push(`[WARNING] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043d\u0435 \u0441\u043f\u043e\u043c\u0435\u043d\u0430\u0432\u0430 \u044f\u0441\u043d\u043e \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f\u0442\u0430 "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0430 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.`);
     } else if (profile && airportSignal) {
