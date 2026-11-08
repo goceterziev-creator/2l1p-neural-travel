@@ -76,5 +76,6 @@
     "flightModel": "gemini-fixture",
     "hotelSource": "",
     "universalIntakeDeprecated": true
-  }
+  },
+    "hotelLinks": []
 }
