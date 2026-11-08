@@ -143,5 +143,6 @@
     "flightModel": "gemini-fixture",
     "hotelSource": "hotel_hint_serpapi",
     "universalIntakeDeprecated": true
-  }
+  },
+    "hotelLinks": []
 }
