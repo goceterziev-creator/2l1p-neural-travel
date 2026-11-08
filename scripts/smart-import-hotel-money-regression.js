@@ -16,8 +16,8 @@ console.log('PASS missing prices on every option and foreign currencies require 
 const src=fs.readFileSync(require.resolve('../public/admin.js'),'utf8');const fn=src.slice(src.indexOf('function applyUniversalTravelIntakeResult()'),src.indexOf('\nfunction getImportedFlightPrice'));
 const fields={};const add=(id,value)=>fields[id]={value};
 const latest={offerFlight:{route:'SOF -> DOH / DOH -> SOF',price:16426.49,currency:'EUR'},offerHotel:plaza,offerHotelOptions:grouped.hotels};
-const before=JSON.stringify(latest);let flights=[],hotels=[],alerts=[];
-const context={latestUniversalTravelIntake:latest,$:id=>fields[id],addFlight:f=>flights.push(f),addHotel:h=>hotels.push(h),calculatePricing:()=>{},alert:m=>alerts.push(m)};
+const before=JSON.stringify(latest);let flights=[],hotels=[],alerts=[],validationWarnings=[];
+const context={latestUniversalTravelIntake:latest,$:id=>fields[id],addFlight:f=>flights.push(f),addHotel:h=>hotels.push(h),calculatePricing:()=>{},alert:m=>alerts.push(m),mergeCurrentValidationWarnings:warnings=>validationWarnings.push(...warnings)};
 vm.createContext(context);vm.runInContext(fn,context);
 context.applyUniversalTravelIntakeResult();assert.equal(flights.length,0);assert.equal(hotels.length,0);
 add('reviewExchangeRate0','61.5');context.applyUniversalTravelIntakeResult();assert.equal(hotels.length,3);assert.equal(hotels[1].price,993.43);assert.equal(hotels[1].sourcePrice,61096.09);assert.equal(hotels[1].sourceCurrency,'MKD');assert.equal(flights[0].price,16426.49);assert.equal(JSON.stringify(latest),before);
