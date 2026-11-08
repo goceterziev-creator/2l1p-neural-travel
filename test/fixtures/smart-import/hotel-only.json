@@ -90,5 +90,6 @@
     "flightModel": "",
     "hotelSource": "hotel_hint_serpapi",
     "universalIntakeDeprecated": true
-  }
+  },
+    "hotelLinks": []
 }
