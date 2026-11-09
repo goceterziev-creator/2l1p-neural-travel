@@ -4023,7 +4023,7 @@ function destinationMatchesFlight(destination, flight = {}) {
   const text = normalizeText(JSON.stringify(flight));
 
   if (d.includes("rome") || d.includes("рим")) {
-    return text.includes("rome") || text.includes("roma") || text.includes("рим") || text.includes("fco") || text.includes("fiumicino") || matchesDestinationQaNeedle(text, "rom");
+    return text.includes("rome") || text.includes("roma") || text.includes("рим") || text.includes("fco") || text.includes("fiumicino") || matchesDestinationQaNeedle(text, "cia") || matchesDestinationQaNeedle(text, "rom");
   }
 
   if (d.includes("tokyo") || d.includes("токио")) {
