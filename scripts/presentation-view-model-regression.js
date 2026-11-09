@@ -84,4 +84,27 @@ assert.ok(
   "browser product shell should load shared presentation view model before the multi-hotel renderer"
 );
 
+const roundingBoundaryInput = {
+  pricing: {
+    currency: "EUR",
+    flightAmount: 0.1,
+    transferAmount: 0,
+    marginPercent: 15,
+    packageAdjustmentAmount: 0
+  }
+};
+const htmlBoundaryTotal = (0.1 + 0 + 0) * (1 + 15 / 100) + 0;
+const pdfBoundaryTotal = viewModel.optionPackageTotal({ price: 0 }, roundingBoundaryInput);
+assert.equal(pdfBoundaryTotal, htmlBoundaryTotal, "PDF package total should use the same arithmetic order as legacy HTML");
+assert.equal(
+  viewModel.money(pdfBoundaryTotal, "EUR"),
+  "0.11 EUR",
+  "PDF should round the half-cent boundary consistently with the HTML calculation"
+);
+assert.equal(
+  new Intl.NumberFormat("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(htmlBoundaryTotal),
+  "0,11",
+  "legacy HTML should round the matching boundary to the same cents"
+);
+
 console.log("PRESENTATION VIEW MODEL REGRESSION PASS");

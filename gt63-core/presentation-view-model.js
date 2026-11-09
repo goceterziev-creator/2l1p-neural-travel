@@ -100,7 +100,7 @@
     const baseAmount = flightAmount + hotelAmount + transferAmount;
     const adjustment = Number(pricing.packageAdjustmentAmount);
     if (baseAmount <= 0) return amount(pricing.totalAmount);
-    return baseAmount + (baseAmount * (marginPercent / 100)) + (Number.isFinite(adjustment) ? adjustment : 0);
+    return (baseAmount * (1 + marginPercent / 100)) + (Number.isFinite(adjustment) ? adjustment : 0);
   }
 
   function optionPositionSummary(hotel = {}, hotelOptions = [], input = {}) {
