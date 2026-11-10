@@ -99,7 +99,7 @@ function addHotel(hotel = {}) {
     exchangeRateSource: hotel.exchangeRateSource,
     roomsLeft: hotel.roomsLeft || "",
     description: hotel.description || "",
-    images: uniqueHotelImages(hotel.images || []),
+    images: uniqueHotelImages(collectHotelImageAliases(hotel)),
     selected: hotels.length === 0
   });
 
@@ -1095,11 +1095,18 @@ function uniqueHotelImages(images = [], limit = 6, usedKeys = null) {
   return picked;
 }
 
+function collectHotelImageAliases(hotel = {}) {
+  return [hotel.images, hotel.imageUrls, hotel.image, hotel.imageUrl,
+    hotel.heroImage, hotel.photo, hotel.thumbnail, hotel.gallery].flat(Infinity);
+}
+
 function dedupeHotelOptionImages(sourceHotels = [], limit = 6) {
-  return (Array.isArray(sourceHotels) ? sourceHotels : []).map((hotel) => ({
-    ...hotel,
-    images: uniqueHotelImages(hotel.images || [], limit)
-  }));
+  return (Array.isArray(sourceHotels) ? sourceHotels : []).map((hotel) => {
+    const normalized = { ...hotel, images: uniqueHotelImages(collectHotelImageAliases(hotel), limit) };
+    // Canonical local state prevents an old alias from undoing an explicit edit/clear.
+    for (const key of ["imageUrls", "image", "imageUrl", "heroImage", "photo", "thumbnail", "gallery"]) delete normalized[key];
+    return normalized;
+  });
 }
 
 function calculatePricing() {
@@ -1155,7 +1162,7 @@ function syncLegacyFieldsFromBuilder() {
   setValue("hotelMeal", hotel.meal || "");
   setValue("hotelRoomsLeft", hotel.roomsLeft || "");
   setValue("hotelDescription", hotel.description || "");
-  setValue("hotelImages", Array.isArray(hotel.images) ? hotel.images.join("\n") : "");
+  setValue("hotelImages", uniqueHotelImages(collectHotelImageAliases(hotel)).join("\n"));
   if (hotels.length) setValue("hotelPrice", Number(hotel.price || 0).toFixed(2));
 }
 
@@ -2646,7 +2653,7 @@ function populateForm(offer = {}) {
   setValue("hotelMeal", hotel.meal);
   setValue("hotelRoomsLeft", hotel.roomsLeft);
   setValue("hotelDescription", hotel.description);
-  setValue("hotelImages", Array.isArray(hotel.images) ? hotel.images.join("\n") : "");
+  setValue("hotelImages", uniqueHotelImages(collectHotelImageAliases(hotel)).join("\n"));
 
   setValue("destinationDescription", offer.destinationDescription);
   setValue("notes", offer.notes);
@@ -3743,7 +3750,7 @@ function addHotel(hotel = {}) {
     description: hotel.description || "",
     url: hotel.url || "",
     sourceLinks: hotel.sourceLinks || [],
-    images: uniqueHotelImages(Array.isArray(hotel.images) ? hotel.images : []),
+    images: uniqueHotelImages(collectHotelImageAliases(hotel)),
     selected: hotels.length === 0
   });
 
