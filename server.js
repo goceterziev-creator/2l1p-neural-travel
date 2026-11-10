@@ -1476,7 +1476,8 @@ function normalizeIncomingWarnings(warnings = [], offer = null) {
   const isRome = value => romeAliases.includes(normalizeSearchText(value));
   // Only explicit route tokens resolve this known generated finding, never notes
   // or arbitrary substrings such as SPECIAL. Other incoming evidence is retained.
-  const confirmedRomeRoute = offer && isRome(offer.destination) && getFlights(offer).some(flight =>
+  const flights = offer ? getFlights(offer) : [];
+  const confirmedRomeRoute = offer && isRome(offer.destination) && flights.length > 0 && flights.every(flight =>
     /(?:^|[^\p{L}\p{N}_])(?:cia|fco)(?=$|[^\p{L}\p{N}_])/iu.test(String(flight.route || "")));
   return safeArray(warnings)
     .map((item) => String(item || "").trim())

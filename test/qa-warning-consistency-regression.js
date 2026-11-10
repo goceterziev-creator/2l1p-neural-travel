@@ -76,6 +76,39 @@ test("unrelated, missing and partial airport routes do not clear destination fin
   assert(normalizeOffer(notesOnly).validationWarnings.includes(stale));
 });
 
+test("mixed Rome and unrelated flights retain the real incoming destination mismatch", () => {
+  const custom = "[WARNING] Оператор: проверете втория полет.";
+  for (const romeCode of ["CIA", "FCO"]) {
+    for (const unrelated of ["LHR", "NRT"]) {
+      for (const reverse of [false, true]) {
+        const body = input(romeCode);
+        body.flights.push({ ...input(unrelated).flights[0] });
+        if (reverse) body.flights.reverse();
+        body.validationWarnings = [stale, custom];
+        const before = JSON.stringify(body);
+        const offer = normalizeOffer(body);
+        assert(offer.validationWarnings.includes(stale), `${romeCode}/${unrelated}, reverse=${reverse}`);
+        assert(offer.validationWarnings.includes(custom));
+        assert(offer.validationWarnings.some(w => w.startsWith("[INFO]") && /трансфера/.test(w)));
+        assert.deepEqual(offer.flights.map(f => f.route), body.flights.map(f => f.route));
+        assert.deepEqual(offer.hotels[0].images, photos);
+        assert.equal(JSON.stringify(body), before);
+      }
+    }
+  }
+});
+
+test("all Rome flights can resolve the generated warning, but an unproven flight cannot", () => {
+  const body = input("CIA"); body.flights.push({ ...input("FCO").flights[0] });
+  body.validationWarnings = [stale];
+  assert(!normalizeOffer(body).validationWarnings.includes(stale));
+  body.flights.push({ airline: "Synthetic flight without a route", price: 10 });
+  assert(normalizeOffer(body).validationWarnings.includes(stale));
+  body.flights = [];
+  assert(buildValidationWarnings({ destination: "Рим", flights: [], hotels: [], finalPrice: 100 },
+    { validationWarnings: [stale] }).includes(stale), "empty flight list is not proof");
+});
+
 test("two hotels retain a shared URL while duplicates within each gallery are removed", () => {
   const shared = photos[0];
   const body = input(); body.hotels = [hotel("a", [shared, shared + "?size=small"]), hotel("b", [shared])];
