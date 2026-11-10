@@ -180,7 +180,7 @@ test("admin hotel cards render explicit zero children and confirmation controls 
   const box = { innerHTML: '' };
   const hotel = withOccupancy({ ...normalized, children: 0 }).hotels[0];
   const before = JSON.stringify(hotel);
-  const ui = vm.createContext({ AYAHotelOccupancy: occupancy, hotels: [hotel], document: { getElementById: () => box },
+  const ui = vm.createContext({ editingOfferId: null, AYAHotelOccupancy: occupancy, hotels: [hotel], document: { getElementById: () => box },
     dedupeHotelOptionImages: x => x, escapeHtml: v => String(v || '') });
   vm.runInContext(section(admin, 'function renderHotelCards(', 'function addHotel('), ui);
   ui.renderHotelCards();

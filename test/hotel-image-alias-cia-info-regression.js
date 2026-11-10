@@ -24,7 +24,7 @@ function section(start, end, from = 0) {
 }
 function editor() {
   const fields = {}, cards = { innerHTML: "" };
-  const ctx = vm.createContext({ URL, AYAHotelOccupancy: occupancy, hotels: [], flights: [],
+  const ctx = vm.createContext({ editingOfferId: null, URL, AYAHotelOccupancy: occupancy, hotels: [], flights: [],
     $: id => fields[id], document: { getElementById: id => id === "hotelCards" ? cards : null },
     setValue: (id, value) => { fields[id] = { value: value ?? "" }; },
     normalizeFlightFields: f => ({ ...f }), firstItem: a => a?.[0] || {},

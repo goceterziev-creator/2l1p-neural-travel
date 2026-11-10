@@ -1,5 +1,6 @@
 ﻿let editingOfferId = null;
 let editingOfferVersion = null;
+const hotelPersistenceUI = { busy: false, pending: null, reloadRequired: false, snapshot: null };
 let allOffers = [];
 let currentUser = null;
 let currentAgency = null;
@@ -173,6 +174,7 @@ async function fetchJson(url, options = {}) {
       `HTTP ${res.status}`;
 
     const error = new Error(message);
+    error.status = res.status;
     if (data && typeof data === "object") {
       error.stage = data.stage || "";
       error.reason = data.reason || "";
@@ -2592,6 +2594,7 @@ function setEditMode(offerId = null, offerVersion = null) {
   if ($("cancelEditBtn")) $("cancelEditBtn").style.display = isEditing ? "inline-block" : "none";
   reflectCapabilities();
   updateCreateSurfaceSummary();
+  resetHotelPersistenceEditor();
 }
 
 function setCreateSurfaceOpen(isOpen = true) {
@@ -3441,6 +3444,10 @@ formValidationWarnings.push(
 }
 
 async function saveOffer() {
+  if (hotelPersistenceUI.busy || hotelPersistenceUI.pending || hotelPersistenceUI.reloadRequired) {
+    alert("Finish the pending hotel operation or reopen the current offer before saving.");
+    return;
+  }
   const neededCapability = editingOfferId ? "offers.update" : "offers.create";
   if (!hasCapability(neededCapability)) {
     alert("Your role cannot save this offer.");
@@ -3648,6 +3655,100 @@ function confirmHotelOccupancy(index, checked) {
   renderHotelCards();
 }
 
+// Explicit operator actions; never run during import, rendering or ordinary save.
+function hotelPersistenceEditorSnapshot() {
+  return JSON.stringify({ offerId: editingOfferId, version: editingOfferVersion, hotels, flights,
+    fields: Array.from(document.querySelectorAll("#createSurface input, #createSurface textarea, #createSurface select"))
+      .map(field => [field.id, field.value, field.checked]) });
+}
+function resetHotelPersistenceEditor() {
+  hotelPersistenceUI.pending = null;
+  hotelPersistenceUI.reloadRequired = false;
+  renderHotelCards();
+  hotelPersistenceUI.snapshot = hotelPersistenceEditorSnapshot();
+}
+function canStartHotelPersistence() {
+  if (!hasCapability("offers.update") || !editingOfferId || !editingOfferVersion) {
+    alert("Open a saved offer with update permission first."); return false;
+  }
+  if (hotelPersistenceUI.busy || hotelPersistenceUI.pending || hotelPersistenceUI.reloadRequired) {
+    alert("Retry the pending operation or reopen the current offer first."); return false;
+  }
+  if (hotelPersistenceUI.snapshot !== hotelPersistenceEditorSnapshot()) {
+    alert("Save your edits and reopen the offer before hotel persistence."); return false;
+  }
+  return true;
+}
+async function confirmPersistedHotelIdentities() {
+  if (!canStartHotelPersistence()) return;
+  if (!confirm(`Confirm the identity of EVERY saved hotel in offer ${editingOfferId}:\n${hotels.map(hotel => `${hotel.name} — ${hotel.id || "missing ID"}`).join("\n")}\nAssign IDs only to missing records? This writes to the saved offer.`)) return;
+  await startHotelPersistence("identity", {});
+}
+async function persistReviewedHotelImages(hotelId) {
+  if (!canStartHotelPersistence()) return;
+  const matches = hotels.filter(hotel => hotelId && hotel.id === hotelId);
+  if (matches.length !== 1) { alert("A unique saved hotel ID is required. Assign identities first."); return; }
+  const raw = prompt(`Reviewed ORIGINAL image URLs for ${matches[0].name} (${hotelId}). Enter 1–3 URLs, one per line. PDF fallback/cache output is not evidence.`);
+  if (raw === null) return;
+  const urls = [...new Set(raw.split(/\r?\n/).map(url => url.trim()).filter(Boolean))];
+  if (!urls.length || urls.length > 3 || urls.some(url => {
+    try { const parsed = new URL(url); return !["https:", "http:"].includes(parsed.protocol) || !!parsed.username || !!parsed.password; } catch { return true; }
+  })) { alert("Supply 1–3 reviewed HTTP(S) original URLs."); return; }
+  const source = prompt("Evidence source: type persisted-alias for a reviewed saved source, or hotel-lookup for a reviewed hotel lookup. Do not label PDF fallback as either source.");
+  if (source === null) return;
+  if (!["persisted-alias", "hotel-lookup"].includes(source)) { alert("An explicit supported evidence source is required."); return; }
+  if (!confirm(`I checked these images belong to ${matches[0].name}, ID ${hotelId}, in offer ${editingOfferId}.\nSource: ${source}\n${urls.join("\n")}\nPersist these reviewed originals? Server image validation still applies.`)) return;
+  await startHotelPersistence("images", { hotelId, candidates: urls.map(url => ({ hotelId, url, source })) });
+}
+async function startHotelPersistence(operation, extra) {
+  // Bind the confirmation to the exact editor snapshot and retain the same body for uncertain retries.
+  if (!canStartHotelPersistence()) return;
+  hotelPersistenceUI.pending = { offerId: editingOfferId, operation,
+    body: { offerId: editingOfferId, expectedVersion: editingOfferVersion,
+      operationId: crypto.randomUUID(), confirmedHotelIdentity: true, ...extra } };
+  await retryHotelPersistence();
+}
+async function retryHotelPersistence() {
+  const pending = hotelPersistenceUI.pending;
+  if (!pending || hotelPersistenceUI.busy || hotelPersistenceUI.reloadRequired ||
+    !hasCapability("offers.update") || pending.offerId !== editingOfferId) return;
+  if (hotelPersistenceUI.snapshot !== hotelPersistenceEditorSnapshot()) {
+    alert("The editor changed. Reopen the offer before continuing."); return;
+  }
+  hotelPersistenceUI.busy = true;
+  const controls = Array.from(document.querySelectorAll("#createSurface input, #createSurface textarea, #createSurface select, #createSurface button"));
+  const disabled = controls.map(control => control.disabled);
+  controls.forEach(control => { control.disabled = true; });
+  try {
+    const result = await fetchJson(`/api/offers/${encodeURIComponent(pending.offerId)}/hotel-persistence/${pending.operation}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pending.body)
+    });
+    if (!result?.success || !result.offer || !result.offerVersion || result.offer.id !== pending.offerId) throw new Error("Uncertain response. Retry the same operation or reopen the offer.");
+    if (editingOfferId !== pending.offerId || hotelPersistenceUI.snapshot !== hotelPersistenceEditorSnapshot()) {
+      hotelPersistenceUI.reloadRequired = true;
+      alert("Operation completed, but the editor changed. Reopen the current offer."); return;
+    }
+    populateForm(result.offer);
+    setEditMode(pending.offerId, result.offerVersion);
+    alert(result.changed ? "Hotel persistence saved." : "Operation already applied; no new change.");
+  } catch (error) {
+    if (error.status === 409) {
+      hotelPersistenceUI.pending = null;
+      hotelPersistenceUI.reloadRequired = true;
+      alert("Offer changed (409). Reopen the current offer before any further save or hotel operation.");
+    } else if (error.status >= 400 && error.status < 500) {
+      hotelPersistenceUI.pending = null;
+      alert(`Hotel operation denied: ${error.message}`);
+    } else {
+      alert(`Outcome uncertain: ${error.message}. Use Retry pending hotel operation; do not create another request.`);
+    }
+  } finally {
+    hotelPersistenceUI.busy = false;
+    controls.forEach((control, index) => { control.disabled = disabled[index]; });
+    renderHotelCards();
+  }
+}
+
 function renderHotelCards() {
   const box = document.getElementById("hotelCards");
 
@@ -3655,9 +3756,17 @@ function renderHotelCards() {
 
   hotels = dedupeHotelOptionImages(hotels);
 
-  box.innerHTML = hotels.map((h, i) => `
+  const persistenceActions = editingOfferId && hasCapability("offers.update") ? `
+    <div class="hotel-persistence-actions">
+      <strong>Explicit saved-hotel persistence</strong>
+      <p>Review saved records first. Unsaved edits must be saved and reopened. These actions write to the offer.</p>
+      <button type="button" onclick="confirmPersistedHotelIdentities()" ${hotelPersistenceUI.busy || hotelPersistenceUI.pending || hotelPersistenceUI.reloadRequired ? "disabled" : ""}>Confirm identities and assign missing IDs</button>
+      ${hotelPersistenceUI.pending ? `<button type="button" onclick="retryHotelPersistence()" ${hotelPersistenceUI.busy ? "disabled" : ""}>Retry pending hotel operation</button>` : ""}
+      ${hotelPersistenceUI.reloadRequired ? "<p>Conflict: reopen the current offer before continuing.</p>" : ""}
+    </div>` : "";
+  box.innerHTML = persistenceActions + hotels.map((h, i) => `
     <div class="hotel-card">
-
+      ${editingOfferId && hasCapability("offers.update") && h.id && hotels.filter(item => item.id === h.id).length === 1 ? `<button type="button" data-persist-hotel-id="${escapeHtml(h.id)}" onclick="persistReviewedHotelImages(this.dataset.persistHotelId)" ${hotelPersistenceUI.busy || hotelPersistenceUI.pending || hotelPersistenceUI.reloadRequired ? "disabled" : ""}>Review and persist verified images</button>` : ""}
       <label>Hotel Name
         <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;hotels[${i}].occupancy={...hotels[${i}].occupancy,confirmed:false};renderHotelCards();updateAutoPrice();" />
       </label>
