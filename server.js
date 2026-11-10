@@ -1482,6 +1482,11 @@ function normalizeIncomingWarnings(warnings = [], offer = null) {
   return safeArray(warnings)
     .map((item) => String(item || "").trim())
     .filter(Boolean)
+    .map((item) => {
+      const transfer = item.match(/^\[INFO\] Полетът каца в (CIA|FCO), което е (?:разпознато като )?валидно летище за ([^.]+)\. Проверете трансфера до хотела\.$/i);
+      if (!offer || !isRome(offer.destination) || !transfer || !isRome(transfer[2])) return item;
+      return `[INFO] Полетът каца в ${transfer[1].toUpperCase()}, което е валидно летище за Рим. Проверете трансфера до хотела.`;
+    })
     .filter((item) => {
       const destinationFinding = item.match(/^\[WARNING\] Полетът не споменава ясно дестинацията "([^"]+)"\. Проверете маршрута преди изпращане\.$/);
       if (confirmedRomeRoute && destinationFinding && isRome(destinationFinding[1])) return false;
@@ -1579,6 +1584,8 @@ function findDestinationSignal(profile, text = "", groups = ["aliases", "airport
 function displayDestinationSignal(signal = {}) {
   const key = normalizeSearchText(signal.match);
   const names = {
+    cia: "CIA",
+    fco: "FCO",
     nrt: "NRT",
     narita: "NRT",
     "\u043d\u0430\u0440\u0438\u0442\u0430": "NRT",
