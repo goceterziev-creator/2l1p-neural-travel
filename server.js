@@ -1471,12 +1471,23 @@ function createQaFinding({ severity = "WARNING", message = "" } = {}) {
   return `[${safeLevel}] ${String(message || "").trim()}`;
 }
 
-function normalizeIncomingWarnings(warnings = []) {
+function normalizeIncomingWarnings(warnings = [], offer = null) {
+  const romeAliases = DESTINATION_INTELLIGENCE.find(profile => profile.key === "rome").aliases;
+  const isRome = value => romeAliases.includes(normalizeSearchText(value));
+  // Only explicit route tokens resolve this known generated finding, never notes
+  // or arbitrary substrings such as SPECIAL. Other incoming evidence is retained.
+  const flights = offer ? getFlights(offer) : [];
+  const confirmedRomeRoute = offer && isRome(offer.destination) && flights.length > 0 && flights.every(flight =>
+    /(?:^|[^\p{L}\p{N}_])(?:cia|fco)(?=$|[^\p{L}\p{N}_])/iu.test(String(flight.route || "")));
   return safeArray(warnings)
     .map((item) => String(item || "").trim())
     .filter(Boolean)
-    .filter((item) => !/^flight destination mismatch:/i.test(item))
-    .filter((item) => !/^hotel destination mismatch:/i.test(item));
+    .filter((item) => {
+      const destinationFinding = item.match(/^\[WARNING\] Полетът не споменава ясно дестинацията "([^"]+)"\. Проверете маршрута преди изпращане\.$/);
+      if (confirmedRomeRoute && destinationFinding && isRome(destinationFinding[1])) return false;
+      // Recomputed below from current stored URLs; never retain obsolete counts.
+      return !offer || !/^\[WARNING\] \d+ хотел\(а\) нямат запазени адреси на снимки\. Проверете кориците на PDF преди изпращане\.$/.test(item);
+    });
 }
 
 const DESTINATION_INTELLIGENCE = [
@@ -1739,7 +1750,7 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     warnings.push(createQaFinding({ severity: "CRITICAL", message: "\u041a\u0440\u0430\u0439\u043d\u0430\u0442\u0430 \u0446\u0435\u043d\u0430 \u0435 0 EUR. \u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u043d\u0435 \u0442\u0440\u044f\u0431\u0432\u0430 \u0434\u0430 \u0441\u0435 \u0438\u0437\u043f\u0440\u0430\u0449\u0430 \u043f\u0440\u0435\u0434\u0438 \u0434\u0430 \u0441\u0435 \u043f\u043e\u043f\u044a\u043b\u043d\u0438 \u0446\u0435\u043d\u0430." }));
   }
 
-  return uniqueWarnings([...normalizeIncomingWarnings(rawBody.validationWarnings), ...warnings]);
+  return uniqueWarnings([...normalizeIncomingWarnings(rawBody.validationWarnings, offer), ...warnings]);
 }
 
 function uniqueOfferFlights(flights = []) {
@@ -1920,8 +1931,6 @@ const flights = inputFlights.length
       f.airline || f.route || f.departure || f.arrival || f.baggage || f.notes || toNumber(f.price, 0) > 0
     );
 
-const usedInputHotelImageKeys = new Set();
-
 const hotels = inputHotels.length
   ? inputHotels.map((h, index) => ({
       id: h.id || "",
@@ -1943,7 +1952,7 @@ const hotels = inputHotels.length
       description: h.description || "",
       url: h.url || h.link || h.bookingUrl || "",
       sourceLinks: safeArray(h.sourceLinks),
-      images: uniqueHotelImages(collectHotelImageAliases(h), 6, usedInputHotelImageKeys),
+      images: uniqueHotelImages(collectHotelImageAliases(h), 6),
       selected: hasSelectedHotelInput ? index === selectedHotelInputIndex : index === 0
     })).filter(h =>
       h.name || h.stars || h.area || h.distance || h.room || h.meal || toNumber(h.price, 0) > 0 || h.roomsLeft || h.description || h.images.length
@@ -7564,7 +7573,6 @@ async function renderOfferHtml(offer, options = {}) {
   const transferOptionBase = toNumber(offer.transferPrice, 0);
   const markupMultiplier = 1 + toNumber(offer.markupPercent, 0) / 100;
   const optionPriceAdjustment = Number(buildLegacyOfferPrintInput(offer).pricing.packageAdjustmentAmount || 0);
-  const usedRenderedHotelImageKeys = new Set();
   const hotelOptionPrices = orderedHotels.map((hotel) => {
     const hotelPrice = toNumber(hotel.price, 0);
     const calculatedOptionPrice = (flightOptionBase + hotelPrice + transferOptionBase) * markupMultiplier + optionPriceAdjustment;
@@ -7575,6 +7583,7 @@ async function renderOfferHtml(offer, options = {}) {
 
   const hotelGalleries = [];
   for (const hotel of orderedHotels) {
+    const usedRenderedHotelImageKeys = new Set();
     const providedImages = safeArray(hotel.images).filter(Boolean);
     const directImage = cleanText(hotel.image || hotel.imageUrl || hotel.photo || hotel.thumbnail);
     const primaryImages = providedImages.length ? providedImages : [directImage].filter(Boolean);

@@ -371,11 +371,11 @@ function classifyWarning(warning = "") {
   const severity = warningSeverity(warning);
   if (severity === "critical") return "critical";
   if (severity === "info") return "info";
-  if (text.includes("date")) return "dates";
-  if (text.includes("guest") || text.includes("adult") || text.includes("passenger")) return "guests";
+  if (/date|дат|период|нощув/.test(text)) return "dates";
+  if (/guest|adult|passenger|гост|възраст|пътни|деца|дете|заетост/.test(text)) return "guests";
   if (text.includes("availability") || text.includes("available") || text.includes("налич")) return "availability";
-  if (text.includes("image")) return "images";
-  if (text.includes("destination")) return "destination";
+  if (/image|сним|изображ/.test(text)) return "images";
+  if (/destination|дестинац|маршрут|локаци|район/.test(text)) return "destination";
   return "review";
 }
 
@@ -1096,10 +1096,9 @@ function uniqueHotelImages(images = [], limit = 6, usedKeys = null) {
 }
 
 function dedupeHotelOptionImages(sourceHotels = [], limit = 6) {
-  const usedKeys = new Set();
   return (Array.isArray(sourceHotels) ? sourceHotels : []).map((hotel) => ({
     ...hotel,
-    images: uniqueHotelImages(hotel.images || [], limit, usedKeys)
+    images: uniqueHotelImages(hotel.images || [], limit)
   }));
 }
 
