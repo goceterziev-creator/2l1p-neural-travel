@@ -138,6 +138,7 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   const routes = new Map();
   let database = { offers: [] };
   const integration = vm.createContext({ hotelOccupancyQa: occupancy, URL,
+    offerRecordVersion: require("../server/offer-record-version").offerRecordVersion,
     crypto: require('node:crypto'), FLIGHT_AIRPORT_ALIASES: [],
     normalizeTravelDate: require('../server/travel-normalizers/date-normalizer').normalizeTravelDate,
     renderClientFlightItineraryBg: require('../server/flight-display-bg').renderClientFlightItineraryBg,

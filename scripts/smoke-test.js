@@ -208,10 +208,12 @@ async function checkWarningPersistence(cookie) {
   }, cookie);
   assert(dismissed.response.status === 200, "warning dismiss expected 200");
 
+  const current = await request(`/api/offers/${offer.id}`, {}, cookie);
+  assert(current.response.status === 200 && current.json?.offerVersion, "read current offer version before update");
   const updated = await request(`/api/offers/${offer.id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...basePayload, id: offer.id, travelDates: "27.12.2026 - 06.01.2027" })
+    body: JSON.stringify({ ...basePayload, expectedVersion: current.json.offerVersion, id: offer.id, travelDates: "27.12.2026 - 06.01.2027" })
   }, cookie);
   assert(updated.response.status === 200, `update offer expected 200, got ${updated.response.status}: ${updated.text}`);
   assert(updated.json?.offer?.warningsDismissed === false, "update changed warnings should reset warningsDismissed=false");
