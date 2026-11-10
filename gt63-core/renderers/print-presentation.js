@@ -513,7 +513,12 @@
   }
 
   function renderPrintProposal(input = {}, options = {}) {
-    const viewModel = viewModelApi.buildPresentationViewModel(input, options);
+    // PDF dates must never fall back to destination.requested (which can be a city).
+    // Keep the shared HTML view model contract and the saved input unchanged.
+    const printInput = nonEmpty(input.client?.travelDates) ? input : {
+      ...input, client: { ...input.client, travelDates: "Датите са за потвърждение" }
+    };
+    const viewModel = viewModelApi.buildPresentationViewModel(printInput, options);
     const mode = viewModel.contract.mode;
     const selectedPages = [
       journeyIntroductionPage(viewModel, input),
