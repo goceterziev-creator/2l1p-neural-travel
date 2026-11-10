@@ -1,4 +1,5 @@
 ﻿let editingOfferId = null;
+let editingOfferVersion = null;
 let allOffers = [];
 let currentUser = null;
 let currentAgency = null;
@@ -2570,8 +2571,9 @@ function setValue(id, value = "") {
   if (el) el.value = value ?? "";
 }
 
-function setEditMode(offerId = null) {
+function setEditMode(offerId = null, offerVersion = null) {
   editingOfferId = offerId;
+  editingOfferVersion = offerId ? offerVersion : null;
   const isEditing = Boolean(offerId);
   if (isEditing) setCreateSurfaceOpen(true);
 
@@ -2672,7 +2674,7 @@ async function editOffer(id) {
   try {
     const data = await fetchJson(`/api/offers/${id}`);
     populateForm(data.offer || {});
-    setEditMode(id);
+    setEditMode(id, data.offerVersion);
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (error) {
     alert(`Edit failed: ${error.message}`);
@@ -3516,7 +3518,7 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
     const result = await fetchJson(wasEditing ? `/api/offers/${editId}` : "/api/offers", {
       method: wasEditing ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(wasEditing ? { ...payload, expectedVersion: editingOfferVersion } : payload)
     });
 
     alert(wasEditing ? `Offer updated: ${result.offer.id}` : `Offer saved: ${result.offer.id}`);

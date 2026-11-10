@@ -8,6 +8,8 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
+const { offerRecordVersion } = require("./server/offer-record-version");
+const hotelPersistence = require("./server/hotel-image-persistence-plan");
 const dns = require("dns");
 const net = require("net");
 const puppeteer = require("puppeteer");
@@ -216,7 +218,9 @@ let mutationQueue = Promise.resolve();
 function mutateDb(mutationFn) {
   const job = mutationQueue.then(() => {
     const db = readDb();
-    const nextDb = mutationFn(db) || db;
+    const result = mutationFn(db);
+    if (result === false) return db; // Explicit no-write result for proven idempotent replay.
+    const nextDb = result || db;
     writeDb(nextDb);
     return nextDb;
   });
@@ -8848,7 +8852,7 @@ app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).json({ error: "Offer not found" });
   if (!canAccessOffer(req, offer)) return res.status(403).json({ error: "Forbidden" });
-  res.json({ success: true, offer: { ...withBulgarianOfferFlightDisplay(offer), hotelOccupancyStatus: hotelOccupancyQa.summary(offer) } });
+  res.json({ success: true, offerVersion: offerRecordVersion(offer), offer: { ...withBulgarianOfferFlightDisplay(offer), hotelOccupancyStatus: hotelOccupancyQa.summary(offer) } });
 });
 
 app.post("/api/offers", requireCapability("offers.create"), async (req, res) => {
@@ -8896,16 +8900,22 @@ app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) 
       if (!canAccessOffer(req, db.offers[index])) throw routeError("Forbidden", 403);
 
       const previous = db.offers[index];
+      const expectedVersion = req.body?.expectedVersion;
+      if (typeof expectedVersion !== "string" || expectedVersion !== offerRecordVersion(previous)) {
+        throw routeError("Offer changed or version missing. Reopen the offer before saving; your edits have not been saved.", 409, { code: "OFFER_VERSION_CONFLICT" });
+      }
       const normalized = normalizeOffer(req.body);
       const previousWarnings = uniqueWarnings(previous.validationWarnings).join("\n");
       const nextWarnings = uniqueWarnings(normalized.validationWarnings).join("\n");
       const updated = {
         ...normalized,
+        editorialRevision: Number(previous.editorialRevision || 0) + 1,
         id: previous.id,
         agencyId: entityAgencyId(previous),
         createdAt: previous.createdAt,
         createdBy: previous.createdBy || req.user.id,
         ownerName: previous.ownerName || req.user.name,
+        clientViewed: previous.clientViewed ?? false,
         clientViews: previous.clientViews || 0,
         clicks: previous.clicks || 0,
         pdfDownloads: previous.pdfDownloads || 0,
@@ -8931,6 +8941,7 @@ app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) 
       response = {
         success: true,
         offer: updated,
+        offerVersion: offerRecordVersion(updated),
         clientLink: `${LIVE_BASE_URL}/api/offers/view/${updated.id}`,
         publicLink: `${LIVE_BASE_URL}/offer/${updated.id}`,
         pdfLink: `${LIVE_BASE_URL}/api/offers/${updated.id}/pdf`
@@ -8943,6 +8954,81 @@ app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) 
   }
 });
 
+// Two explicit operations; no automatic lookup, migration or name-based matching.
+function persistenceConflict() {
+  return routeError("Offer changed or operation retry conflicts", 409, { code: "OFFER_VERSION_CONFLICT" });
+}
+function persistenceFingerprint(value) {
+  const canonical = item => Array.isArray(item) ? item.map(canonical) : item && typeof item === "object"
+    ? Object.fromEntries(Object.keys(item).sort().map(key => [key, canonical(item[key])])) : item;
+  return crypto.createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+}
+function persistenceOffer(db, req) {
+  const offer = db.offers.find(item => item.id === req.params.id);
+  if (!offer) throw routeError("Offer not found", 404);
+  if (!canAccessOffer(req, offer)) throw routeError("Forbidden", 403);
+  return offer;
+}
+function persistenceReplay(db, req, offer, operation, fingerprint) {
+  const receipts = safeArray(db.activities).filter(event => event.offerId === offer.id &&
+    event.type === "hotel_persistence_applied" && event.metadata?.operationId === req.body.operationId);
+  if (!receipts.length) return false;
+  const receipt = receipts[0];
+  if (receipts.length !== 1 || receipt.userId !== req.user.id || receipt.agencyId !== entityAgencyId(offer) ||
+    receipt.metadata.operation !== operation || receipt.metadata.requestHash !== fingerprint ||
+    receipt.metadata.resultVersion !== offerRecordVersion(offer)) throw persistenceConflict();
+  return true;
+}
+for (const operation of ["identity", "images"]) {
+  app.post(`/api/offers/:id/hotel-persistence/${operation}`, requireCapability("offers.update"), async (req, res) => {
+    try {
+      const snapshot = persistenceOffer(readDb(), req);
+      if (req.body?.offerId !== snapshot.id || req.body?.confirmedHotelIdentity !== true ||
+        typeof req.body?.operationId !== "string" || !/^[A-Za-z0-9_-]{16,100}$/.test(req.body.operationId) ||
+        typeof req.body?.expectedVersion !== "string") throw routeError("Explicit offer, version, operation ID and identity confirmation required", 422);
+      const fingerprint = persistenceFingerprint(req.body);
+      let response;
+      // Replay checked under the same serialized writer as application.
+      await mutateDb(db => {
+        const current = persistenceOffer(db, req);
+        if (persistenceReplay(db, req, current, operation, fingerprint)) {
+          response = { success: true, changed: false, offer: current, offerVersion: offerRecordVersion(current) };
+          return false;
+        }
+        if (req.body.expectedVersion !== offerRecordVersion(current)) throw persistenceConflict();
+        return false;
+      });
+      if (response) return res.json(response);
+      const args = { ...req.body, offer: snapshot };
+      const plan = operation === "identity" ? hotelPersistence.prepareHotelIdentityPlan(args)
+        : await hotelPersistence.prepareHotelImagePlan(args, { uniqueImages: uniqueHotelImages, validateImage: resolveGt63HotelPrintImage });
+      await mutateDb(db => {
+        const current = persistenceOffer(db, req);
+        if (persistenceReplay(db, req, current, operation, fingerprint)) {
+          response = { success: true, changed: false, offer: current, offerVersion: offerRecordVersion(current) };
+          return false;
+        }
+        if (req.body.expectedVersion !== offerRecordVersion(current)) throw persistenceConflict();
+        const applied = operation === "identity" ? hotelPersistence.applyHotelIdentityPlan(current, plan)
+          : hotelPersistence.applyHotelImagePlan(current, plan);
+        if (!applied.changed) throw routeError("No new change; no successful operation receipt exists", 422);
+        const updated = { ...applied.offer, editorialRevision: Number(current.editorialRevision || 0) + 1, updatedAt: new Date().toISOString() };
+        const resultVersion = offerRecordVersion(updated);
+        db.offers[db.offers.indexOf(current)] = updated;
+        appendAuditEvent(db, req, { type: "hotel_persistence_applied", category: "offer", entityType: "offer",
+          entityId: updated.id, offerId: updated.id, metadata: { operation, operationId: req.body.operationId,
+            requestHash: fingerprint, resultVersion, hotelId: operation === "images" ? req.body.hotelId : null } });
+        response = { success: true, changed: true, offer: updated, offerVersion: resultVersion };
+        return db;
+      });
+      res.json(response);
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message || "Hotel persistence failed",
+        details: err.status === 409 ? { code: "OFFER_VERSION_CONFLICT" } : err.details || null });
+    }
+  });
+}
+
 app.patch("/api/offers/:id/status", requireCapability("offers.update"), async (req, res) => {
   try {
     let response;
@@ -8951,6 +9037,7 @@ app.patch("/api/offers/:id/status", requireCapability("offers.update"), async (r
       if (index === -1) throw routeError("Offer not found", 404);
       if (!canAccessOffer(req, db.offers[index])) throw routeError("Forbidden", 403);
 
+      db.offers[index].editorialRevision = Number(db.offers[index].editorialRevision || 0) + 1;
       db.offers[index].status = String(req.body.status || "draft").toLowerCase();
       db.offers[index].updatedAt = new Date().toISOString();
 
@@ -8983,6 +9070,7 @@ app.patch("/api/offers/:id/warnings", requireCapability("offers.update"), async 
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
+      offer.editorialRevision = Number(offer.editorialRevision || 0) + 1;
       offer.warningsDismissed = req.body?.dismissed !== false;
       offer.updatedAt = new Date().toISOString();
       appendAuditEvent(db, req, {
@@ -9031,6 +9119,7 @@ app.post("/api/offers/:id/book", async (req, res) => {
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
+      offer.editorialRevision = Number(offer.editorialRevision || 0) + 1;
       offer.status = "booked";
       offer.bookedAt = new Date().toISOString();
       offer.updatedAt = new Date().toISOString();
