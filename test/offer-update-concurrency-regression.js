@@ -13,17 +13,18 @@ process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
 const filename = path.resolve(__dirname, "../server.js");
 const source = fs.readFileSync(filename, "utf8");
 const harness = new Module(filename, module); harness.filename = filename; harness.paths = Module._nodeModulePaths(path.dirname(filename));
-harness._compile(source + "\nmodule.exports.concurrencyTest={normalizeOffer};", filename);
+harness._compile(source + "\nmodule.exports.concurrencyTest={normalizeOffer,flightSafetyWarnings,flightDateSafety,assertClientStatusSafety,assertFlightDateSafety,guardClientFlightDates};", filename);
 const normalizeOffer = harness.exports.concurrencyTest.normalizeOffer;
 const clone = value => JSON.parse(JSON.stringify(value));
 function section(start, end) { return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); }
 function setup() {
-  let db = { offers: [{ ...normalizeOffer({ destination: "Рим", flights: [{ route: "SOF -> CIA / CIA -> SOF", price: 200 }], hotels: [{ id: "hotel-exact", name: "Synthetic", price: 100, selected: true, images: [], occupancy: { adults: 2, children: 0, rooms: 1, confirmed: true } }] }), id: "QA", agencyId: "A" }] };
+  let db = { offers: [{ ...normalizeOffer({ destination: "Рим", travelDates: "16.11.2099 - 20.11.2099", flights: [{ route: "SOF -> CIA / CIA -> SOF", departure: "2099-11-16T10:30", arrival: "2099-11-20T10:30", price: 200 }], hotels: [{ id: "hotel-exact", name: "Synthetic", price: 100, selected: true, images: [], occupancy: { adults: 2, children: 0, rooms: 1, confirmed: true } }] }), id: "QA", agencyId: "A" }] };
   let writes = 0, audits = 0;
   const routes = {};
   const ctx = vm.createContext({
     app: { get: (url, capability, handler) => { routes[url.includes("/view/") ? "view" : "get"] = handler || capability; }, post: (url, handler) => { routes.click = handler; }, put: (url, _, handler) => { routes.put = handler; } },
     requireCapability: x => x, offerRecordVersion, normalizeOffer,
+    ...harness.exports.concurrencyTest,
     toNumber: (value, fallback = 0) => Number(value) || fallback, renderOfferHtml: async () => "synthetic",
     readDb: () => clone(db), writeDb: value => { writes++; db = clone(value); },
     canAccessOffer: req => !req.forbidden, entityAgencyId: x => x.agencyId,
@@ -35,9 +36,10 @@ function setup() {
   vm.runInContext(section('let mutationQueue = Promise.resolve();', 'function routeError('), ctx);
   vm.runInContext(section('app.get("/api/offers/:id",', 'app.post("/api/offers",') + section('app.put("/api/offers/:id",', '// Two explicit operations;'), ctx);
   vm.runInContext(section('app.post("/api/offers/:id/click",', 'app.post("/api/offers/:id/book",') + section('app.get("/api/offers/view/:id",', 'app.get("/api/offers/:id/print",'), ctx);
-  // Execute the actual synchronous PDF tracking prefix without rendering or launching Chrome.
+  // Execute the actual initial guard and post-generation accounting without launching Chrome.
   const pdfPrefix = section('app.get("/api/offers/:id/pdf",', '  const printUrl = new URL(');
-  vm.runInContext(pdfPrefix + '\n});', ctx);
+  const pdfAccounting = section('    // Async PDF generation can cross UTC midnight.', '    res.setHeader("Content-Type", "application/pdf");');
+  vm.runInContext(pdfPrefix + pdfAccounting + '\n});', ctx);
   routes.pdf = routes.get;
   vm.runInContext(section('app.get("/api/offers/:id",', 'app.post("/api/offers",'), ctx);
   async function call(method, body, forbidden = false) {
