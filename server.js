@@ -1120,8 +1120,16 @@ function normalizeFlightDateCandidate(value = "", options = {}) {
   const raw = String(value || "").replace(/\s+/g, " ").trim();
   if (!raw) return normalizeTravelDate("");
 
+  // QA must compare an explicitly reported year even when the travel-date
+  // normalizer rejects it as too old. Never repair the saved segment here.
+  const reportedYear = raw.match(/\b((?:19|20)\d{2})-\d{1,2}-\d{1,2}(?=[T\s]|$)/)?.[1]
+    || raw.match(/\b\d{1,2}[./-]\d{1,2}[./-]((?:19|20)\d{2})(?=$|[T\s,.;])/)?.[1]
+    || raw.match(/\b\d{1,2}\s+[A-Za-zА-Яа-я]+\.?\s+((?:19|20)\d{2})\b/)?.[1]
+    || raw.match(/\b[A-Za-z]+\.?\s+\d{1,2},?\s+((?:19|20)\d{2})\b/)?.[1];
+  const retainReportedYear = date => reportedYear
+    ? { ...date, year: Number(reportedYear), yearMissing: false, source: "explicit" } : date;
   let normalized = normalizeTravelDate(raw, options);
-  if (normalized.day && normalized.month) return normalized;
+  if (normalized.day && normalized.month) return retainReportedYear(normalized);
 
   const monthFirst = raw.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December)\.?\s+(\d{1,2})(?:[,]?\s+(20\d{2}))?/i);
   if (monthFirst) {
@@ -1129,10 +1137,97 @@ function normalizeFlightDateCandidate(value = "", options = {}) {
       `${monthFirst[2]} ${monthFirst[1]} ${monthFirst[3] || ""}`.trim(),
       options
     );
-    if (normalized.day && normalized.month) return normalized;
+    if (normalized.day && normalized.month) return retainReportedYear(normalized);
   }
 
   return normalized;
+}
+
+// Flight-Date Safety V1: read-only verdict, re-evaluated at the publication boundary.
+function flightDateSafety(offer = {}, now = new Date()) {
+  const warnings = [];
+  const add = message => warnings.push(`[WARNING] [FLIGHT_DATE_SAFETY] ${message}`);
+  const flights = [...getFlights(offer)];
+  const proposal = offer.proposalInput?.flight;
+  if (proposal && typeof proposal === "object") flights.push(proposal);
+  if (!flights.length && (offer.flightRoute || toNumber(offer.flightPrice, 0) > 0)) {
+    flights.push({ departure: offer.flightDeparture, arrival: offer.flightArrival });
+  }
+  if (!flights.length) return { ready: true, applicable: false, warnings, checkedOn: now.toISOString().slice(0, 10) };
+  const isoPeriod = String(offer.travelDates || "").trim().match(/^(\d{4}-\d{2}-\d{2})\s*[-–—]\s*(\d{4}-\d{2}-\d{2})$/);
+  let period = isoPeriod ? isoPeriod.slice(1) : parseDateTokens(offer.travelDates, inferYearFromText(offer.travelDates));
+  const iso = date => date?.day && date?.month && date?.year
+    ? `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}` : "";
+  const validDay = value => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  };
+  // Reuse the existing date normalizer for supported written-month periods.
+  if (period.length !== 2) {
+    const raw = String(offer.travelDates || "").trim();
+    const sharedMonth = raw.match(/^(\d{1,2})\s*[-–—]\s*(\d{1,2})\s+([A-Za-zА-Яа-я]+)\s+(20\d{2})$/);
+    const parts = sharedMonth ? [`${sharedMonth[1]} ${sharedMonth[3]} ${sharedMonth[4]}`, `${sharedMonth[2]} ${sharedMonth[3]} ${sharedMonth[4]}`]
+      : raw.split(/\s+[-–—]\s+|\s*[–—]\s*/);
+    if (parts.length === 2) period = parts.map(part => iso(normalizeFlightDateCandidate(part, { trustedOfferYear: inferYearFromText(raw) })));
+  }
+  const today = now.toISOString().slice(0, 10);
+  if (period.length !== 2 || !period.every(validDay) || period[0] > period[1]) add("Периодът на офертата изисква потвърдени дати и година.");
+  for (const [index, flight] of flights.entries()) {
+    const outbound = [...safeArray(flight.outboundSegments), ...safeArray(flight.outbound?.segments)];
+    const inbound = [...safeArray(flight.inboundSegments), ...safeArray(flight.inbound?.segments)];
+    const segments = [...outbound, ...inbound, ...safeArray(flight.segments)];
+    const readDay = value => {
+      const raw = typeof value === "string" ? value.trim() : "";
+      // Inspect every date token: the renderers may display the entire original
+      // string, so accepting only its first date/year is not safe.
+      const tokens = raw.match(/\b\d{4}-\d{1,2}-\d{1,2}(?=T|\b)|\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?(?=T|\b)|\b\d{1,2}\s+[A-Za-zА-Яа-я]+\.?(?:\s+\d{2,4}\b)?|\b[A-Za-z]+\.?\s+\d{1,2}\b(?:,?\s+\d{2,4}\b)?/g) || [];
+      const days = tokens.map(token => iso(normalizeFlightDateCandidate(token)));
+      const years = new Set(raw.match(/\b(?:19|20|21)\d{2}\b/g) || []);
+      const shortRange = /\b\d{1,2}\s*[-–—/]\s*\d{1,2}\s+[A-Za-zА-Яа-я]+/.test(raw);
+      if (!days.length || days.some(day => !day || !validDay(day)) || new Set(days).size !== 1 || years.size > 1 || shortRange) {
+        add(`Полет ${index + 1}: липсваща или нееднозначна дата/година. Проверете източника.`); return "";
+      }
+      const day = days[0];
+      if (day < today) add(`Полет ${index + 1}: изминала дата ${day}. Проверете източника.`);
+      if (period.length === 2 && (day < period[0] || day > period[1])) add(`Полет ${index + 1}: дата ${day} извън периода на офертата. Проверете източника.`);
+      return day;
+    };
+    const checkAliases = values => {
+      const present = values.filter(value => value !== null && value !== undefined && String(value).trim());
+      const days = (present.length ? present : [""]).map(readDay).filter(Boolean);
+      if (new Set(days).size > 1) add(`Полет ${index + 1}: противоречиви date aliases. Проверете източника.`);
+    };
+    if (segments.length) {
+      for (const segment of segments) {
+        checkAliases([segment.date, segment.departure, segment.departureDate]);
+        checkAliases([segment.arrival, segment.arrivalDate]);
+      }
+    } else {
+      checkAliases([flight.date, flight.departure, flight.departureDate, flight.outbound]);
+      checkAliases([flight.arrival, flight.arrivalDate, flight.inbound]);
+    }
+  }
+  return { ready: warnings.length === 0, applicable: true, warnings: [...new Set(warnings)], checkedOn: today };
+}
+function assertFlightDateSafety(offer) {
+  const verdict = flightDateSafety(offer);
+  if (!verdict.ready) {
+    const error = routeError("AYA_FLIGHT_DATE_BLOCKED", 422, verdict);
+    error.code = "AYA_FLIGHT_DATE_BLOCKED";
+    throw error;
+  }
+}
+function assertClientStatusSafety(offer) {
+  if (["ready", "sent", "viewed", "booked"].includes(String(offer.status).toLowerCase())) assertFlightDateSafety(offer);
+}
+function flightSafetyWarnings(offer) {
+  return uniqueWarnings([...safeArray(offer.validationWarnings).filter(w => !String(w).startsWith("[WARNING] [FLIGHT_DATE_SAFETY]")), ...flightDateSafety(offer).warnings]);
+}
+function guardClientFlightDates(res, offer) {
+  const verdict = flightDateSafety(offer);
+  if (verdict.ready) return true;
+  res.status(422).json({ error: "AYA_FLIGHT_DATE_BLOCKED", details: verdict });
+  return false;
 }
 
 function flightDateKey(date = {}) {
@@ -1486,6 +1581,7 @@ function normalizeIncomingWarnings(warnings = [], offer = null) {
   return safeArray(warnings)
     .map((item) => String(item || "").trim())
     .filter(Boolean)
+    .filter(item => !item.startsWith("[WARNING] [FLIGHT_DATE_SAFETY]"))
     .map((item) => {
       const transfer = item.match(/^\[INFO\] Полетът каца в (CIA|FCO), което е (?:разпознато като )?валидно летище за ([^.]+)\. Проверете трансфера до хотела\.$/i);
       if (!offer || !isRome(offer.destination) || !transfer || !isRome(transfer[2])) return item;
@@ -1620,7 +1716,7 @@ function displayDestinationSignal(signal = {}) {
 }
 
 function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = []) {
-  const warnings = [];
+  const warnings = [...flightDateSafety(offer).warnings];
   const flights = getFlights(offer);
   const hotels = getHotels(offer);
   const flightText = flights.map((flight) => [
@@ -2055,6 +2151,7 @@ function summarizeStats(offers) {
 function summarizeOfferForList(offer) {
   return {
     id: offer.id,
+    flightDateSafety: flightDateSafety(offer),
     hotelOccupancyStatus: hotelOccupancyQa.summary(offer),
     clientName: offer.clientName || "",
     clientPhone: offer.clientPhone || "",
@@ -2072,7 +2169,7 @@ function summarizeOfferForList(offer) {
     finalPrice: toNumber(offer.finalPrice || offer.price, 0),
     markupPercent: toNumber(offer.markupPercent, 0),
     margin: toNumber(offer.margin || offer.marginAmount, 0),
-    validationWarnings: safeArray(offer.validationWarnings)
+    validationWarnings: flightSafetyWarnings(offer)
   };
 }
 
@@ -8730,6 +8827,9 @@ app.get("/", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")));
 app.get("/admin", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")));
 
 app.get("/offer/:id", (req, res) => {
+  const offer = readDb().offers.find(item => item.id === req.params.id);
+  if (!offer) return res.status(404).send("Offer not found");
+  if (!guardClientFlightDates(res, offer)) return;
   res.redirect(`/api/offers/view/${req.params.id}`);
 });
 
@@ -8852,7 +8952,7 @@ app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).json({ error: "Offer not found" });
   if (!canAccessOffer(req, offer)) return res.status(403).json({ error: "Forbidden" });
-  res.json({ success: true, offerVersion: offerRecordVersion(offer), offer: { ...withBulgarianOfferFlightDisplay(offer), hotelOccupancyStatus: hotelOccupancyQa.summary(offer) } });
+  res.json({ success: true, offerVersion: offerRecordVersion(offer), offer: { ...withBulgarianOfferFlightDisplay(offer), validationWarnings: flightSafetyWarnings(offer), flightDateSafety: flightDateSafety(offer), hotelOccupancyStatus: hotelOccupancyQa.summary(offer) } });
 });
 
 app.post("/api/offers", requireCapability("offers.create"), async (req, res) => {
@@ -8860,6 +8960,7 @@ app.post("/api/offers", requireCapability("offers.create"), async (req, res) => 
     let response;
     await mutateDb((db) => {
       const offer = normalizeOffer(req.body);
+      assertClientStatusSafety(offer);
       offer.agencyId = getCurrentAgencyId(req);
       offer.createdBy = req.user.id;
       offer.ownerName = req.user.name;
@@ -8924,6 +9025,7 @@ app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) 
         updatedAt: new Date().toISOString()
       };
 
+      assertClientStatusSafety(updated);
       db.offers[index] = updated;
       appendAuditEvent(db, req, {
         type: "offer_updated",
@@ -9037,6 +9139,7 @@ app.patch("/api/offers/:id/status", requireCapability("offers.update"), async (r
       if (index === -1) throw routeError("Offer not found", 404);
       if (!canAccessOffer(req, db.offers[index])) throw routeError("Forbidden", 403);
 
+      assertClientStatusSafety({ ...db.offers[index], status: req.body.status });
       db.offers[index].editorialRevision = Number(db.offers[index].editorialRevision || 0) + 1;
       db.offers[index].status = String(req.body.status || "draft").toLowerCase();
       db.offers[index].updatedAt = new Date().toISOString();
@@ -9101,6 +9204,7 @@ app.post("/api/offers/:id/click", async (req, res) => {
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
+      assertFlightDateSafety(offer);
       offer.clicks = toNumber(offer.clicks, 0) + 1;
       offer.updatedAt = new Date().toISOString();
       response = { success: true, clicks: offer.clicks };
@@ -9119,6 +9223,7 @@ app.post("/api/offers/:id/book", async (req, res) => {
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
+      assertFlightDateSafety(offer);
       offer.editorialRevision = Number(offer.editorialRevision || 0) + 1;
       offer.status = "booked";
       offer.bookedAt = new Date().toISOString();
@@ -9165,6 +9270,7 @@ app.get("/api/offers/view/:id", async (req, res) => {
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
+      assertFlightDateSafety(offer);
       offer.clientViews = (offer.clientViews || 0) + 1;
 
 offer.clientViewed = true; // оставяме го за compatibility
@@ -9176,17 +9282,32 @@ if (offer.status === "sent") offer.status = "viewed";
     });
   } catch (err) {
     if (err.status === 404) return res.status(404).send("Offer not found");
-    return res.status(err.status || 500).send(err.message || "Offer view failed");
+    return res.status(err.status || 500).json({ error: err.message || "Offer view failed", details: err.details || null });
   }
 
+  const html = await renderOfferHtml(offerForRender);
+  if (!guardClientFlightDates(res, offerForRender)) return;
   res.setHeader("Content-Type", "text/html; charset=UTF-8");
-  res.send(await renderOfferHtml(offerForRender));
+  res.send(html);
+});
+
+app.get("/api/offers/:id/qa-preview", requireCapability("offers.view"), async (req, res) => {
+  const offer = readDb().offers.find(item => item.id === req.params.id);
+  if (!offer) return res.status(404).json({ error: "Offer not found" });
+  if (!canAccessOffer(req, offer)) return res.status(403).json({ error: "Forbidden" });
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    res.send(`<h1>INTERNAL QA — NOT FOR CLIENTS</h1>${await renderOfferHtml(offer)}`);
+  } catch (error) {
+    res.status(error.status || 500).json({ error: "Internal QA render failed" });
+  }
 });
 
 app.get("/api/offers/:id/print", async (req, res) => {
   const db = readDb();
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).send("Offer not found");
+  if (!guardClientFlightDates(res, offer)) return;
 
   try {
     const printOptions = {
@@ -9202,6 +9323,7 @@ app.get("/api/offers/:id/print", async (req, res) => {
       findImages: findHotelImagesWithSerpApi
     });
     const html = renderGt63PrintOfferHtml({ ...offer, proposalInput: prepared }, printOptions);
+    if (!guardClientFlightDates(res, offer)) return;
     res.setHeader("Content-Type", "text/html; charset=UTF-8");
     res.send(html);
   } catch (error) {
@@ -9220,9 +9342,7 @@ app.get("/api/offers/:id/pdf", async (req, res) => {
   const db = readDb();
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).send("Offer not found");
-offer.pdfDownloads = toNumber(offer.pdfDownloads) + 1;
-offer.updatedAt = new Date().toISOString();
-writeDb(db);
+  if (!guardClientFlightDates(res, offer)) return;
 
   const printUrl = new URL(`/api/offers/${encodeURIComponent(offer.id)}/print`, LIVE_BASE_URL);
   if (req.query?.mode) printUrl.searchParams.set("mode", String(req.query.mode));
@@ -9334,6 +9454,18 @@ writeDb(db);
       timeout: 90000
     });
 
+    // Async PDF generation can cross UTC midnight. Validate the rendered
+    // snapshot and latest stored offer before recording or releasing the result.
+    await mutateDb(currentDb => {
+      const current = currentDb.offers.find(item => item.id === offer.id);
+      if (!current) throw routeError("Offer not found", 404);
+      assertFlightDateSafety(offer);
+      assertFlightDateSafety(current);
+      current.pdfDownloads = toNumber(current.pdfDownloads) + 1;
+      current.updatedAt = new Date().toISOString();
+      return currentDb;
+    });
+    if (!guardClientFlightDates(res, offer)) return;
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${offer.id}.pdf"`);
     res.send(Buffer.from(pdfBuffer));
@@ -9341,7 +9473,7 @@ writeDb(db);
     console.error("PDF generation error:", error);
     res.status(error.status || 500).json({
       error: error.code || "PDF generation failed",
-      details: error.message
+      details: error.details || error.message
     });
   } finally {
     if (browser) await browser.close();

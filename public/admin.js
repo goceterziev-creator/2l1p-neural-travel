@@ -1226,6 +1226,7 @@ function getPdfOfferUrl(id) {
 }
 
 function getWhatsAppText(id) {
+  if (!flightDateClientReady(getOfferById(id) || {})) return "";
   return `Здравейте!\nВашата оферта е готова:\n${getPublicOfferUrl(id)}`;
 }
 
@@ -1237,10 +1238,14 @@ function offerNeedsReview(offer = {}) {
   return getOfferWarnings(offer).length > 0 || String(offer.status || "").toLowerCase() === "review";
 }
 
+function flightDateClientReady(offer = {}) {
+  return offer.flightDateSafety?.ready === true && offer.flightDateSafety.checkedOn === new Date().toISOString().slice(0, 10);
+}
+
 function offerReadyToSend(offer = {}) {
   const status = String(offer.status || "draft").toLowerCase();
   // An explicit review status still requires review; INFO alone is not a blocker.
-  return status === "draft" && qaTone(qaScore(offer), getOfferWarnings(offer)) === "ready";
+  return status === "draft" && flightDateClientReady(offer) && qaTone(qaScore(offer), getOfferWarnings(offer)) === "ready";
 }
 
 function syncHomeFieldsToCreateSurface() {
@@ -2003,12 +2008,14 @@ function renderWorkspaceSection(id, title, content) {
 function renderWorkspaceCommandBar(offer = {}) {
   const id = escapeHtml(offer.id || "");
   const phone = String(offer.clientPhone || "").replace(/\D/g, "");
-  const waLink = `https://wa.me/${phone}?text=${encodeURIComponent(getWhatsAppText(offer.id || ""))}`;
+  const waText = getWhatsAppText(offer.id || "");
+  const waLink = waText ? `https://wa.me/${phone}?text=${encodeURIComponent(waText)}` : "";
 
   return `
     <div class="workspace-command-bar" aria-label="Workspace command bar">
       <div class="workspace-command-group primary">
-        <a href="/api/offers/view/${id}" target="_blank">Open</a>
+        <a href="/api/offers/${id}/qa-preview" target="_blank">Internal QA</a>
+        <a href="/api/offers/view/${id}" target="_blank">Client view</a>
         <a href="/api/offers/${id}/pdf" target="_blank">PDF</a>
       </div>
       <div class="workspace-command-group workflow">
@@ -2020,7 +2027,7 @@ function renderWorkspaceCommandBar(offer = {}) {
         <div>
           <button type="button" ${capabilityAttrs("offers.update")} onclick="setStatus('${id}', 'viewed')">Viewed</button>
           <button type="button" onclick="copyOfferLink('${id}')">Copy</button>
-          <a href="${escapeHtml(waLink)}" target="_blank">WhatsApp</a>
+          ${waLink ? `<a href="${escapeHtml(waLink)}" target="_blank">WhatsApp</a>` : "<span>Flight-date review required before sending</span>"}
           <button type="button" ${capabilityAttrs("offers.update")} onclick="editOfferFromWorkspace('${id}')">Edit</button>
           <button class="danger-action" type="button" ${capabilityAttrs("offers.update")} onclick="setStatus('${id}', 'lost')">Lost</button>
         </div>
@@ -2460,6 +2467,7 @@ function copyPdfLink(id) {
 function copyWhatsAppText(id) {
   const offer = getOfferById(id);
   const text = getWhatsAppText(offer?.id || id);
+  if (!text) { alert("Flight-date review required before sending. Reload the current offer."); return; }
   copyText(text, "WhatsApp text");
 }
 

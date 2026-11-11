@@ -20,17 +20,22 @@ const ctx = vm.createContext({ AYAHotelOccupancy: occupancy, hotelOccupancyQa: o
   getFlightPriceFromOffer: o => o.flightPrice, getHotelPriceFromOffer: o => o.hotelPrice,
   toNumber: (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback,
   safeArray: v => Array.isArray(v) ? v : [] });
+ctx.getFlights = offer => offer.flights || [];
+ctx.normalizeTravelDate = require("../server/travel-normalizers/date-normalizer").normalizeTravelDate;
+ctx.uniqueWarnings = values => [...new Set(values)];
+vm.runInContext(section(server, "function inferYearFromText(", "function flightDateKey("), ctx);
 vm.runInContext(section(server, "function summarizeOfferForList(", "function extractJsonObject(") +
   section(admin, "function getOfferWarnings(", "function displayWarning(") +
   section(admin, "function qaScore(", "function qaBadge(") +
   section(admin, "function offerNeedsReview(", "function syncHomeFieldsToCreateSurface("), ctx);
 const normalized = { adults: 2, children: 2, rooms: 1, childAges: null, confirmed: true };
 const base = { id: "SYNTHETIC-OCCUPANCY", destination: "Synthetic destination", status: "draft",
-  travelDates: "20–27 October 2026", guests: "2 възрастни, 1 дете и 1 бебе", flightPrice: 100,
+  travelDates: "20.10.2099 - 27.10.2099", guests: "2 възрастни, 1 дете и 1 бебе", flightPrice: 100,
   hotelPrice: 50, finalPrice: 157.5, basePrice: 150, markupPercent: 5, currency: "EUR",
-  flights: [{ airline: "Synthetic Air", route: "AAA -> BBB", price: 100, adults: 2, children: 1, infants: 1 }],
+  flights: [{ airline: "Synthetic Air", route: "AAA -> BBB", departure: "2099-10-20T10:30", arrival: "2099-10-27T10:30", price: 100, adults: 2, children: 1, infants: 1 }],
   hotels: [{ id: "hotel-a", name: "Synthetic A", selected: true, price: 50, meal: "Закуска", images: ["https://hotel.example/a.jpg"] }],
   validationWarnings: ["[INFO] Проверете трансфера до хотела."] };
+base.flightDateSafety = ctx.flightDateSafety(base);
 const withOccupancy = value => ({ ...base, hotels: [{ ...base.hotels[0], occupancy: value }] });
 const project = o => ctx.summarizeOfferForList(o);
 const warnings = o => Array.from(ctx.getOfferWarnings(o));
