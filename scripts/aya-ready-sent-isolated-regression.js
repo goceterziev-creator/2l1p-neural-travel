@@ -69,6 +69,12 @@ async function request(url,opts={}) {
    assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),beforeOccupancy,status+" must leave DB byte-identical");
    console.log("PASS: "+status+" unconfirmed occupancy => HTTP 422, DB unchanged");
   }
+  const beforeBook=crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
+  const deniedBook=await fetch(base+"/api/offers/"+occupancyOfferId+"/book",{method:"POST"});
+  assert.equal(deniedBook.status,422,"alternate booking endpoint must block unconfirmed occupancy");
+  assert.match(await deniedBook.text(),/AYA_HOTEL_OCCUPANCY_BLOCKED/);
+  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),beforeBook);
+  console.log("PASS: alternate booking endpoint unconfirmed occupancy HTTP 422, DB unchanged");
   const legacy = JSON.parse(fs.readFileSync(dbPath,"utf8"));
   const legacyOffer = {...legacy.offers.find(x=>x.id===occupancyOfferId),id:"QA-LEGACY-NO-HOTEL",offerId:"QA-LEGACY-NO-HOTEL",hotels:[],hotelOptions:[],proposalInput:{},hotelOccupancyStatus:null,status:"draft"};
   legacy.offers.push(legacyOffer);
