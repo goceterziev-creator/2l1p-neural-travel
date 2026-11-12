@@ -1,0 +1,53 @@
+name: AYA isolated QA baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      NODE_ENV: test
+      CI: "true"
+      PORT: "3920"
+      QA_PORT: "3920"
+      LIVE_BASE_URL: "http://127.0.0.1:3920"
+      SMOKE_BASE_URL: "http://127.0.0.1:3920"
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Syntax check
+        run: |
+          node --check server.js
+          node --check scripts/v10-persistence-safety-check.js
+          node --check scripts/v9-boundary-test.js
+      - name: Persistence safety static regression
+        run: node scripts/v10-persistence-safety-check.js
+      - name: Hotel occupancy isolated assertions
+        run: |
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const occupancy = require('./public/hotel-occupancy.js');
+          const missing = {hotels:[{id:'test-hotel',selected:true,occupancy:{adults:2,children:0,rooms:1,confirmed:false}}]};
+          const valid = {hotels:[{id:'test-hotel',selected:true,occupancy:{adults:2,children:0,rooms:1,confirmed:true}}]};
+          assert.equal(occupancy.summary(missing).occupancy.confirmed,false);
+          assert.ok(occupancy.warning(missing));
+          assert.equal(occupancy.summary(valid).occupancy.confirmed,true);
+          assert.equal(occupancy.warning(valid),'');
+          console.log('PASS: hotel occupancy isolated assertions');
+          NODE
+      - name: Scope reminder
+        run: echo "This workflow does NOT prove READY/Sent HTTP 422, DB invariance or notification isolation."
