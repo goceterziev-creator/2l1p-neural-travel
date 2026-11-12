@@ -1218,7 +1218,11 @@ function assertFlightDateSafety(offer) {
   }
 }
 function assertClientStatusSafety(offer) {
-  if (["ready", "sent", "viewed", "booked"].includes(String(offer.status).toLowerCase())) assertFlightDateSafety(offer);
+  if (!["ready", "sent", "viewed", "booked"].includes(String(offer.status).toLowerCase())) return;
+  assertFlightDateSafety(offer);
+  if (hotelOccupancyQa.warning(offer)) {
+    throw routeError("AYA_HOTEL_OCCUPANCY_BLOCKED", 422, hotelOccupancyQa.summary(offer));
+  }
 }
 function flightSafetyWarnings(offer) {
   return uniqueWarnings([...safeArray(offer.validationWarnings).filter(w => !String(w).startsWith("[WARNING] [FLIGHT_DATE_SAFETY]")), ...flightDateSafety(offer).warnings]);
