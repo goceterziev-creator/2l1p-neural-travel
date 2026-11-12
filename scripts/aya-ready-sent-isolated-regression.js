@@ -69,6 +69,23 @@ async function request(url,opts={}) {
    assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),beforeOccupancy,status+" must leave DB byte-identical");
    console.log("PASS: "+status+" unconfirmed occupancy => HTTP 422, DB unchanged");
   }
+  const legacy = JSON.parse(fs.readFileSync(dbPath,"utf8"));
+  const legacyOffer = {...legacy.offers.find(x=>x.id===occupancyOfferId),id:"QA-LEGACY-NO-HOTEL",offerId:"QA-LEGACY-NO-HOTEL",hotels:[],hotelOptions:[],proposalInput:{},hotelOccupancyStatus:null,status:"draft"};
+  legacy.offers.push(legacyOffer);
+  const multiOffer = {...legacy.offers.find(x=>x.id===occupancyOfferId),id:"QA-SELECTED-SECOND",offerId:"QA-SELECTED-SECOND",status:"draft",hotels:[
+   {id:"first",selected:false,occupancy:{adults:2,children:0,rooms:1,confirmed:true}},
+   {id:"second",selected:true,occupancy:{adults:2,children:0,rooms:1,confirmed:false}}
+  ]};
+  legacy.offers.push(multiOffer);
+  fs.writeFileSync(dbPath,JSON.stringify(legacy,null,2));
+  for (const id of [legacyOffer.id,multiOffer.id]) {
+   const snapshot=crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
+   const denied=await request("/api/offers/"+id+"/status",{method:"PATCH",body:JSON.stringify({status:"ready"})});
+   assert.equal(denied.status,422,id+" must be blocked until selected occupancy confirmed");
+   assert.match(denied.body,/AYA_HOTEL_OCCUPANCY_BLOCKED/);
+   assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),snapshot);
+  }
+  console.log("PASS: legacy no-hotel and unconfirmed selected-second hotel block READY without DB changes");
   const confirmed = JSON.parse(fs.readFileSync(dbPath,"utf8"));
   const record = confirmed.offers.find(x=>x.id===occupancyOfferId);
   record.hotels[0].occupancy.confirmed = true;
