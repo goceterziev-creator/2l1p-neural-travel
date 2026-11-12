@@ -9274,7 +9274,7 @@ app.get("/api/offers/view/:id", async (req, res) => {
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
-      assertFlightDateSafety(offer);
+      assertClientStatusSafety({ ...offer, status: "viewed" });
       offer.clientViews = (offer.clientViews || 0) + 1;
 
 offer.clientViewed = true; // оставяме го за compatibility
