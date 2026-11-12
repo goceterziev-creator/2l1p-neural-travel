@@ -55,6 +55,12 @@ async function request(url,opts={}) {
    console.log("PASS: "+status+" => HTTP 422 and byte-identical DB");
   }
   console.log("PASS: no status_changed audit entries (DB unchanged)");
+  const beforeView = crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
+  const clientView = await fetch(base+"/api/offers/view/"+offerId);
+  assert.equal(clientView.status,422,"invalid-flight client view must be blocked before mutation");
+  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),beforeView,"rejected client view must not mutate DB");
+  console.log("PASS: invalid-flight client view HTTP 422 with byte-identical DB");
+
   const beforeOccupancy = crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
   for (const status of ["ready","sent","viewed","booked"]) {
    const result = await request("/api/offers/"+occupancyOfferId+"/status",{method:"PATCH",body:JSON.stringify({status})});
