@@ -17,9 +17,11 @@ const now = new Date().toISOString();
 const agency = "QA-READY-SENT-AGENCY";
 const user = "QA-READY-SENT-ADMIN";
 const offerId = "QA-READY-SENT-OFFER";
+const occupancyOfferId = "QA-UNCONFIRMED-OCCUPANCY";
 source.agencies = [{id:agency,agencyId:agency,name:"Isolated QA",status:"active",plan:"PRO",subscription:{plan:"PRO",status:"active"}}];
 source.users = [{id:user,agencyId:agency,role:"admin",name:"QA Admin",email:"qa-ready-sent@example.test",createdAt:now,updatedAt:now}];
 source.offers = [{id:offerId,offerId,agencyId:agency,createdBy:user,ownerName:"QA Admin",status:"draft",destination:"Rome",travelDates:"2020-01-01 - 2020-01-05",flights:[{date:"2020-01-02"}],flightRoute:"SOF-FCO",flightPrice:100,hotels:[{id:"hotel-1",selected:true,occupancy:{adults:2,children:0,rooms:1,confirmed:false}}],validationWarnings:[],createdAt:now,updatedAt:now}];
+source.offers.push({...source.offers[0],id:occupancyOfferId,offerId:occupancyOfferId,travelDates:"2027-01-01 - 2027-01-05",flights:[],flightRoute:"",flightPrice:0});
 source.clients = [];
 source.activities = [];
 fs.writeFileSync(dbPath, JSON.stringify(source,null,2));
@@ -53,6 +55,16 @@ async function request(url,opts={}) {
    console.log("PASS: "+status+" => HTTP 422 and byte-identical DB");
   }
   console.log("PASS: no status_changed audit entries (DB unchanged)");
+  const occupancyResult = await request("/api/offers/"+occupancyOfferId+"/status",{method:"PATCH",body:JSON.stringify({status:"ready"})});
+  const occupancyDb = JSON.parse(fs.readFileSync(dbPath,"utf8"));
+  const occupancyRecord = occupancyDb.offers.find(x=>x.id===occupancyOfferId);
+  if (occupancyResult.status===200 && occupancyRecord?.status==="ready") {
+   console.log("CONFIRMED GAP: unconfirmed hotel occupancy allowed READY status HTTP 200 in isolated test");
+  } else if (occupancyResult.status===422 && occupancyRecord?.status==="draft") {
+   console.log("PASS: unconfirmed hotel occupancy blocked READY HTTP 422");
+  } else {
+   throw new Error("Unexpected occupancy guard outcome: "+occupancyResult.status+" "+occupancyResult.body);
+  }
   console.log("LIMITATION: external notification delivery not instrumented; NOT VERIFIED");
  }finally{child.kill();fs.rmSync(tmp,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1;});
