@@ -49,5 +49,7 @@ jobs:
           assert.equal(occupancy.warning(valid),'');
           console.log('PASS: hotel occupancy isolated assertions');
           NODE
+      - name: READY and Sent isolated HTTP and DB regression
+        run: node scripts/aya-ready-sent-isolated-regression.js
       - name: Scope reminder
-        run: echo "This workflow does NOT prove READY/Sent HTTP 422, DB invariance or notification isolation."
+        run: echo "Notification delivery isolation remains NOT VERIFIED."
