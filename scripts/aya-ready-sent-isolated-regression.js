@@ -69,6 +69,17 @@ async function request(url,opts={}) {
    assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),beforeOccupancy,status+" must leave DB byte-identical");
    console.log("PASS: "+status+" unconfirmed occupancy => HTTP 422, DB unchanged");
   }
+  const sentDb=JSON.parse(fs.readFileSync(dbPath,"utf8"));
+  sentDb.offers.find(x=>x.id===occupancyOfferId).status="sent";
+  fs.writeFileSync(dbPath,JSON.stringify(sentDb,null,2));
+  const beforeSentView=crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
+  const blockedSentView=await fetch(base+"/api/offers/view/"+occupancyOfferId);
+  assert.equal(blockedSentView.status,422,"sent-to-viewed must block unconfirmed occupancy");
+  assert.match(await blockedSentView.text(),/AYA_HOTEL_OCCUPANCY_BLOCKED/);
+  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),beforeSentView,"rejected sent view must not mutate DB");
+  console.log("PASS: sent-to-viewed client view unconfirmed occupancy HTTP 422, DB unchanged");
+  sentDb.offers.find(x=>x.id===occupancyOfferId).status="draft";
+  fs.writeFileSync(dbPath,JSON.stringify(sentDb,null,2));
   const beforeBook=crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
   const deniedBook=await fetch(base+"/api/offers/"+occupancyOfferId+"/book",{method:"POST"});
   assert.equal(deniedBook.status,422,"alternate booking endpoint must block unconfirmed occupancy");
