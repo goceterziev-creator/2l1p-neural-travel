@@ -55,16 +55,22 @@ async function request(url,opts={}) {
    console.log("PASS: "+status+" => HTTP 422 and byte-identical DB");
   }
   console.log("PASS: no status_changed audit entries (DB unchanged)");
-  const occupancyResult = await request("/api/offers/"+occupancyOfferId+"/status",{method:"PATCH",body:JSON.stringify({status:"ready"})});
-  const occupancyDb = JSON.parse(fs.readFileSync(dbPath,"utf8"));
-  const occupancyRecord = occupancyDb.offers.find(x=>x.id===occupancyOfferId);
-  if (occupancyResult.status===200 && occupancyRecord?.status==="ready") {
-   console.log("CONFIRMED GAP: unconfirmed hotel occupancy allowed READY status HTTP 200 in isolated test");
-  } else if (occupancyResult.status===422 && occupancyRecord?.status==="draft") {
-   console.log("PASS: unconfirmed hotel occupancy blocked READY HTTP 422");
-  } else {
-   throw new Error("Unexpected occupancy guard outcome: "+occupancyResult.status+" "+occupancyResult.body);
+  const beforeOccupancy = crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
+  for (const status of ["ready","sent"]) {
+   const result = await request("/api/offers/"+occupancyOfferId+"/status",{method:"PATCH",body:JSON.stringify({status})});
+   assert.equal(result.status,422,status+" unconfirmed occupancy must be rejected");
+   assert.match(result.body,/AYA_HOTEL_OCCUPANCY_BLOCKED/);
+   assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),beforeOccupancy,status+" must leave DB byte-identical");
+   console.log("PASS: "+status+" unconfirmed occupancy => HTTP 422, DB unchanged");
   }
+  const confirmed = JSON.parse(fs.readFileSync(dbPath,"utf8"));
+  const record = confirmed.offers.find(x=>x.id===occupancyOfferId);
+  record.hotels[0].occupancy.confirmed = true;
+  fs.writeFileSync(dbPath,JSON.stringify(confirmed,null,2));
+  const allowed = await request("/api/offers/"+occupancyOfferId+"/status",{method:"PATCH",body:JSON.stringify({status:"ready"})});
+  assert.equal(allowed.status,200,"confirmed occupancy must permit READY: "+allowed.body);
+  assert.equal(JSON.parse(fs.readFileSync(dbPath,"utf8")).offers.find(x=>x.id===occupancyOfferId).status,"ready");
+  console.log("PASS: confirmed hotel occupancy permits READY");
   console.log("LIMITATION: external notification delivery not instrumented; NOT VERIFIED");
  }finally{child.kill();fs.rmSync(tmp,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1;});
