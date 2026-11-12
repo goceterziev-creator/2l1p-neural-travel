@@ -56,7 +56,7 @@ async function request(url,opts={}) {
   }
   console.log("PASS: no status_changed audit entries (DB unchanged)");
   const beforeOccupancy = crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
-  for (const status of ["ready","sent"]) {
+  for (const status of ["ready","sent","viewed","booked"]) {
    const result = await request("/api/offers/"+occupancyOfferId+"/status",{method:"PATCH",body:JSON.stringify({status})});
    assert.equal(result.status,422,status+" unconfirmed occupancy must be rejected");
    assert.match(result.body,/AYA_HOTEL_OCCUPANCY_BLOCKED/);
@@ -71,6 +71,12 @@ async function request(url,opts={}) {
   assert.equal(allowed.status,200,"confirmed occupancy must permit READY: "+allowed.body);
   assert.equal(JSON.parse(fs.readFileSync(dbPath,"utf8")).offers.find(x=>x.id===occupancyOfferId).status,"ready");
   console.log("PASS: confirmed hotel occupancy permits READY");
+  const current = fs.readFileSync(dbPath);
+  const unchanged = crypto.createHash("sha256").update(current).digest("hex");
+  const unauthorized = await fetch(base+"/api/offers/"+occupancyOfferId+"/status",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"sent"})});
+  assert.equal(unauthorized.status,401,"unauthenticated status mutation must be 401");
+  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),unchanged);
+  console.log("PASS: unauthenticated status mutation denied with unchanged DB");
   console.log("LIMITATION: external notification delivery not instrumented; NOT VERIFIED");
  }finally{child.kill();fs.rmSync(tmp,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1;});
