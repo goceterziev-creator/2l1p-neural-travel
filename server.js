@@ -9227,7 +9227,7 @@ app.post("/api/offers/:id/book", async (req, res) => {
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
-      assertFlightDateSafety(offer);
+      assertClientStatusSafety({ ...offer, status: "booked" });
       offer.editorialRevision = Number(offer.editorialRevision || 0) + 1;
       offer.status = "booked";
       offer.bookedAt = new Date().toISOString();
