@@ -5,8 +5,9 @@ vm.runInContext(source.slice(source.indexOf('function inferYearFromText('),sourc
 const date=new Date('2026-11-11T12:00:00Z'),check=o=>context.flightDateSafety(o,date),valid=()=>({travelDates:'16.11 - 20.11.2026',flights:[{outboundSegments:[{departure:'2026-11-16T10:30',arrival:'2026-11-16T11:30'}],inboundSegments:[{departure:'2026-11-20T10:30',arrival:'2026-11-20T11:30'}]}]});
 test('deterministic future/past/mismatch/unknown year without rewriting dates',()=>{
  assert.equal(check(valid()).ready,true);
+ const partial=valid();partial.flights[0].outboundSegments[0].departure='16.11 10:30';assert.equal(check(partial).ready,true);
  for(const travelDates of ['16–20 November 2026','16 November 2026 - 20 November 2026','16–20 ноември 2026'])assert.equal(check({...valid(),travelDates}).ready,true);
- for(const date of ['2020-11-16T10:30','2026-01-16T10:30','16.11 10:30','16.11.26 10:30','2026-13-16T10:30']){
+ for(const date of ['2020-11-16T10:30','2026-01-16T10:30','16.11.26 10:30','2026-13-16T10:30']){
   const offer=valid();offer.flights[0].outboundSegments[0].departure=date;const before=JSON.stringify(offer);assert.equal(check(offer).ready,false,date);assert.equal(JSON.stringify(offer),before);
  }
 });
