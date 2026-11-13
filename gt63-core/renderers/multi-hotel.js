@@ -220,8 +220,7 @@
     add("Настаняване", Boolean(selectedHotel.name || selectedHotel.room || selectedHotel.area));
     add(`Изхранване: ${resolvedMealPlan(selectedHotel)}`, Boolean(selectedHotel.name || selectedHotel.room || selectedHotel.area || selectedHotel.meal || selectedHotel.board));
     add("Летищен трансфер", Boolean(transfer.included || transfer.type || transfer.status || transfer.price > 0));
-    add("Регистриран багаж", /checked|registr|23kg|30kg|багаж/i.test(String(flight.baggage || "")));
-    add("Ръчен багаж", /cabin|carry|personal|ръчен|малка/i.test(String(flight.baggage || "")));
+    add(`Багаж: ${localizeClientText(text(flight.baggage, ""))}`, Boolean(flight.baggage));
     add("Медицинска застраховка", /insurance|застрах/i.test(String(input.notes || input.content?.notes || "")));
     add("Курортни такси", /tax|taxes|resort/i.test(String(selectedHotel.description || selectedHotel.notes || "")));
     add("Частен трансфер", /private|частен/i.test(String(transfer.type || transfer.status || transfer.note || "")));
@@ -621,13 +620,14 @@
     `;
   }
 
-  function warningList(items = []) {
-    if (!Array.isArray(items) || !items.length) return "";
+  function warningList(input = {}) {
+    const notices = presentationViewModel.presentationNotices(input);
+    if (!notices.length) return "";
     return `
-      <section class="v11-note">
-        <strong>Бележка за преглед</strong>
-        <ul>${items.map((item) => `<li>${escapeHtml(clientWarningText(item))}</li>`).join("")}</ul>
-      </section>
+      <aside class="v11-note aya-client-notices" aria-label="Условия и важни бележки">
+        <strong>Условия и важни бележки</strong>
+        <ul>${notices.map(item => `<li data-notice-level="${item.level}">${escapeHtml(item.text)}</li>`).join("")}</ul>
+      </aside>
     `;
   }
 
@@ -982,7 +982,7 @@
           </div>
         </section>
 
-        ${warningList(input.warnings)}
+        ${warningList(input)}
 
         ${insightBlock(input, selectedHotel, hotelOptions)}
 

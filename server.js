@@ -6424,7 +6424,15 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     .gt63-print-flow-page {
       height: auto;
       min-height: 0;
+      padding: 8mm 16mm;
+      break-after: auto;
+      page-break-after: auto;
     }
+    .gt63-print-hotel-page, .gt63-print-services-page { break-before: page; page-break-before: always; }
+    .gt63-print-final-page { break-before: page; page-break-before: always; }
+    .gt63-print-notices { font-family: Arial, Helvetica, sans-serif; }
+    .gt63-print-notices li { margin: 2mm 0; overflow-wrap: anywhere; }
+    [data-notice-level="blocking"] { font-weight: 700; }
     .gt63-print-brand,
     .gt63-print-kicker {
       margin: 0 0 3mm;
@@ -6485,7 +6493,7 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       object-fit: cover;
     }
     .gt63-print-image-frame.is-dominant img {
-      aspect-ratio: 5 / 6;
+      aspect-ratio: 4 / 3;
     }
     .gt63-print-hotel-imagery {
       display: grid;
@@ -6579,20 +6587,18 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       padding-top: 0;
     }
     .gt63-print-intro {
-      min-height: 178mm;
       display: grid;
-      align-content: center;
-      gap: 8mm;
+      gap: 3mm;
     }
     .gt63-print-intro h2 {
       max-width: 145mm;
-      font-size: 32pt;
+      font-size: 26pt;
       line-height: 1.05;
     }
     .gt63-print-editorial-lead {
       max-width: 136mm;
       color: var(--gt63-muted);
-      font-size: 14pt;
+      font-size: 11pt;
       line-height: 1.5;
     }
     .gt63-print-intro-reasons {
@@ -6800,19 +6806,19 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       overflow-wrap: anywhere;
     }
     .gt63-print-investment {
-      min-height: 232mm;
       display: grid;
-      align-content: center;
-      gap: 10mm;
+      gap: 4mm;
+      break-inside: avoid;
+      padding-top: 5mm;
     }
     .gt63-print-investment h2 {
       max-width: 142mm;
-      font-size: 34pt;
+      font-size: 22pt;
       line-height: 1.05;
       margin-bottom: 0;
     }
     .gt63-print-investment-amount {
-      padding: 10mm 0;
+      padding: 5mm 0;
       border-top: 1px solid var(--gt63-line);
       border-bottom: 1px solid var(--gt63-line);
       break-inside: avoid;
@@ -8364,6 +8370,33 @@ h1 {
   .option-price { display: inline-flex; margin: 0 0 12px; }
   .cta-qr { width: 100%; }
 }
+/* Client Presentation V2: readable narrow screens without clipping content. */
+.aya-client-notices { margin: 20px 0; padding: 18px 20px; border: 1px solid #d6dee8; border-left: 3px solid #a67835; border-radius: 12px; background: #fff; color: #344256; line-height: 1.6; }
+.aya-client-notices ul { margin: 10px 0 0; padding-left: 20px; }
+.aya-client-notices li { overflow-wrap: anywhere; margin: 6px 0; }
+.actions a:focus-visible, [data-hotel-choice]:focus-visible { outline: 3px solid #a67835; outline-offset: 3px; }
+@media screen and (max-width: 640px) {
+  .wrap { width: calc(100% - 24px); padding-top: 12px; }
+  .hero { padding: 28px 20px; min-height: 0; border-radius: 16px; }
+  .hero h1 { font-size: clamp(36px, 11vw, 48px); line-height: 1.08; overflow-wrap: anywhere; }
+  .hero-copy { font-size: 16px; line-height: 1.6; margin-bottom: 18px; }
+  .hero-meta { display: grid; gap: 8px; }
+  .hero-meta div { border-radius: 12px; }
+  .price { font-size: clamp(30px, 8.8vw, 40px); font-variant-numeric: tabular-nums; }
+  .actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .actions a { min-height: 48px; text-align: center; }
+  .card { padding: 18px; min-width: 0; }
+  .card h3 { font-size: 24px; line-height: 1.25; }
+  .section h2 { font-size: 25px; line-height: 1.3; }
+  .hotel-options-grid { grid-template-columns: minmax(0,1fr); }
+  .hotel-option-body { min-width: 0; }
+  .route-row { min-width: 0; overflow-wrap: anywhere; }
+  .route-row > div { min-width: 0; }
+  .option-price { font-size: 26px; max-width: 100%; }
+  .hotel-images { height: 200px; }
+  .hotel-images img { min-width: 0; object-fit: cover; }
+  .cta-contact a { overflow-wrap: anywhere; }
+}
 @media print {
   body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .wrap { width: auto; padding: 0; }
@@ -8433,7 +8466,7 @@ h1 {
   <section class="hero">
     <img class="hero-bg" src="${escapeAttr(heroImage)}" alt="${escapeAttr(destinationName || "Travel")}" />
     <div class="hero-content">
-      ${hasWarnings ? `<div class="warning" id="offerWarning">Някои елементи в офертата изискват допълнителна проверка преди изпращане.${validationWarnings.length ? `<ul>${validationWarnings.map((warning) => `<li>${escapeHtml(cleanText(displayValidationWarning(warning)))}</li>`).join("")}</ul>` : ""}${forPdf ? "" : `<button class="warning-close" type="button" aria-label="Скрий предупреждението" title="Скрий предупреждението" onclick="dismissOfferWarning()">×</button>`}</div>` : ""}
+
       <div class="eyebrow">AYA Travel - персонална оферта</div>
       <h1>${escapeHtml(destinationName || "Пътуване")}</h1>
       <div class="hero-copy">
@@ -8450,6 +8483,8 @@ h1 {
       ${forPdf ? "" : `<div class="actions"><a href="${pdfLink}" data-selected-hotel-pdf target="_blank">PDF</a><a href="${whatsappLink}" data-selected-hotel-whatsapp target="_blank">WhatsApp</a></div>`}
     </div>
   </section>
+
+  ${hasWarnings ? `<aside class="aya-client-notices" id="offerWarning" aria-label="Условия и важни бележки"><strong>Условия и важни бележки</strong><ul>${validationWarnings.map(warning => `<li>${escapeHtml(cleanText(displayValidationWarning(warning)))}</li>`).join("")}</ul></aside>` : ""}
 
   <section class="section pdf-skip">
     <h2>Какво ви очаква в ${escapeHtml(destinationName || "дестинацията")}</h2>

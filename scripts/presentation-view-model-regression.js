@@ -98,7 +98,7 @@ const pdfBoundaryTotal = viewModel.optionPackageTotal({ price: 0 }, roundingBoun
 assert.equal(pdfBoundaryTotal, htmlBoundaryTotal, "PDF package total should use the same arithmetic order as legacy HTML");
 assert.equal(
   viewModel.money(pdfBoundaryTotal, "EUR"),
-  "0.11 EUR",
+  "0,11 EUR",
   "PDF should round the half-cent boundary consistently with the HTML calculation"
 );
 assert.equal(

@@ -28,7 +28,7 @@
   function money(value, currency = "EUR") {
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) return "-";
-    return `${number.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || "EUR"}`;
+    return `${number.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency || "EUR"}`;
   }
 
   function localizeClientText(value) {
@@ -269,6 +269,14 @@
     };
   }
 
+  // Presentation only: retain every supplied notice and blocking condition.
+  function presentationNotices(input = {}) {
+    return [
+      ...asArray(input.blockingIssues).map(value => ({ value, level: "blocking" })),
+      ...asArray(input.warnings).map(value => ({ value, level: /^\[INFO\]/i.test(String(value)) ? "info" : "warning" }))
+    ].map(({ value, level }) => ({ text: text(value?.message || value, ""), level })).filter(item => item.text);
+  }
+
   function buildPresentationViewModel(input = {}, options = {}) {
     const contract = resolvePrintModeContract(input, options);
     const currency = input.pricing?.currency || "EUR";
@@ -292,6 +300,7 @@
 
   return {
     amount,
+    presentationNotices,
     buildPresentationViewModel,
     compactMealLabel,
     dateRangeNights,

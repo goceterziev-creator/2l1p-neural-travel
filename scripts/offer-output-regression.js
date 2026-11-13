@@ -39,7 +39,7 @@ async function check(name, fn) {
     const before = JSON.stringify(legacy);
     const html = api.renderGt63PrintOfferHtml(legacy);
     assert.match(html, /gt63-print-cover/);
-    assert.match(html, /395\.39 EUR/);
+    assert.match(html, /395,39 EUR/);
     assert.match(html, /20:10/);
     assert.match(html, /15:10/);
     assert.doesNotMatch(html, /<script|class="actions"|GT63_PRINT_MISSING/);
@@ -48,7 +48,7 @@ async function check(name, fn) {
   await check("PDF preserves final override, transfers, multiple flights and selected hotel", () => {
     const offer = { ...legacy, transferPrice: 20, finalPrice: 500, flights: [...legacy.flights, { airline: "Second Air", route: "LHR -> CDG", departure: "08.10.2026 10:00", arrival: "08.10.2026 12:00", price: 100 }], hotels: [{ name: "Unselected", price: 10 }, ...legacy.hotels] };
     const html = api.renderGt63PrintOfferHtml(offer);
-    assert.match(html, /500\.00 EUR/);
+    assert.match(html, /500,00 EUR/);
     assert.match(html, /Second Air/);
     assert.match(html, /08\.10\.2026 10:00/);
     assert.match(html, /a&amp;o London/);
@@ -85,7 +85,7 @@ async function check(name, fn) {
     assert.equal(url.searchParams.get("keep"), "1");
     const print = api.renderGt63PrintOfferHtml({ ...legacy, proposalInput: input }, { selectedHotelId: url.searchParams.get("selectedHotelId") });
     assert.match(print, /Zurich Second Hotel/);
-    assert.match(print, /438\.32 EUR/);
+    assert.match(print, /438,32 EUR/);
   });
   await check("standard HTML hotel choice keeps original IDs and sends matching price to PDF", async () => {
     const offer={...legacy,hotels:[{name:"First",price:50},{name:"Second",price:100,selected:true},{name:"Third",price:150}],hotelPrice:100,finalPrice:500};
@@ -103,7 +103,7 @@ async function check(name, fn) {
     assert.equal(new URL(pdf.href).searchParams.get("keep"),"1");
     assert.match(price.textContent,/552[,.]50/);
     const print=api.renderGt63PrintOfferHtml(offer,{selectedHotelId:"legacy-hotel-3"});
-    assert.match(print,/Third/);assert.match(print,/552\.50 EUR/);assert.equal(JSON.stringify(offer),before);
+    assert.match(print,/Third/);assert.match(print,/552,50 EUR/);assert.equal(JSON.stringify(offer),before);
   });
   await check("existing proposal price calculation is preserved", () => {
     assert.equal(viewModel.optionPackageTotal({ price: 59.11 }, { pricing: { flightAmount: 317.45, marginPercent: 5 } }).toFixed(2), "395.39");

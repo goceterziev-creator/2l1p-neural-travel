@@ -192,7 +192,7 @@
         ${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}
       </ul>
     ` : "";
-    return contentPage("gt63-print-intro-page", `
+    return `<div class="gt63-print-intro-page">
       <section class="gt63-print-intro">
         <p class="gt63-print-kicker">Въведение към пътуването</p>
         <h2>${escapeHtml(destination || "Вашето пътуване")}</h2>
@@ -200,7 +200,7 @@
         ${facts}
         ${reasonList}
       </section>
-    `);
+    </div>`;
   }
 
   function transferSummary(input = {}) {
@@ -406,7 +406,7 @@
       { label: "Багаж", value: input.flight?.baggage },
       { label: "Трансфер", value: input.transfer?.status || input.transfer?.type || input.transfer?.route || input.transfer?.description }
     ].filter((item) => nonEmpty(item.value));
-    return contentPage("gt63-print-investment-page", `
+    return `<div class="gt63-print-investment-page">
       <section class="gt63-print-investment">
         <p class="gt63-print-kicker">Инвестиция в пътуването</p>
         <h2>Инвестиция във Вашето пътуване</h2>
@@ -426,7 +426,7 @@
           </div>
         ` : ""}
       </section>
-    `);
+    </div>`;
   }
 
   function comparisonTable(viewModel) {
@@ -512,6 +512,14 @@
     `;
   }
 
+  function noticeBlock(input = {}) {
+    const notices = viewModelApi.presentationNotices(input);
+    if (!notices.length) return "";
+    return editorialSection("gt63-print-notices", "Преди резервация", "Условия и важни бележки", `
+      <ul>${notices.map(item => `<li data-notice-level="${item.level}">${escapeHtml(localize(item.text))}</li>`).join("")}</ul>
+    `);
+  }
+
   function renderPrintProposal(input = {}, options = {}) {
     // PDF dates must never fall back to destination.requested (which can be a city).
     // Keep the shared HTML view model contract and the saved input unchanged.
@@ -520,25 +528,27 @@
     };
     const viewModel = viewModelApi.buildPresentationViewModel(printInput, options);
     const mode = viewModel.contract.mode;
+    const flight = flightBlock(input);
     const selectedPages = [
-      journeyIntroductionPage(viewModel, input),
       contentPage("gt63-print-hotel-page", [
-        recommendationBlock(viewModel),
+        journeyIntroductionPage(viewModel, input),
         selectedHotelDetails(viewModel)
-      ].filter(Boolean).join("")),
-      contentPage("gt63-print-flight-page", flightBlock(input)),
-      contentPage("gt63-print-services-page", [
+      ].join("")),
+      contentPage(`gt63-print-services-page${flight ? " gt63-print-flight-page" : ""}`, [
+        flight,
         includedServicesBlock(viewModel, input),
-        transferBlock(input)
+        transferBlock(input),
+        investmentPage(viewModel, input),
+        noticeBlock(input)
       ].filter(Boolean).join("")),
       contentPage("gt63-print-timeline-page", timelineBlock(input)),
-      contentPage("gt63-print-experiences-page", optionalExperiencesBlock(input)),
-      investmentPage(viewModel, input)
+      contentPage("gt63-print-experiences-page", optionalExperiencesBlock(input))
     ].filter(Boolean).join("");
     const comparisonContent = [
       recommendationBlock(viewModel),
       comparisonTable(viewModel),
-      flightBlock(input)
+      flightBlock(input),
+      noticeBlock(input)
     ].filter(Boolean).join("");
 
     return `
