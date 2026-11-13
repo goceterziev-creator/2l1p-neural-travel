@@ -1218,7 +1218,11 @@ function assertFlightDateSafety(offer) {
   }
 }
 function assertClientStatusSafety(offer) {
-  if (["ready", "sent", "viewed", "booked"].includes(String(offer.status).toLowerCase())) assertFlightDateSafety(offer);
+  if (!["ready", "sent", "viewed", "booked"].includes(String(offer.status).toLowerCase())) return;
+  assertFlightDateSafety(offer);
+  if (hotelOccupancyQa.warning(offer)) {
+    throw routeError("AYA_HOTEL_OCCUPANCY_BLOCKED", 422, hotelOccupancyQa.summary(offer));
+  }
 }
 function flightSafetyWarnings(offer) {
   return uniqueWarnings([...safeArray(offer.validationWarnings).filter(w => !String(w).startsWith("[WARNING] [FLIGHT_DATE_SAFETY]")), ...flightDateSafety(offer).warnings]);
@@ -9223,7 +9227,7 @@ app.post("/api/offers/:id/book", async (req, res) => {
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
-      assertFlightDateSafety(offer);
+      assertClientStatusSafety({ ...offer, status: "booked" });
       offer.editorialRevision = Number(offer.editorialRevision || 0) + 1;
       offer.status = "booked";
       offer.bookedAt = new Date().toISOString();
@@ -9270,7 +9274,7 @@ app.get("/api/offers/view/:id", async (req, res) => {
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
-      assertFlightDateSafety(offer);
+      assertClientStatusSafety({ ...offer, status: "viewed" });
       offer.clientViews = (offer.clientViews || 0) + 1;
 
 offer.clientViewed = true; // оставяме го за compatibility
