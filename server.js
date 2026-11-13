@@ -21,7 +21,7 @@ const {
   renderClientFlightItineraryBg
 } = require("./server/flight-display-bg");
 const {
-  normalizeTravelDate
+  normalizeTravelDate, extractTime
 } = require("./server/travel-normalizers/date-normalizer");
 const hotelOccupancyQa = require("./public/hotel-occupancy");
 const gt63FlightDisplayBg = require("./gt63-core/flight-display-bg");
@@ -1144,7 +1144,7 @@ function normalizeFlightDateCandidate(value = "", options = {}) {
 }
 
 // Flight-Date Safety V1: read-only verdict, re-evaluated at the publication boundary.
-function flightDateSafety(offer = {}, now = new Date()) {
+function flightDateSafety(offer = {}, now = new Date(), onResolvedDate = null) {
   const warnings = [];
   const add = message => warnings.push(`[WARNING] [FLIGHT_DATE_SAFETY] ${message}`);
   const flights = [...getFlights(offer)];
@@ -1171,7 +1171,9 @@ function flightDateSafety(offer = {}, now = new Date()) {
     if (parts.length === 2) period = parts.map(part => iso(normalizeFlightDateCandidate(part, { trustedOfferYear: inferYearFromText(raw) })));
   }
   const today = now.toISOString().slice(0, 10);
-  if (period.length !== 2 || !period.every(validDay) || period[0] > period[1]) add("Периодът на офертата изисква потвърдени дати и година.");
+  const validPeriod = period.length === 2 && period.every(validDay) && period[0] <= period[1];
+  const periodYearsAgree = (String(offer.travelDates || "").match(/\b(?:19|20|21)\d{2}\b/g) || []).every(year => period.some(day => day.startsWith(`${year}-`)));
+  if (!validPeriod) add("Периодът на офертата изисква потвърдени дати и година.");
   for (const [index, flight] of flights.entries()) {
     const outbound = [...safeArray(flight.outboundSegments), ...safeArray(flight.outbound?.segments)];
     const inbound = [...safeArray(flight.inboundSegments), ...safeArray(flight.inbound?.segments)];
@@ -1180,11 +1182,25 @@ function flightDateSafety(offer = {}, now = new Date()) {
       const raw = typeof value === "string" ? value.trim() : "";
       // Inspect every date token: the renderers may display the entire original
       // string, so accepting only its first date/year is not safe.
-      const tokens = raw.match(/\b\d{4}-\d{1,2}-\d{1,2}(?=T|\b)|\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?(?=T|\b)|\b\d{1,2}\s+[A-Za-zА-Яа-я]+\.?(?:\s+\d{2,4}\b)?|\b[A-Za-z]+\.?\s+\d{1,2}\b(?:,?\s+\d{2,4}\b)?/g) || [];
-      const days = tokens.map(token => iso(normalizeFlightDateCandidate(token)));
+      const tokens = raw.match(/\b\d{4}-\d{1,2}-\d{1,2}(?=T|\b)|\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,})?(?=T|\b)|(?<![:\d])\b\d{1,2}\s+[A-Za-zА-Яа-я]+\.?(?:\s+\d{2,}\b(?!:))?|\b[A-Za-z]+\.?\s+\d{1,2}\b(?:,?\s+\d{2,}\b(?!:))?/g) || [];
+      const days = tokens.map(token => {
+        if (/\b\d{5,}\b/.test(token)) return "";
+        const parsed = normalizeFlightDateCandidate(token);
+        if (parsed.year) return iso(parsed);
+        // Infer only a genuinely absent year, never an explicit rejected/short
+        // year. Multiple date tokens in one field retain fail-closed semantics.
+        const explicitYear = /[./-]\d{1,2}[./-]\d{2,4}\b|^\d{1,2}\s+[A-Za-zА-Яа-я]+\.?\s+\d{2,4}$|^[A-Za-z]+\.?\s+\d{1,2},?\s+\d{2,4}$/.test(token);
+        if (!validPeriod || !periodYearsAgree || tokens.length !== 1 || explicitYear || !parsed.day || !parsed.month) return "";
+        const candidates = [];
+        for (let year = Number(period[0].slice(0, 4)); year <= Number(period[1].slice(0, 4)); year++) {
+          const day = iso({ ...parsed, year });
+          if (validDay(day) && day >= period[0] && day <= period[1]) candidates.push(day);
+        }
+        return candidates.length === 1 ? candidates[0] : "";
+      });
       const years = new Set(raw.match(/\b(?:19|20|21)\d{2}\b/g) || []);
       const shortRange = /\b\d{1,2}\s*[-–—/]\s*\d{1,2}\s+[A-Za-zА-Яа-я]+/.test(raw);
-      if (!days.length || days.some(day => !day || !validDay(day)) || new Set(days).size !== 1 || years.size > 1 || shortRange) {
+      if (!days.length || days.some(day => !day || !validDay(day)) || new Set(days).size !== 1 || years.size > 1 || [...years].some(year => days.some(day => day && !day.startsWith(`${year}-`))) || shortRange) {
         add(`Полет ${index + 1}: липсваща или нееднозначна дата/година. Проверете източника.`); return "";
       }
       const day = days[0];
@@ -1192,22 +1208,44 @@ function flightDateSafety(offer = {}, now = new Date()) {
       if (period.length === 2 && (day < period[0] || day > period[1])) add(`Полет ${index + 1}: дата ${day} извън периода на офертата. Проверете източника.`);
       return day;
     };
-    const checkAliases = values => {
-      const present = values.filter(value => value !== null && value !== undefined && String(value).trim());
-      const days = (present.length ? present : [""]).map(readDay).filter(Boolean);
+    const checkAliases = (record, keys) => {
+      const present = keys.filter(key => record[key] !== null && record[key] !== undefined && String(record[key]).trim());
+      const days = present.length ? present.map(key => {
+        const day = readDay(record[key]);
+        if (day && onResolvedDate) onResolvedDate(record, key, day);
+        return day;
+      }).filter(Boolean) : [readDay("")].filter(Boolean);
       if (new Set(days).size > 1) add(`Полет ${index + 1}: противоречиви date aliases. Проверете източника.`);
     };
     if (segments.length) {
       for (const segment of segments) {
-        checkAliases([segment.date, segment.departure, segment.departureDate]);
-        checkAliases([segment.arrival, segment.arrivalDate]);
+        checkAliases(segment, ["date", "departure", "departureDate"]);
+        checkAliases(segment, ["arrival", "arrivalDate"]);
       }
     } else {
-      checkAliases([flight.date, flight.departure, flight.departureDate, flight.outbound]);
-      checkAliases([flight.arrival, flight.arrivalDate, flight.inbound]);
+      checkAliases(flight, ["date", "departure", "departureDate", "outbound"]);
+      checkAliases(flight, ["arrival", "arrivalDate", "inbound"]);
     }
   }
   return { ready: warnings.length === 0, applicable: true, warnings: [...new Set(warnings)], checkedOn: today };
+}
+// Resolve display dates on a detached copy only after the whole offer passes.
+// Raw Smart Import evidence and persisted segment strings remain unchanged.
+function offerWithResolvedFlightDates(offer = {}, now = new Date()) {
+  const copy = JSON.parse(JSON.stringify(offer));
+  let changed = false;
+  const verdict = flightDateSafety(copy, now, (record, key, day) => {
+    if (normalizeFlightDateCandidate(record[key]).year) return;
+    const time = extractTime(record[key]);
+    record[key] = day + (time ? `T${time}` : "");
+    changed = true;
+  });
+  if (!verdict.ready || !changed) return offer;
+  for (const flight of [...getFlights(copy), copy.proposalInput?.flight].filter(Boolean)) {
+    // Recompute derived text from verified segments instead of stale import text.
+    delete flight.displayBg;
+  }
+  return copy;
 }
 function assertFlightDateSafety(offer) {
   const verdict = flightDateSafety(offer);
@@ -6148,6 +6186,7 @@ function escapeGt63RegistryHtml(value) {
 }
 
 function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
+  offer = offerWithResolvedFlightDates(offer);
   const proposalInput = normalizeProposalInputForOffer(offer.proposalInput);
   if (!proposalInput || !offer.proposalTemplate?.selected) return "";
 
@@ -6205,6 +6244,7 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
 }
 
 function renderGt63PrintOfferHtml(offer = {}, options = {}) {
+  offer = offerWithResolvedFlightDates(offer);
   const hasProposalInput = offer.proposalInput != null;
   const proposalInput = hasProposalInput
     ? normalizeProposalInputForOffer(offer.proposalInput)
@@ -7080,6 +7120,7 @@ async function resolveGt63HotelPrintImage(rawUrl) {
 }
 
 async function renderOfferHtml(offer, options = {}) {
+  offer = offerWithResolvedFlightDates(offer);
   const registryHtml = renderGt63RegistryOfferHtml(offer, options);
   if (registryHtml) return registryHtml;
 

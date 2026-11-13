@@ -16,8 +16,10 @@ return {clientName:'QA ONLY',destination:'Rome',travelDates:kind==='old'?'16.11 
  const other=(await http('/api/auth/login','POST',{email:'other@example.test',password},'')).cookie;
  const vm=require('node:vm'),admin=fs.readFileSync(root+'/public/admin.js','utf8'),ctx=vm.createContext({qaTone:()=> 'ready',qaScore:()=>100,getOfferWarnings:()=>[]});
  vm.runInContext(admin.slice(admin.indexOf('function flightDateClientReady('),admin.indexOf('function syncHomeFieldsToCreateSurface(')),ctx);
- for(const kind of ['old','past','missing','ambiguous','valid','proposal','arrival','connection','secondFlight','dateAlias','multiDate','isoPeriod','isoPast','aliasConflict']){
+ for(const kind of ['old','past','missing','fr625','ambiguous','valid','proposal','arrival','connection','secondFlight','dateAlias','multiDate','isoPeriod','isoPast','aliasConflict']){
+  if(process.env.AYA_GATE_CASES && !process.env.AYA_GATE_CASES.split(',').includes(kind)) continue;
   const payload=fixture(kind==='isoPast'?'past':kind);
+  if(kind==='fr625'){payload.travelDates='16.11.2026 - 20.11.2026';Object.assign(payload.flights[0].outboundSegments[0],{departure:'Mon, 16 Nov 1:25 PM',arrival:'Mon, 16 Nov 2:15 PM'});Object.assign(payload.flights[0].inboundSegments[0],{departure:'Fri, 20 Nov 12:25 PM',arrival:'Fri, 20 Nov 3:10 PM'});}
   payload.hotels[0].images=[base+'/images/hotels/ao-london-docklands.jpg'];
   payload.hotels[1].images=[base+'/images/hotels/eden-au-lac-zurich.jpg'];
   if(kind==='arrival')payload.flights[0].inboundSegments[0].arrival='2020-11-20T10:30';
@@ -34,7 +36,7 @@ return {clientName:'QA ONLY',destination:'Rome',travelDates:kind==='old'?'16.11 
   }
   if(kind==='proposal'){payload.proposalInput=require('../gt63-core/legacy-offer-print-input').buildLegacyOfferPrintInput({...payload,id:'synthetic'});payload.proposalInput.flight.outboundSegments[0].departure='2020-11-16T10:30';}
   const created=await http('/api/offers','POST',payload);assert.equal(created.status,200);const id=created.data.offer.id,url='/api/offers/'+id;
-  let detail=await http(url);assert.equal(detail.status,200);if(kind==='secondFlight')assert.equal(detail.data.offer.flights.length,2);const valid=kind==='valid'||kind==='isoPeriod';assert.equal(detail.data.offer.flightDateSafety.ready,valid);assert.equal(ctx.offerReadyToSend(detail.data.offer),valid);
+  let detail=await http(url);assert.equal(detail.status,200);if(kind==='secondFlight')assert.equal(detail.data.offer.flights.length,2);const valid=['valid','isoPeriod','missing','fr625'].includes(kind);assert.equal(detail.data.offer.flightDateSafety.ready,valid);assert.equal(ctx.offerReadyToSend(detail.data.offer),valid);
   assert.equal(ctx.offerReadyToSend({...detail.data.offer,flightDateSafety:undefined}),false);
   log(kind+' draft and READY',{get:200,ready:valid});
   const list=(await http('/api/offers')).data.offers.find(o=>o.id===id);assert.equal(list.flightDateSafety.ready,valid);
@@ -47,10 +49,14 @@ return {clientName:'QA ONLY',destination:'Rome',travelDates:kind==='old'?'16.11 
    log(kind+' protected QA preview and draft edit',{preview:200,anonymous:401,otherAgency:403,draftPut:200});
    const createBefore=snapshot(),blockedCreate=await http('/api/offers','POST',{...payload,status:'sent'});assert.equal(blockedCreate.status,422);assert.equal(snapshot(),createBefore);log(kind+' create sent',{status:422,noMutation:true});
   }else{
+   const edit=await http(url,'PUT',{...detail.data.offer,notes:'Resolver edit/reload QA',expectedVersion:detail.data.offerVersion});assert.equal(edit.status,200);
+   detail=await http(url);assert.equal(detail.status,200);assert.equal(detail.data.offer.flightDateSafety.ready,true);
+   for(const key of ['departure','arrival'])assert.equal(detail.data.offer.flights[0].outboundSegments[0][key],payload.flights[0].outboundSegments[0][key]);
+   log(kind+' GET -> PUT -> reload',{put:200,get:200,ready:true,rawDatesPreserved:true});
    const offerBefore=JSON.parse(snapshot()).offers.find(o=>o.id===id);
-   for(const route of [`/offer/${id}`,`/api/offers/view/${id}`,url+'/print',url+'/print?selectedHotelId=b',url+'/pdf']){const r=await http(route);assert.equal(r.status,route.startsWith('/offer/')?302:200);if(route.endsWith('/pdf'))assert(r.pdf);if(route.includes('selectedHotelId=b'))assert(r.text.includes('QA Beta'));log('valid GET '+route,{status:r.status,pdf:r.pdf});}
+   for(const route of [`/offer/${id}`,`/api/offers/view/${id}`,url+'/print',url+'/print?selectedHotelId=b',url+'/pdf']){const r=await http(route);assert.equal(r.status,route.startsWith('/offer/')?302:200);if(route.endsWith('/pdf'))assert(r.pdf);if(kind==='fr625'&&route.includes('/print')){assert(r.text.includes('16 ноември 2026'));assert(r.text.includes('13:25'));assert(r.text.includes('20 ноември 2026'));assert(r.text.includes('15:10'));}if(route.includes('selectedHotelId=b'))assert(r.text.includes('QA Beta'));log('valid GET '+route,{status:r.status,pdf:r.pdf});}
    const after=JSON.parse(snapshot()).offers.find(o=>o.id===id);for(const key of ['hotels','flights','finalPrice','markupPercent'])assert.deepEqual(after[key],offerBefore[key]);
    assert.equal((await http(url+'/status','PATCH',{status:'sent'})).status,200);log('valid sent and protected hotel/price data',{status:200,preserved:true});
   }
  }
-}catch(e){rows.push({result:'FAIL',error:e.stack});console.error(e);process.exitCode=1;}finally{if(child&&child.exitCode===null){child.kill();await new Promise(r=>child.once('exit',r));}if(process.env.AYA_GATE_REPORT)fs.writeFileSync(process.env.AYA_GATE_REPORT,JSON.stringify(rows,null,2));fs.rmSync(temp,{recursive:true,force:true});}})();
+}catch(e){rows.push({result:'FAIL',error:e.stack});console.error(e);process.exitCode=1;}finally{if(child&&child.exitCode===null){child.kill('SIGKILL');await new Promise(r=>child.once('exit',r));}if(process.env.AYA_GATE_REPORT)fs.writeFileSync(process.env.AYA_GATE_REPORT,JSON.stringify(rows,null,2));fs.rmSync(temp,{recursive:true,force:true});}})();
