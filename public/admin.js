@@ -3476,6 +3476,17 @@ function flightYearConflicts(flight = {}) {
 }
 
 // Operator-only reconciliation. No automatic year inference, and no partial mutation on cancel.
+function isValidFlightLocalDateTime(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second = "00"] = match.map(String);
+  const y = Number(year), m = Number(month), d = Number(day);
+  const h = Number(hour), min = Number(minute), sec = Number(second);
+  if (m < 1 || m > 12 || h > 23 || min > 59 || sec > 59) return false;
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return d >= 1 && d <= days;
+}
+
 function reconcileFlightSegmentDates(index) {
   const original = flights[index];
   if (!original) return;
@@ -3505,7 +3516,7 @@ function reconcileFlightSegmentDates(index) {
         if (answer === null) return;
         const value = answer.trim();
         const parsed = value.match(/^(\d{4})-(\d{2})-(\d{2})(T|\s)(\d{2}):(\d{2})(?::(\d{2}))?$/);
-        if (!parsed || !Number.isFinite(Date.parse(value.replace(" ", "T") + (parsed[7] ? "" : ":00") + "Z"))) {
+        if (!parsed || !isValidFlightLocalDateTime(value)) {
           alert("Invalid ISO date/time. No changes saved.");
           return;
         }
