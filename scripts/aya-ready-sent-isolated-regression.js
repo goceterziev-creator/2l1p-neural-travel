@@ -28,7 +28,7 @@ fs.writeFileSync(dbPath, JSON.stringify(source,null,2));
 const sessionPayload = Buffer.from(JSON.stringify({userId:user,exp:Date.now()+3600000})).toString("base64url");
 const signature = crypto.createHmac("sha256",secret).update(sessionPayload).digest("base64url");
 const cookie = "aya_session="+sessionPayload+"."+signature;
-const child = spawn(process.execPath,["server.js"],{cwd:root,env:{...process.env,NODE_ENV:"test",PORT:port,DB_FILE:dbPath,AUTH_SECRET:secret,LIVE_BASE_URL:base,SMOKE_BASE_URL:base},stdio:["ignore","pipe","pipe"]});
+const child = spawn(process.execPath,[path.join(root,"server.js")],{cwd:tmp,env:{PATH:process.env.PATH,HOME:process.env.HOME,NODE_ENV:"test",PORT:port,DATA_DIR:tmp,DB_FILE:dbPath,AIRPORT_CONFIG_FILE:path.join(tmp,"airports.json"),OCR_PATTERN_CONFIG_FILE:path.join(tmp,"ocr.json"),REGRESSION_LIBRARY_DIR:path.join(tmp,"library"),BETA_AUTH_BYPASS:"false",AUTH_SECRET:secret,LIVE_BASE_URL:base,SMOKE_BASE_URL:base},stdio:["ignore","pipe","pipe"]});
 let output = "";
 child.stdout.on("data",c=>output+=c.toString());
 child.stderr.on("data",c=>output+=c.toString());
@@ -55,14 +55,19 @@ async function request(url,opts={}) {
    console.log("PASS: "+status+" => HTTP 422 and byte-identical DB");
   }
   console.log("PASS: no status_changed audit entries (DB unchanged)");
-  const beforeView = crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
+  const beforeView = JSON.parse(fs.readFileSync(dbPath,"utf8")).offers.find(o=>o.id===offerId);
   const clientView = await fetch(base+"/api/offers/view/"+offerId);
-  assert.equal(clientView.status,422,"invalid-flight client view must be blocked before mutation");
-  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),beforeView,"rejected client view must not mutate DB");
-  console.log("PASS: invalid-flight client view HTTP 422 with byte-identical DB");
+  assert.equal(clientView.status,200,"invalid-flight presentation must remain accessible");
+  assert.match(await clientView.text(),/\[FLIGHT_DATE_SAFETY\]/,"live flight warning must remain visible");
+  const afterView=JSON.parse(fs.readFileSync(dbPath,"utf8")).offers.find(o=>o.id===offerId);
+  const editorial=o=>Object.fromEntries(Object.entries(o).filter(([key])=>!["clientViews","clientViewed","updatedAt"].includes(key)));
+  assert.deepEqual(editorial(afterView),editorial(beforeView));
+  assert.equal(afterView.clientViews,(beforeView.clientViews||0)+1);
+  assert.equal(afterView.status,"draft");
+  console.log("PASS: invalid-flight client view HTTP 200, visible warning, only expected view telemetry");
 
   const beforeOccupancy = crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
-  for (const status of ["ready","sent","viewed","booked"]) {
+  for (const status of ["ready","sent","booked"]) {
    const result = await request("/api/offers/"+occupancyOfferId+"/status",{method:"PATCH",body:JSON.stringify({status})});
    assert.equal(result.status,422,status+" unconfirmed occupancy must be rejected");
    assert.match(result.body,/AYA_HOTEL_OCCUPANCY_BLOCKED/);
@@ -72,12 +77,14 @@ async function request(url,opts={}) {
   const sentDb=JSON.parse(fs.readFileSync(dbPath,"utf8"));
   sentDb.offers.find(x=>x.id===occupancyOfferId).status="sent";
   fs.writeFileSync(dbPath,JSON.stringify(sentDb,null,2));
-  const beforeSentView=crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
-  const blockedSentView=await fetch(base+"/api/offers/view/"+occupancyOfferId);
-  assert.equal(blockedSentView.status,422,"sent-to-viewed must block unconfirmed occupancy");
-  assert.match(await blockedSentView.text(),/AYA_HOTEL_OCCUPANCY_BLOCKED/);
-  assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),beforeSentView,"rejected sent view must not mutate DB");
-  console.log("PASS: sent-to-viewed client view unconfirmed occupancy HTTP 422, DB unchanged");
+  const beforeSentView=JSON.parse(fs.readFileSync(dbPath,"utf8")).offers.find(o=>o.id===occupancyOfferId);
+  const sentView=await fetch(base+"/api/offers/view/"+occupancyOfferId);
+  assert.equal(sentView.status,200,"legacy sent offer must be viewable with advisory occupancy");
+  assert.match(await sentView.text(),/непотвърдена заетост/);
+  const afterSentView=JSON.parse(fs.readFileSync(dbPath,"utf8")).offers.find(o=>o.id===occupancyOfferId);
+  assert.deepEqual(editorial(afterSentView),{...editorial(beforeSentView),status:"viewed"});
+  assert.equal(afterSentView.clientViews,(beforeSentView.clientViews||0)+1);
+  console.log("PASS: sent-to-viewed occupancy QA is advisory; only expected status/view metrics changed");
   sentDb.offers.find(x=>x.id===occupancyOfferId).status="draft";
   fs.writeFileSync(dbPath,JSON.stringify(sentDb,null,2));
   const beforeBook=crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex");
@@ -117,6 +124,15 @@ async function request(url,opts={}) {
   assert.equal(unauthorized.status,401,"unauthenticated status mutation must be 401");
   assert.equal(crypto.createHash("sha256").update(fs.readFileSync(dbPath)).digest("hex"),unchanged);
   console.log("PASS: unauthenticated status mutation denied with unchanged DB");
+  const otherUser="QA-OTHER-AGENCY",otherDb=JSON.parse(fs.readFileSync(dbPath,"utf8"));
+  otherDb.users.push({id:otherUser,agencyId:"QA-OTHER",role:"admin",name:"Other QA"});
+  fs.writeFileSync(dbPath,JSON.stringify(otherDb,null,2));
+  const otherPayload=Buffer.from(JSON.stringify({userId:otherUser,exp:Date.now()+3600000})).toString("base64url");
+  const otherCookie="aya_session="+otherPayload+"."+crypto.createHmac("sha256",secret).update(otherPayload).digest("base64url");
+  const beforeOther=fs.readFileSync(dbPath);
+  const cross=await request("/api/offers/"+occupancyOfferId+"/status",{method:"PATCH",headers:{Cookie:otherCookie},body:JSON.stringify({status:"booked"})});
+  assert.equal(cross.status,403);assert.deepEqual(fs.readFileSync(dbPath),beforeOther);
+  console.log("PASS: cross-agency mutation denied HTTP 403 with unchanged DB");
   console.log("LIMITATION: external notification delivery not instrumented; NOT VERIFIED");
- }finally{child.kill();fs.rmSync(tmp,{recursive:true,force:true})}
+ }finally{child.kill("SIGKILL");await new Promise(r=>child.exitCode!==null?r():child.once("exit",r));fs.rmSync(tmp,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1;});

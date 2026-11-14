@@ -1256,7 +1256,7 @@ function assertFlightDateSafety(offer) {
   }
 }
 function assertClientStatusSafety(offer) {
-  if (!["ready", "sent", "viewed", "booked"].includes(String(offer.status).toLowerCase())) return;
+  if (!["ready", "sent", "booked"].includes(String(offer.status).toLowerCase())) return;
   assertFlightDateSafety(offer);
   if (hotelOccupancyQa.warning(offer)) {
     throw routeError("AYA_HOTEL_OCCUPANCY_BLOCKED", 422, hotelOccupancyQa.summary(offer));
@@ -7142,7 +7142,7 @@ async function renderOfferHtml(offer, options = {}) {
   const flights = getFlights(offer).map((flight) => withBulgarianFlightDisplay(flight));
   const hotels = getHotels(offer);
   const validationWarnings = flightSafetyWarnings(offer);
-  const hasWarnings = showWarnings && validationWarnings.length > 0 && (qaMode || !offer.warningsDismissed);
+  const hasWarnings = showWarnings && validationWarnings.length > 0 && (qaMode || !offer.warningsDismissed || validationWarnings.some(w => String(w).includes("[FLIGHT_DATE_SAFETY]")));
   const clientLink = `${LIVE_BASE_URL}/api/offers/view/${offer.id}`;
   const pdfLink = `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`;
 
@@ -8917,7 +8917,6 @@ app.get("/admin", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")
 app.get("/offer/:id", (req, res) => {
   const offer = readDb().offers.find(item => item.id === req.params.id);
   if (!offer) return res.status(404).send("Offer not found");
-  if (!guardClientFlightDates(res, offer)) return;
   res.redirect(`/api/offers/view/${req.params.id}`);
 });
 
@@ -9374,7 +9373,6 @@ if (offer.status === "sent") offer.status = "viewed";
   }
 
   const html = await renderOfferHtml(offerForRender);
-  if (!guardClientFlightDates(res, offerForRender)) return;
   res.setHeader("Content-Type", "text/html; charset=UTF-8");
   res.send(html);
 });
@@ -9395,7 +9393,6 @@ app.get("/api/offers/:id/print", async (req, res) => {
   const db = readDb();
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).send("Offer not found");
-  if (!guardClientFlightDates(res, offer)) return;
 
   try {
     const printOptions = {
@@ -9411,7 +9408,6 @@ app.get("/api/offers/:id/print", async (req, res) => {
       findImages: findHotelImagesWithSerpApi
     });
     const html = renderGt63PrintOfferHtml({ ...offer, proposalInput: prepared }, printOptions);
-    if (!guardClientFlightDates(res, offer)) return;
     res.setHeader("Content-Type", "text/html; charset=UTF-8");
     res.send(html);
   } catch (error) {
@@ -9430,7 +9426,6 @@ app.get("/api/offers/:id/pdf", async (req, res) => {
   const db = readDb();
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).send("Offer not found");
-  if (!guardClientFlightDates(res, offer)) return;
 
   const printUrl = new URL(`/api/offers/${encodeURIComponent(offer.id)}/print`, LIVE_BASE_URL);
   if (req.query?.mode) printUrl.searchParams.set("mode", String(req.query.mode));
@@ -9547,13 +9542,11 @@ app.get("/api/offers/:id/pdf", async (req, res) => {
     await mutateDb(currentDb => {
       const current = currentDb.offers.find(item => item.id === offer.id);
       if (!current) throw routeError("Offer not found", 404);
-      assertFlightDateSafety(offer);
-      assertFlightDateSafety(current);
+      // Flight-date QA is advisory for rendering; retain the latest-offer existence check.
       current.pdfDownloads = toNumber(current.pdfDownloads) + 1;
       current.updatedAt = new Date().toISOString();
       return currentDb;
     });
-    if (!guardClientFlightDates(res, offer)) return;
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${offer.id}.pdf"`);
     res.send(Buffer.from(pdfBuffer));
