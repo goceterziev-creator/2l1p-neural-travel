@@ -3451,6 +3451,90 @@ formValidationWarnings.push(
   };
 }
 
+// Explicit-year consistency gate: never infer or rewrite a segment year from an offer period.
+function flightYearConflicts(flight = {}) {
+  const summary = [flight.departure, flight.arrival].map(value => String(value || ""));
+  const segmentGroups = [
+    Array.isArray(flight.outboundSegments) ? flight.outboundSegments : [],
+    Array.isArray(flight.inboundSegments) ? flight.inboundSegments : []
+  ];
+  const conflicts = [];
+  for (let direction = 0; direction < segmentGroups.length; direction++) {
+    const years = [...summary[direction].matchAll(/(?:^|\D)(20\d{2})(?=\D|$)/g)].map(match => match[1]);
+    if (years.length !== 1) continue; // Ambiguous summary cannot authorize a correction.
+    for (const [index, segment] of segmentGroups[direction].entries()) {
+      for (const field of ["departure", "arrival"]) {
+        const raw = String(segment?.[field] || "");
+        const iso = raw.match(/^(\d{4})-\d{2}-\d{2}(?:T|\s|$)/);
+        if (iso && iso[1] !== years[0]) {
+          conflicts.push(`${direction === 0 ? "Outbound" : "Inbound"} segment ${index + 1} ${field}: summary year ${years[0]}, structured year ${iso[1]} (${raw})`);
+        }
+      }
+    }
+  }
+  return conflicts;
+}
+
+// Operator-only reconciliation. No automatic year inference, and no partial mutation on cancel.
+function isValidFlightLocalDateTime(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second = "00"] = match.map(String);
+  const y = Number(year), m = Number(month), d = Number(day);
+  const h = Number(hour), min = Number(minute), sec = Number(second);
+  if (m < 1 || m > 12 || h > 23 || min > 59 || sec > 59) return false;
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return d >= 1 && d <= days;
+}
+
+function reconcileFlightSegmentDates(index) {
+  const original = flights[index];
+  if (!original) return;
+  const conflicts = flightYearConflicts(original);
+  if (!conflicts.length) {
+    alert("No explicit flight-year conflicts were detected. Check all flight dates against the source.");
+    return;
+  }
+  const candidate = {
+    ...original,
+    outboundSegments: (original.outboundSegments || []).map(segment => ({ ...segment })),
+    inboundSegments: (original.inboundSegments || []).map(segment => ({ ...segment }))
+  };
+  for (const [direction, key] of ["outboundSegments", "inboundSegments"].entries()) {
+    const summary = String(direction === 0 ? original.departure : original.arrival);
+    const years = [...summary.matchAll(/(?:^|\D)(20\d{2})(?=\D|$)/g)].map(match => match[1]);
+    if (years.length !== 1) continue;
+    for (const segment of candidate[key]) {
+      for (const field of ["departure", "arrival"]) {
+        const raw = String(segment[field] || "");
+        const iso = raw.match(/^(\d{4})-\d{2}-\d{2}(?:T|\s|$)/);
+        if (!iso || iso[1] === years[0]) continue;
+        const answer = prompt(
+          `CONFIRM FROM ORIGINAL SOURCE — ${direction === 0 ? "outbound" : "inbound"} ${segment.flightNumber || ""} ${field}\nSummary year: ${years[0]}\nStored segment: ${raw}\nEnter the verified full ISO date/time, or Cancel to preserve all data:`,
+          raw
+        );
+        if (answer === null) return;
+        const value = answer.trim();
+        const parsed = value.match(/^(\d{4})-(\d{2})-(\d{2})(T|\s)(\d{2}):(\d{2})(?::(\d{2}))?$/);
+        if (!parsed || !isValidFlightLocalDateTime(value)) {
+          alert("Invalid ISO date/time. No changes saved.");
+          return;
+        }
+        segment[field] = value;
+      }
+    }
+  }
+  const remaining = flightYearConflicts(candidate);
+  if (remaining.length) {
+    alert("Dates still conflict. No changes saved:\n" + remaining.join("\n"));
+    return;
+  }
+  if (!confirm("Apply the explicitly reviewed segment dates to this flight? No other fields will change.")) return;
+  flights[index] = candidate;
+  renderFlightCards();
+  alert("Flight segments updated in the editor only. Review and Save Offer separately.");
+}
+
 async function saveOffer() {
   if (hotelPersistenceUI.busy || hotelPersistenceUI.pending || hotelPersistenceUI.reloadRequired) {
     alert("Finish the pending hotel operation or reopen the current offer before saving.");
@@ -3465,6 +3549,13 @@ async function saveOffer() {
   const payload = collectForm();
 
   payload.flights = flights.map(normalizeFlightFields);
+  const flightConflicts = flights.flatMap((flight, index) =>
+    flightYearConflicts(normalizeFlightFields(flight)).map(detail => `Flight ${index + 1}: ${detail}`)
+  );
+  if (flightConflicts.length) {
+    alert("Flight date conflict — save cancelled. Review the source and use the Reconcile flight dates action:\n\n" + flightConflicts.join("\n"));
+    return;
+  }
   payload.hotels = dedupeHotelOptionImages(hotels);
 
   const destinationValue = payload.destination || "";
@@ -3636,6 +3727,7 @@ function renderFlightCards() {
       <input type="number" step="0.01" placeholder="Price" value="${Number(f.price || 0)}" onchange="flights[${i}].price=Number(this.value||0);updateAutoPrice();" />
       <textarea class="flight-notes-field" rows="6" placeholder="Flight Notes" onchange="flights[${i}].notes=this.value;updateAutoPrice();">${escapeHtml(f.notes || "")}</textarea>
       ${renderOperatorFlightSegments(f)}
+      ${flightYearConflicts(f).length ? `<button type="button" onclick="reconcileFlightSegmentDates(${i})">Reconcile flight dates (source confirmation required)</button>` : ""}
       <button type="button" onclick="removeFlight(${i})">Remove Flight</button>
     </div>
   `).join("");
