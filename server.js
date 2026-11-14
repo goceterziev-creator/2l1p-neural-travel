@@ -7142,7 +7142,7 @@ async function renderOfferHtml(offer, options = {}) {
   const flights = getFlights(offer).map((flight) => withBulgarianFlightDisplay(flight));
   const hotels = getHotels(offer);
   const validationWarnings = flightSafetyWarnings(offer);
-  const hasWarnings = showWarnings && validationWarnings.length > 0 && (qaMode || !offer.warningsDismissed);
+  const hasWarnings = showWarnings && validationWarnings.length > 0 && (qaMode || !offer.warningsDismissed || validationWarnings.some(w => String(w).includes("[FLIGHT_DATE_SAFETY]")));
   const clientLink = `${LIVE_BASE_URL}/api/offers/view/${offer.id}`;
   const pdfLink = `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`;
 
