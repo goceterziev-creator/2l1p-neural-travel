@@ -3460,12 +3460,12 @@ function flightYearConflicts(flight = {}) {
   ];
   const conflicts = [];
   for (let direction = 0; direction < segmentGroups.length; direction++) {
-    const years = [...summary[direction].matchAll(/(?:^|\\D)(20\\d{2})(?=\\D|$)/g)].map(match => match[1]);
+    const years = [...summary[direction].matchAll(/(?:^|\D)(20\d{2})(?=\D|$)/g)].map(match => match[1]);
     if (years.length !== 1) continue; // Ambiguous summary cannot authorize a correction.
     for (const [index, segment] of segmentGroups[direction].entries()) {
       for (const field of ["departure", "arrival"]) {
         const raw = String(segment?.[field] || "");
-        const iso = raw.match(/^(\\d{4})-\\d{2}-\\d{2}(?:T|\\s|$)/);
+        const iso = raw.match(/^(\d{4})-\d{2}-\d{2}(?:T|\s|$)/);
         if (iso && iso[1] !== years[0]) {
           conflicts.push(`${direction === 0 ? "Outbound" : "Inbound"} segment ${index + 1} ${field}: summary year ${years[0]}, structured year ${iso[1]} (${raw})`);
         }
