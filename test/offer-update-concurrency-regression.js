@@ -13,7 +13,7 @@ process.on("exit", () => fs.rmSync(scratch, { recursive: true, force: true }));
 const filename = path.resolve(__dirname, "../server.js");
 const source = fs.readFileSync(filename, "utf8");
 const harness = new Module(filename, module); harness.filename = filename; harness.paths = Module._nodeModulePaths(path.dirname(filename));
-harness._compile(source + "\nmodule.exports.concurrencyTest={normalizeOffer,flightSafetyWarnings,flightDateSafety,assertClientStatusSafety,assertFlightDateSafety,guardClientFlightDates};", filename);
+harness._compile(source + "\nmodule.exports.concurrencyTest={normalizeOffer,flightSafetyWarnings,flightDateSafety,assertClientStatusSafety,assertFlightDateSafety,guardClientFlightDates,assertFlightDataConsistency};", filename);
 const normalizeOffer = harness.exports.concurrencyTest.normalizeOffer;
 const clone = value => JSON.parse(JSON.stringify(value));
 function section(start, end) { return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); }

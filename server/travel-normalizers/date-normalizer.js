@@ -1,3 +1,8 @@
+(function exposeTravelDates(root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  else root.AYATravelDates = api;
+})(typeof globalThis !== "undefined" ? globalThis : this, function () {
 const CHECK_VALUE = "за проверка";
 
 const MONTHS_BG = [
@@ -186,7 +191,7 @@ function compareTravelDates(a, b) {
   return firstKey < secondKey ? -1 : 1;
 }
 
-module.exports = {
+return {
   normalizeTravelDate,
   formatDateBg,
   formatDateTimeBg,
@@ -195,3 +200,5 @@ module.exports = {
   extractTime,
   CHECK_VALUE
 };
+
+});

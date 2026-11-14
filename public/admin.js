@@ -53,7 +53,9 @@ function roundTripRouteKey(flight = {}) {
 }
 
 function addFlight(flight = {}) {
-  const cleanFlight = normalizeFlightFields(flight);
+  const reviewed = reviewFlightDateConsistency(flight);
+  if (!reviewed) return false;
+  const cleanFlight = normalizeFlightFields(reviewed);
   const nextFlight = {
     airline: cleanFlight.airline || "",
     route: cleanFlight.route || "",
@@ -2739,7 +2741,9 @@ async function importData() {
 }
 
 function applyFlightImportResult(data = {}, successMessage = "Flight screenshot imported successfully.") {
-    const f = normalizeFlightFields(data.flight || {});
+    const reviewed = reviewFlightDateConsistency(data.flight || {});
+    if (!reviewed) return false;
+    const f = normalizeFlightFields(reviewed);
     const flightPrice = getImportedFlightPrice(data, f);
     const importWarnings = getFlightImportWarnings(data);
     const blockingWarnings = getBlockingFlightImportWarnings(f, flightPrice);
@@ -3158,7 +3162,7 @@ async function uploadUniversalTravelIntake() {
 
 function applyUniversalTravelIntakeResult() {
   const data = latestUniversalTravelIntake || {};
-  const flight = { ...(data.offerFlight || {}) };
+  let flight = { ...(data.offerFlight || {}) };
   const hotel = { ...(data.offerHotel || {}) };
 
   if ($("universalFlightAirline")) flight.airline = $("universalFlightAirline").value.trim();
@@ -3167,6 +3171,8 @@ function applyUniversalTravelIntakeResult() {
   if ($("universalFlightArrival")) flight.arrival = $("universalFlightArrival").value.trim();
   if ($("universalFlightBaggage")) flight.baggage = $("universalFlightBaggage").value.trim();
   if ($("universalFlightPrice")) flight.price = Number($("universalFlightPrice").value || 0);
+  flight = reviewFlightDateConsistency(flight);
+  if (!flight) return;
 
   if ($("universalHotelName")) hotel.name = $("universalHotelName").value.trim();
   if ($("universalHotelArea")) hotel.area = $("universalHotelArea").value.trim();
@@ -3462,6 +3468,17 @@ async function saveOffer() {
     return;
   }
 
+  const reviewedFlights = [];
+  for (const [index, flight] of flights.entries()) {
+    const candidate = index === 0 ? {...flight,
+      departure: $("flightDeparture")?.value.trim() || flight.departure,
+      arrival: $("flightArrival")?.value.trim() || flight.arrival} : flight;
+    const next = reviewFlightDateConsistency(candidate);
+    if (!next) return;
+    reviewedFlights.push(next);
+  }
+  flights = reviewedFlights;
+  syncPrimaryFlightDateFields();
   const payload = collectForm();
 
   payload.flights = flights.map(normalizeFlightFields);
@@ -3621,6 +3638,66 @@ function renderOperatorFlightSegments(flight = {}) {
   `;
 }
 
+function reviewFlightDateConsistency(flight, forceReview = false) {
+  const api = globalThis.AYAFlightDataConsistency;
+  if (!api) { alert("Flight date checker unavailable. Reload before saving."); return null; }
+  const analysis = api.inspect(flight);
+  if (analysis.ok && !forceReview) return JSON.parse(JSON.stringify(flight));
+  const detail = analysis.ok ? JSON.stringify({departure:flight.departure,arrival:flight.arrival,outboundSegments:flight.outboundSegments,inboundSegments:flight.inboundSegments},null,2) : analysis.conflicts.map(item => `${item.path}: ${item.message}\n${JSON.stringify(item.values)}`).join("\n\n");
+  const choice = prompt(`Противоречиви полетни дати — няма да се записват автоматично.\n\n${detail}\n\nКои стойности потвърждавате?\nSUMMARY — дати от обобщението (само при еднозначно съпоставяне)\nSEGMENTS — запази segment датите и обнови обобщението\nMANUAL — въведи точни дати за всеки сегмент\nCancel — без промяна.`, "");
+  if (choice === null) return null;
+  const selected = choice.trim().toLowerCase();
+  const reviewed = {};
+  if (selected === "manual") {
+    for (const leg of ["outbound","inbound"]) {
+      reviewed[leg] = [];
+      for (const segment of analysis.legs[leg]) {
+        const values = {};
+        for (const side of ["departure","arrival"]) {
+          const raw = segment?.[side] || "";
+          const value = prompt(`${leg} · ${segment?.flightNumber || ""} · ${segment?.from || ""} → ${segment?.to || ""}\n${side}: ${raw}\nПотвърдена дата YYYY-MM-DD (часът остава непроменен):`, api.tokens(raw)[0]?.key || "");
+          if (value === null) return null;
+          values[side] = value.trim();
+        }
+        reviewed[leg].push(values);
+      }
+    }
+  }
+  try {
+    const next = api.resolve(flight, selected, reviewed);
+    const changes = ["departure","arrival"].map(key => `${key}\nПреди: ${flight[key] || ""}\nСлед: ${next[key]}`).join("\n\n");
+    if (!confirm(`Потвърждавам изрично проверените полетни дати:\n\n${changes}\n\n${JSON.stringify({outbound:next.outboundSegments,inbound:next.inboundSegments},null,2)}\n\nЧасовете на сегментите се запазват. Годината не е изведена от периода на офертата. Да приложа?`)) return null;
+    return next;
+  } catch (error) { alert(`Датите не са приложени: ${error.message}`); return null; }
+}
+
+function syncPrimaryFlightDateFields() {
+  if ($("flightDeparture")) $("flightDeparture").value = flights[0]?.departure || "";
+  if ($("flightArrival")) $("flightArrival").value = flights[0]?.arrival || "";
+}
+
+function editFlightDateSummary(index, field, value) {
+  const next = reviewFlightDateConsistency({...flights[index], [field]:value});
+  if (next) flights[index] = next;
+  syncPrimaryFlightDateFields();
+  renderFlightCards();
+}
+
+function reviewMainFlightDateSummaries() {
+  if (!flights.length) return;
+  const next = reviewFlightDateConsistency({...flights[0],
+    departure:$("flightDeparture")?.value.trim() || "",
+    arrival:$("flightArrival")?.value.trim() || ""});
+  if (next) flights[0] = next;
+  syncPrimaryFlightDateFields();
+  renderFlightCards();
+}
+
+function reviewSavedFlightDates(index) {
+  const next = reviewFlightDateConsistency(flights[index], true);
+  if (next) { flights[index] = next; syncPrimaryFlightDateFields(); renderFlightCards(); }
+}
+
 function renderFlightCards() {
   const box = document.getElementById("flightCards");
 
@@ -3630,12 +3707,13 @@ function renderFlightCards() {
     <div class="flight-card">
       <input placeholder="Airline" value="${escapeHtml(f.airline || "")}" onchange="flights[${i}].airline=this.value;updateAutoPrice();" />
       <input placeholder="Route" value="${escapeHtml(f.route || "")}" onchange="flights[${i}].route=this.value;updateAutoPrice();" />
-      <input placeholder="Departure" value="${escapeHtml(f.departure || "")}" onchange="flights[${i}].departure=this.value;updateAutoPrice();" />
-      <input placeholder="Arrival" value="${escapeHtml(f.arrival || "")}" onchange="flights[${i}].arrival=this.value;updateAutoPrice();" />
+      <input placeholder="Departure" value="${escapeHtml(f.departure || "")}" onchange="editFlightDateSummary(${i}, 'departure', this.value)" />
+      <input placeholder="Arrival" value="${escapeHtml(f.arrival || "")}" onchange="editFlightDateSummary(${i}, 'arrival', this.value)" />
       <input placeholder="Baggage" value="${escapeHtml(f.baggage || "")}" onchange="flights[${i}].baggage=this.value;updateAutoPrice();" />
       <input type="number" step="0.01" placeholder="Price" value="${Number(f.price || 0)}" onchange="flights[${i}].price=Number(this.value||0);updateAutoPrice();" />
       <textarea class="flight-notes-field" rows="6" placeholder="Flight Notes" onchange="flights[${i}].notes=this.value;updateAutoPrice();">${escapeHtml(f.notes || "")}</textarea>
       ${renderOperatorFlightSegments(f)}
+      <button type="button" onclick="reviewSavedFlightDates(${i})">Провери / коригирай полетните дати</button>
       <button type="button" onclick="removeFlight(${i})">Remove Flight</button>
     </div>
   `).join("");
@@ -4436,7 +4514,8 @@ async function autoBuildOffer() {
       body: flightForm
     });
 
-    const f = flightData.flight || {};
+    const f = reviewFlightDateConsistency(flightData.flight || {});
+    if (!f) return;
     const flightPrice = getImportedFlightPrice(flightData, f);
     const flightImportWarnings = getFlightImportWarnings(flightData);
     const blockingFlightWarnings = getBlockingFlightImportWarnings(f, flightPrice);
