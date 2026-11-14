@@ -3451,6 +3451,30 @@ formValidationWarnings.push(
   };
 }
 
+// Explicit-year consistency gate: never infer or rewrite a segment year from an offer period.
+function flightYearConflicts(flight = {}) {
+  const summary = [flight.departure, flight.arrival].map(value => String(value || ""));
+  const segmentGroups = [
+    Array.isArray(flight.outboundSegments) ? flight.outboundSegments : [],
+    Array.isArray(flight.inboundSegments) ? flight.inboundSegments : []
+  ];
+  const conflicts = [];
+  for (let direction = 0; direction < segmentGroups.length; direction++) {
+    const years = [...summary[direction].matchAll(/(?:^|\\D)(20\\d{2})(?=\\D|$)/g)].map(match => match[1]);
+    if (years.length !== 1) continue; // Ambiguous summary cannot authorize a correction.
+    for (const [index, segment] of segmentGroups[direction].entries()) {
+      for (const field of ["departure", "arrival"]) {
+        const raw = String(segment?.[field] || "");
+        const iso = raw.match(/^(\\d{4})-\\d{2}-\\d{2}(?:T|\\s|$)/);
+        if (iso && iso[1] !== years[0]) {
+          conflicts.push(`${direction === 0 ? "Outbound" : "Inbound"} segment ${index + 1} ${field}: summary year ${years[0]}, structured year ${iso[1]} (${raw})`);
+        }
+      }
+    }
+  }
+  return conflicts;
+}
+
 async function saveOffer() {
   if (hotelPersistenceUI.busy || hotelPersistenceUI.pending || hotelPersistenceUI.reloadRequired) {
     alert("Finish the pending hotel operation or reopen the current offer before saving.");
@@ -3465,6 +3489,13 @@ async function saveOffer() {
   const payload = collectForm();
 
   payload.flights = flights.map(normalizeFlightFields);
+  const flightConflicts = flights.flatMap((flight, index) =>
+    flightYearConflicts(normalizeFlightFields(flight)).map(detail => `Flight ${index + 1}: ${detail}`)
+  );
+  if (flightConflicts.length) {
+    alert("Flight date conflict — save cancelled. Confirm the source dates and correct both summary and structured segments before saving:\\n\\n" + flightConflicts.join("\\n"));
+    return;
+  }
   payload.hotels = dedupeHotelOptionImages(hotels);
 
   const destinationValue = payload.destination || "";
