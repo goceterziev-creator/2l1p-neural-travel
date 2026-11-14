@@ -3475,6 +3475,55 @@ function flightYearConflicts(flight = {}) {
   return conflicts;
 }
 
+// Operator-only reconciliation. No automatic year inference, and no partial mutation on cancel.
+function reconcileFlightSegmentDates(index) {
+  const original = flights[index];
+  if (!original) return;
+  const conflicts = flightYearConflicts(original);
+  if (!conflicts.length) {
+    alert("No explicit flight-year conflicts were detected. Check all flight dates against the source.");
+    return;
+  }
+  const candidate = {
+    ...original,
+    outboundSegments: (original.outboundSegments || []).map(segment => ({ ...segment })),
+    inboundSegments: (original.inboundSegments || []).map(segment => ({ ...segment }))
+  };
+  for (const [direction, key] of ["outboundSegments", "inboundSegments"].entries()) {
+    const summary = String(direction === 0 ? original.departure : original.arrival);
+    const years = [...summary.matchAll(/(?:^|\D)(20\d{2})(?=\D|$)/g)].map(match => match[1]);
+    if (years.length !== 1) continue;
+    for (const segment of candidate[key]) {
+      for (const field of ["departure", "arrival"]) {
+        const raw = String(segment[field] || "");
+        const iso = raw.match(/^(\d{4})-\d{2}-\d{2}(?:T|\s|$)/);
+        if (!iso || iso[1] === years[0]) continue;
+        const answer = prompt(
+          `CONFIRM FROM ORIGINAL SOURCE — ${direction === 0 ? "outbound" : "inbound"} ${segment.flightNumber || ""} ${field}\nSummary year: ${years[0]}\nStored segment: ${raw}\nEnter the verified full ISO date/time, or Cancel to preserve all data:`,
+          raw
+        );
+        if (answer === null) return;
+        const value = answer.trim();
+        const parsed = value.match(/^(\d{4})-(\d{2})-(\d{2})(T|\s)(\d{2}):(\d{2})(?::(\d{2}))?$/);
+        if (!parsed || !Number.isFinite(Date.parse(value.replace(" ", "T") + (parsed[7] ? "" : ":00") + "Z"))) {
+          alert("Invalid ISO date/time. No changes saved.");
+          return;
+        }
+        segment[field] = value;
+      }
+    }
+  }
+  const remaining = flightYearConflicts(candidate);
+  if (remaining.length) {
+    alert("Dates still conflict. No changes saved:\n" + remaining.join("\n"));
+    return;
+  }
+  if (!confirm("Apply the explicitly reviewed segment dates to this flight? No other fields will change.")) return;
+  flights[index] = candidate;
+  renderFlightCards();
+  alert("Flight segments updated in the editor only. Review and Save Offer separately.");
+}
+
 async function saveOffer() {
   if (hotelPersistenceUI.busy || hotelPersistenceUI.pending || hotelPersistenceUI.reloadRequired) {
     alert("Finish the pending hotel operation or reopen the current offer before saving.");
@@ -3493,7 +3542,7 @@ async function saveOffer() {
     flightYearConflicts(normalizeFlightFields(flight)).map(detail => `Flight ${index + 1}: ${detail}`)
   );
   if (flightConflicts.length) {
-    alert("Flight date conflict — save cancelled. Confirm the source dates and correct both summary and structured segments before saving:\\n\\n" + flightConflicts.join("\\n"));
+    alert("Flight date conflict — save cancelled. Review the source and use the Reconcile flight dates action:\n\n" + flightConflicts.join("\n"));
     return;
   }
   payload.hotels = dedupeHotelOptionImages(hotels);
@@ -3667,6 +3716,7 @@ function renderFlightCards() {
       <input type="number" step="0.01" placeholder="Price" value="${Number(f.price || 0)}" onchange="flights[${i}].price=Number(this.value||0);updateAutoPrice();" />
       <textarea class="flight-notes-field" rows="6" placeholder="Flight Notes" onchange="flights[${i}].notes=this.value;updateAutoPrice();">${escapeHtml(f.notes || "")}</textarea>
       ${renderOperatorFlightSegments(f)}
+      ${flightYearConflicts(f).length ? `<button type="button" onclick="reconcileFlightSegmentDates(${i})">Reconcile flight dates (source confirmation required)</button>` : ""}
       <button type="button" onclick="removeFlight(${i})">Remove Flight</button>
     </div>
   `).join("");
