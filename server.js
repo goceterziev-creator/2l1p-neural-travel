@@ -24,6 +24,7 @@ const {
   normalizeTravelDate, extractTime
 } = require("./server/travel-normalizers/date-normalizer");
 const hotelOccupancyQa = require("./public/hotel-occupancy");
+const flightDataConsistency = require("./public/flight-data-consistency");
 const gt63FlightDisplayBg = require("./gt63-core/flight-display-bg");
 globalThis.GT63FlightDisplayBg = gt63FlightDisplayBg;
 globalThis.GT63LuxuryV11Renderer = require("./gt63-core/luxury-v11-renderer");
@@ -1247,6 +1248,11 @@ function offerWithResolvedFlightDates(offer = {}, now = new Date()) {
   }
   return copy;
 }
+function assertFlightDataConsistency(body) {
+  const conflicts = flightDataConsistency.offerConflicts(body);
+  if (conflicts.length) throw routeError("AYA_FLIGHT_DATA_CONFLICT", 422, { conflicts });
+}
+
 function assertFlightDateSafety(offer) {
   const verdict = flightDateSafety(offer);
   if (!verdict.ready) {
@@ -1453,6 +1459,9 @@ function cleanFlightNotes(value = "") {
 
 function fillFlightDisplayFallbacks(flight = {}, offer = {}) {
   const next = { ...flight };
+  // Structured source dates take precedence over an offer-period display fallback.
+  if (isMissingFlightDisplay(next.departure) && safeArray(next.outboundSegments).length) next.departure = flightDataConsistency.summary(next.outboundSegments);
+  if (isMissingFlightDisplay(next.arrival) && safeArray(next.inboundSegments).length) next.arrival = flightDataConsistency.summary(next.inboundSegments);
   const period = inferTravelPeriod(offer);
   const route = String(next.route || "").replace(/→/g, "->");
   const routeParts = route.split("/").map((part) => String(part || "").replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -8554,6 +8563,8 @@ async function dismissOfferWarning() {
 </html>`;
 }
 
+app.get("/travel-date-normalizer.js", (req, res) => res.sendFile(path.join(__dirname, "server/travel-normalizers/date-normalizer.js")));
+
 app.get("/login", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "login.html")));
 app.get("/register", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "register.html")));
 
@@ -9046,6 +9057,7 @@ app.post("/api/offers", requireCapability("offers.create"), async (req, res) => 
   try {
     let response;
     await mutateDb((db) => {
+      assertFlightDataConsistency(req.body);
       const offer = normalizeOffer(req.body);
       assertClientStatusSafety(offer);
       offer.agencyId = getCurrentAgencyId(req);
@@ -9092,6 +9104,7 @@ app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) 
       if (typeof expectedVersion !== "string" || expectedVersion !== offerRecordVersion(previous)) {
         throw routeError("Offer changed or version missing. Reopen the offer before saving; your edits have not been saved.", 409, { code: "OFFER_VERSION_CONFLICT" });
       }
+      assertFlightDataConsistency(req.body);
       const normalized = normalizeOffer(req.body);
       const previousWarnings = uniqueWarnings(previous.validationWarnings).join("\n");
       const nextWarnings = uniqueWarnings(normalized.validationWarnings).join("\n");
@@ -9818,15 +9831,7 @@ function validateGeminiFlightJson(value = {}) {
 }
 
 function formatGeminiSegmentSummary(segments = [], fallback = "") {
-  const first = safeArray(segments)[0];
-  const last = safeArray(segments)[safeArray(segments).length - 1];
-  if (!first || !last) return fallback;
-  const via = safeArray(segments).slice(1)
-    .map((segment) => segment.from)
-    .filter((code, index, list) => code && code !== first.from && code !== last.to && list.indexOf(code) === index);
-  const route = `${first.from || "-"} -> ${last.to || "-"}`;
-  const times = [first.departure, last.arrival].filter(Boolean).join(" - ");
-  return [route, times, via.length ? `via ${via.join(" + ")}` : ""].filter(Boolean).join(", ");
+  return flightDataConsistency.summary(segments, fallback);
 }
 
 function geminiCanonicalToFlight(gemini = {}) {
