@@ -16,3 +16,58 @@ test('incompatible combined segment identities cannot be silently discarded by a
 test('explicit Review action can edit consistent historical dates; cancel still preserves data',()=>{const f=api.resolve(fixture(),'segments'),before=JSON.stringify(f);assert.equal(ui([]).review(f,true),null);assert.equal(JSON.stringify(f),before);const u=ui(['MANUAL','2026-11-16','2026-11-16','2026-11-20','2026-11-20']);const n=u.review(f,true);assert(api.inspect(n).ok);assert.equal(n.outboundSegments[0].departure,'2026-11-16T13:25');});
 
 test('legacy top-level structured create fields receive the same consistency protection',()=>{const f=fixture();assert(api.offerConflicts({flightDeparture:f.departure,flightArrival:f.arrival,flightOutboundSegments:f.outboundSegments,flightInboundSegments:f.inboundSegments}).length);const clean=api.resolve(f,'segments');assert.equal(api.offerConflicts({flightDeparture:clean.departure,flightArrival:clean.arrival,flightOutboundSegments:clean.outboundSegments,flightInboundSegments:clean.inboundSegments}).length,0);});
+
+// PR #31 review F1: a single date names the departure day of that leg.
+// It neither asserts nor authorizes any arrival date; the safety gate reads all segments.
+function singleDateReviewFixture() {
+  const f = api.resolve(fixture(), 'summary');
+  f.departure = '16.11.2026';
+  f.arrival = '20.11.2026'; // Inbound-leg departure, despite the legacy field name.
+  f.outboundSegments[0].departure = '2026-11-16T23:30';
+  f.outboundSegments[0].arrival = '2026-11-17T01:30';
+  return f;
+}
+function existingSafetyGate() {
+  const source = fs.readFileSync(path.resolve(__dirname, '../server.js'), 'utf8');
+  class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : ['2026-11-14T12:00:00Z'])); } }
+  const ctx = vm.createContext({ Date: FixedDate,
+    normalizeTravelDate: require('../server/travel-normalizers/date-normalizer').normalizeTravelDate,
+    safeArray: value => Array.isArray(value) ? value : [], getFlights: offer => offer.flights || [],
+    toNumber: (value, fallback = 0) => Number(value) || fallback,
+    hotelOccupancyQa: require('../public/hotel-occupancy') });
+  vm.runInContext(source.slice(source.indexOf('function routeError('), source.indexOf('function getUserId(')) +
+    source.slice(source.indexOf('function inferYearFromText('), source.indexOf('function flightDateKey(')), ctx);
+  return ctx;
+}
+test('PR31 F1: single-date summaries anchor outbound/inbound departure, preserving valid overnight arrival', () => {
+  const f = singleDateReviewFixture(), before = JSON.stringify(f);
+  assert.equal(api.inspect(f).ok, true);
+  assert.equal(existingSafetyGate().flightDateSafety({ travelDates: '16.11.2026 - 20.11.2026', flights: [f] }).ready, true);
+  const wrongReturn = structuredClone(f); wrongReturn.arrival = '19.11.2026';
+  assert.equal(api.inspect(wrongReturn).ok, false);
+  assert.equal(JSON.stringify(f), before);
+});
+test('PR31 F1: single summary does not hide explicit arrival2027 from live READY/SENT/BOOKED safety', () => {
+  const f = singleDateReviewFixture(); f.outboundSegments[0].arrival = '2027-11-17T01:30';
+  const offer = {travelDates:'16.11.2026 - 20.11.2026', flights:[f]}, before = JSON.stringify(offer);
+  assert.equal(api.inspect(f).ok, true); // Partial summary consistency is not flight safety.
+  const gate = existingSafetyGate(), verdict = gate.flightDateSafety(offer);
+  assert.equal(verdict.ready, false);
+  assert(verdict.warnings.some(w => w.includes('2027-11-17') && w.includes('извън периода')));
+  for (const status of ['ready','sent','booked']) {
+    assert.throws(() => gate.assertClientStatusSafety({...offer,status}), error =>
+      error.status === 422 && error.code === 'AYA_FLIGHT_DATE_BLOCKED');
+  }
+  assert.equal(JSON.stringify(offer), before);
+});
+test('PR31 F1: single summary cannot authorize arrival inference or automatic year correction', () => {
+  const f = singleDateReviewFixture(); f.outboundSegments[0].arrival = '2027-11-17T01:30';
+  const before = JSON.stringify(f);
+  assert.throws(() => api.resolve(f,'summary'), /one explicit departure and arrival date per segment/);
+  assert.equal(ui(['SUMMARY']).review(f,true), null);
+  assert.equal(JSON.stringify(f), before);
+  const unknown = structuredClone(f); unknown.outboundSegments[0].arrival = '';
+  assert.equal(api.inspect(unknown).ok, false);
+  const alias = structuredClone(f); alias.outboundSegments[0].arrivalDate = '2026-11-17';
+  assert.equal(api.inspect(alias).ok, false);
+});

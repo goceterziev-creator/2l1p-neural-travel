@@ -71,3 +71,19 @@ An early full run correctly exposed the period-based fallback conflict described
 - Local acceptance uses a frozen synthetic scenario in the future relative to execution on2026-11-14. It does not validate real supplier availability, production records or original import artifacts.
 - External notifications are NOT VERIFIED. Production validation remains pending a separately authorized deployment and controlled QA.
 - No production offer, database, configuration, deployment or MACHINE authority was changed. No merge/deployment is authorized by this report.
+
+## PR #31 independent review follow-up — F1 single-date summaries
+
+Reviewed commit: `169e4176ccd6415f90b76c1a6e25f91430072d5d`; local follow-up changes only this document and the consistency regression test. Runtime source is unchanged.
+
+Rule: a single date in `flight.departure` denotes the outbound leg's first departure day; a single date in the legacy `flight.arrival` summary denotes the inbound leg's first departure day. It makes **no assertion about the arrival date**. This is compatible with the existing `parseBookingLastminuteFlightModal()` path, whose `formatLeg(leg,date,number)` emits one date plus departure/arrival clocks. A valid overnight arrival must not be forced onto the departure's calendar day.
+
+`inspect().ok` means the supplied summary assertions do not contradict segments; it does not mean Flight-Date Safety is ready or every date has been operator-confirmed. The safety gate independently checks every segment departure/arrival and aliases against the real offer period and current server day. There is no inference of arrival year from a single summary date. `resolve(...,'summary')` requires explicit departure AND arrival dates per segment and rejects a single-date summary; explicit per-segment MANUAL review or retaining source segments remains necessary.
+
+Three new targeted regressions cover:
+
+1. Single outbound/inbound departure dates with a valid overnight arrival: consistency and safety pass; an incorrect inbound departure summary fails consistency.
+2. Exact review example `16.11.2026` / departure `2026-11-16T23:30` / arrival `2027-11-17T01:30`: partial summary consistency passes, live safety fails with an out-of-period warning, and the actual `assertClientStatusSafety()` rejects READY/SENT/BOOKED with status422/code `AYA_FLIGHT_DATE_BLOCKED`. Raw values remain unchanged. This is an extracted real server-function regression, not a new HTTP or production run.
+3. Single summary cannot authorize automatic arrival-year correction: SUMMARY resolution and operator Review reject it without mutation. Missing arrival or contradictory arrival aliases fail consistency.
+
+Execution: `node test/flight-data-consistency-regression.js` — exit0, **15/15 PASS**, including the three new F1 cases. Fixed server-date context: 2026-11-14 UTC. No full HTTP/print suite was repeated because runtime code is unchanged. F1 verdict: **CLOSED — documented partial-summary contract, no demonstrated safety bypass**. Production validation and independent full-suite execution remain separate limitations.
