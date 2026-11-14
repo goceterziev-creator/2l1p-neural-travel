@@ -6192,6 +6192,10 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
 
   const input = hotelOccupancyQa.applyToInput(proposalInput, offer);
   if (!input) return "";
+  // Recompute generated flight findings on the detached presentation input only.
+  input.warnings = flightSafetyWarnings({
+    ...offer, validationWarnings: [...safeArray(offer.validationWarnings), ...safeArray(input.warnings)]
+  });
   input.contact = {
     ...(input.contact || {}),
     whatsappPhone: AGENCY_WHATSAPP_PHONE
@@ -6263,6 +6267,10 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     error.code = "GT63_PRINT_INVALID_PROPOSAL_INPUT";
     throw error;
   }
+  // Recompute generated flight findings on the detached presentation input only.
+  input.warnings = flightSafetyWarnings({
+    ...offer, validationWarnings: [...safeArray(offer.validationWarnings), ...safeArray(input.warnings)]
+  });
   input.contact = {
     ...(input.contact || {}),
     whatsappPhone: AGENCY_WHATSAPP_PHONE
@@ -7133,7 +7141,7 @@ async function renderOfferHtml(offer, options = {}) {
   const { forPdf = false, showWarnings = true, qaMode = false } = options;
   const flights = getFlights(offer).map((flight) => withBulgarianFlightDisplay(flight));
   const hotels = getHotels(offer);
-  const validationWarnings = safeArray(offer.validationWarnings);
+  const validationWarnings = flightSafetyWarnings(offer);
   const hasWarnings = showWarnings && validationWarnings.length > 0 && (qaMode || !offer.warningsDismissed);
   const clientLink = `${LIVE_BASE_URL}/api/offers/view/${offer.id}`;
   const pdfLink = `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`;
