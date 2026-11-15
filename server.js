@@ -8491,7 +8491,7 @@ h1 {
       </div>
       <div class="hero-meta">
         <div><strong>Период:</strong> ${escapeHtml(offer.travelDates || "-")}</div>
-        <div><strong>Полетни пътници:</strong> ${escapeHtml(offer.guests || "-")}</div>
+        <div><strong>Пътуващи в офертата:</strong> ${escapeHtml(offer.guests || "-")}</div>
       </div>
       <div class="price" data-client-price>${formatMoney(offer.finalPrice, offer.currency)}</div>
       <div class="included">

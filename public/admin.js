@@ -3484,6 +3484,25 @@ async function saveOffer() {
   payload.flights = flights.map(normalizeFlightFields);
   payload.hotels = dedupeHotelOptionImages(hotels);
 
+  // Keep the offer-level guest summary consistent with independently confirmed
+  // hotel occupancy. Never infer children or silently overwrite operator input.
+  const selectedHotelForGuests = payload.hotels.find((item) => item.selected) || payload.hotels[0];
+  const confirmedOccupancy = globalThis.AYAHotelOccupancy.normalize(selectedHotelForGuests?.occupancy);
+  const adultsOnlyGuests = String(payload.guests || "").match(/^\s*(\d+)\s*(?:възрастни|възрастен|adults?)\s*$/i);
+  if (
+    confirmedOccupancy.confirmed &&
+    confirmedOccupancy.adults > 0 &&
+    confirmedOccupancy.children > 0 &&
+    adultsOnlyGuests &&
+    Number(adultsOnlyGuests[1]) === confirmedOccupancy.adults
+  ) {
+    const correctedGuests = `${confirmedOccupancy.adults} възрастни и ${confirmedOccupancy.children} деца`;
+    if (confirm(`Общите пътуващи в офертата са "${payload.guests}", но потвърдената хотелска заетост е "${correctedGuests}". Да актуализирам ли полето Guests преди запис? Това не потвърждава броя пътници по самолетните билети; проверете ги отделно.`)) {
+      payload.guests = correctedGuests;
+      if ($("guests")) $("guests").value = correctedGuests;
+    }
+  }
+
   const destinationValue = payload.destination || "";
 
   const flightForValidation = {

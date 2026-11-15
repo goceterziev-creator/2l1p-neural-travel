@@ -20,7 +20,7 @@ const serverSource = fs.readFileSync(filename, "utf8");
 const harness = new Module(filename, module);
 harness.filename = filename;
 harness.paths = Module._nodeModulePaths(path.dirname(filename));
-harness._compile(serverSource + "\nmodule.exports.qaTest = { renderOfferHtml };", filename);
+harness._compile(serverSource + "\nmodule.exports.qaTest = { renderOfferHtml, flightDateSafety };", filename);
 const { normalizeOffer, buildValidationWarnings } = harness.exports;
 const admin = fs.readFileSync(path.join(__dirname, "../public/admin.js"), "utf8");
 function section(source, start, end) {
@@ -183,7 +183,13 @@ test("Bulgarian findings classify by category while INFO and CRITICAL take prece
 });
 
 test("warningsDismissed hides neither active QA findings nor readiness blockers", () => {
-  const offer = normalizeOffer(input()); offer.validationWarnings = [stale];
+  // Model the authenticated API projection, not a normalized record without its live verdict.
+  const future = input(); future.travelDates = "16.11.2099 - 20.11.2099";
+  future.flights[0].departure = "16.11.2099"; future.flights[0].arrival = "20.11.2099";
+  const offer = normalizeOffer(future);
+  offer.flightDateSafety = harness.exports.qaTest.flightDateSafety(offer);
+  assert.equal(offer.flightDateSafety.ready, true);
+  offer.validationWarnings = [stale];
   const score = browser.qaScore(offer);
   assert.equal(browser.offerReadyToSend(offer), false);
   offer.warningsDismissed = true;
@@ -193,4 +199,8 @@ test("warningsDismissed hides neither active QA findings nor readiness blockers"
   offer.validationWarnings = ["[INFO] Полетът каца в CIA; проверете трансфера до хотела."];
   assert.equal(browser.qaScore(offer), 100);
   assert.equal(browser.offerReadyToSend(offer), true);
+  offer.flights[0].departure = "16.11.2020";
+  offer.flightDateSafety = harness.exports.qaTest.flightDateSafety(offer);
+  assert.equal(offer.flightDateSafety.ready, false);
+  assert.equal(browser.offerReadyToSend(offer), false, "INFO and dismissal cannot override a real flight-date failure");
 });
