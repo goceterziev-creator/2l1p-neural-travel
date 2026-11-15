@@ -29,6 +29,43 @@
     if (/\b\d{5,}\b/.test(String(value)) || [...String(value || "").matchAll(/\b(?:19|20|21)\d{2}\b/g)].some(match=>!years.has(match[0])) || [...String(value || "").matchAll(/\b\d{1,2}[./]\d{1,2}[./](\d+)\b/g)].some(match=>match[1].length!==4)) parsedTokens.push({raw:String(value),key:null});
     return parsedTokens;
   }
+  // Join a separately extracted source date to a clock-only value; never infer a day.
+  function clockOnly(value) {
+    const raw = String(value || "").trim();
+    const match = raw.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+    if (!match) return false;
+    const hour = Number(match[1]);
+    return Number(match[2]) < 60 && (match[3] ? hour >= 1 && hour <= 12 : hour < 24);
+  }
+  function segmentDateTime(segment, side) {
+    const raw = String(segment[side] || "").trim();
+    const aliases = (side === "departure" ? [segment.departureDate, segment.date] : [segment.arrivalDate])
+      .map(value => String(value || "").trim()).filter(Boolean);
+    const separateTime = String(segment[side + "Time"] || "").trim();
+    if (dates.extractTime(raw) && clockOnly(separateTime) && dates.extractTime(raw) !== dates.extractTime(separateTime)) throw new Error("Conflicting source segment clocks");
+    const dateValues = [raw, ...aliases].filter(value => tokens(value).length);
+    const parsed = dateValues.map(value => tokens(value));
+    if (parsed.some(items => items.length !== 1 || !items[0].key)) throw new Error("Ambiguous source segment date");
+    const keys = parsed.map(items => items[0].key);
+    if (new Set(keys.map(key => key.slice(5))).size > 1 || new Set(keys.map(key => key.slice(0,4)).filter(year => year !== "????")).size > 1) throw new Error("Conflicting source segment date aliases");
+    const sourceDate = aliases.find(value => tokens(value)[0]?.key && !tokens(value)[0].key.startsWith("????"))
+      || aliases.find(value => tokens(value).length === 1);
+    if (raw && !clockOnly(raw)) {
+      const originalDate = tokens(raw)[0];
+      if (originalDate?.key?.startsWith("????") && sourceDate && !tokens(sourceDate)[0].key.startsWith("????")) return raw.replace(originalDate.raw, tokens(sourceDate)[0].raw);
+      if (originalDate?.key && !dates.extractTime(raw) && clockOnly(separateTime)) return [raw, separateTime].join(" ");
+      return raw; // Explicit historical/invalid values are not repaired.
+    }
+    const time = raw || String(segment[side + "Time"] || "").trim();
+    if (time && !clockOnly(time)) return raw || time;
+    if (!sourceDate) return raw || time;
+    const sourceClock = dates.extractTime(sourceDate);
+    if (sourceClock) {
+      if (time && sourceClock !== dates.extractTime(time)) throw new Error("Conflicting source segment clocks");
+      return sourceDate;
+    }
+    return [sourceDate, time].filter(Boolean).join(" ");
+  }
   const identity = segment => [segment?.flightNumber || segment?.flightNo || "", segment?.from || segment?.departureAirport || "", segment?.to || segment?.arrivalAirport || ""].map(x => String(x).replace(/\s+/g, "").toUpperCase()).join("|");
   const dateKeys = value => tokens(value).map(x => x.key);
   const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
@@ -115,7 +152,7 @@
           const key = choice === "summary" ? supplied[index*2+offset]?.key : choice === "segments" ? tokens(segment[side])[0]?.key : reviewedDates?.[leg]?.[index]?.[side];
           if (!calendar(key)) throw new Error("An explicit valid YYYY-MM-DD is required for every segment");
           const sourceTokens = tokens(segment[side]);
-          if (sourceTokens.length !== 1 || !sourceTokens[0].key) throw new Error("Ambiguous original segment; correct its source explicitly");
+          if ((sourceTokens.length !== 1 || !sourceTokens[0].key) && !(choice === "manual" && clockOnly(segment[side]))) throw new Error("Ambiguous original segment; correct its source explicitly");
           result[side] = redated(segment[side],key);
           for (const alias of side === "departure" ? ["date","departureDate"] : ["arrivalDate"]) if (Object.hasOwn(result,alias)) result[alias] = redated(result[alias],key);
         }
@@ -153,5 +190,5 @@
     }
     return conflicts;
   }
-  return {inspect,resolve,tokens,calendar,offerConflicts,summary};
+  return {inspect,resolve,tokens,calendar,offerConflicts,summary,segmentDateTime};
 });

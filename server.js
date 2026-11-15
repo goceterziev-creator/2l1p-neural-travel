@@ -9690,20 +9690,16 @@ function joinVisionDateTime(date = "", time = "") {
 }
 
 function normalizeVisionSegment(segment = {}) {
-  const departureDateTime = firstVisionValue(
+  const departureDateTime = flightDataConsistency.segmentDateTime({ ...segment, departure: firstVisionValue(
     segment.departure,
     segment.departureDateTime,
-    segment.departure_datetime,
-    joinVisionDateTime(segment.departureDate, segment.departureTime),
-    joinVisionDateTime(segment.date, segment.departureTime)
-  );
-  const arrivalDateTime = firstVisionValue(
+    segment.departure_datetime
+  ) }, "departure");
+  const arrivalDateTime = flightDataConsistency.segmentDateTime({ ...segment, arrival: firstVisionValue(
     segment.arrival,
     segment.arrivalDateTime,
-    segment.arrival_datetime,
-    joinVisionDateTime(segment.arrivalDate, segment.arrivalTime),
-    joinVisionDateTime(segment.date, segment.arrivalTime)
-  );
+    segment.arrival_datetime
+  ) }, "arrival");
   return {
     from: firstVisionValue(
       segment.from,
@@ -9993,6 +9989,8 @@ async function postGeminiVisionWithRetry({
   return last || { response: null, payload: {}, model: "", attempt: 0, status: 0, message: "Gemini request failed" };
 }
 
+const FLIGHT_SCREENSHOT_DATE_RULE = "For EVERY segment departure and arrival, retain the visibly associated day/month from itinerary date headings, including explicit next-day labels. Do not return only a clock when its date is visible. If the year is absent, retain day/month without a year; never guess the current year or borrow a hotel year. Do not assume arrival is on the departure day. If a heading cannot be associated unambiguously, leave the date missing and add a warning.";
+
 async function extractFlightWithGeminiVision(files = [], { destination = "" } = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -10007,6 +10005,7 @@ async function extractFlightWithGeminiVision(files = [], { destination = "" } = 
     "Return JSON only. Do not add markdown. Do not guess invisible fields.",
     "Use IATA airport codes when visible. Use ISO-like YYYY-MM-DDTHH:MM when dates are visible enough; otherwise keep the visible text.",
     "Extract outbound and inbound segments, price, currency, baggage, passengers, and visible dates.",
+    FLIGHT_SCREENSHOT_DATE_RULE,
     destination ? `Expected destination context: ${destination}` : "",
     "Schema keys: outbound.segments[], inbound.segments[], price, currency, baggage, passengers, dates."
   ].filter(Boolean).join("\n");
@@ -10069,6 +10068,7 @@ async function extractFlightWithOpenAiVision(files = [], { destination = "" } = 
     "Return JSON only. Do not add markdown. Do not guess invisible fields.",
     "Use IATA airport codes when visible. Use ISO-like YYYY-MM-DDTHH:MM when dates are visible enough; otherwise keep the visible text.",
     "Extract outbound and inbound segments, price, currency, baggage, passengers, and visible dates.",
+    FLIGHT_SCREENSHOT_DATE_RULE,
     "Do not extract hotel details. If no flight is visible, return the same schema with empty segment arrays.",
     "Return exactly these top-level keys: outbound, inbound, price, currency, baggage, passengers, dates.",
     "Each outbound and inbound object must contain a segments array.",
@@ -10310,8 +10310,8 @@ function normalizeUniversalSegment(segment = {}) {
     duration: String(segment.duration || "").trim(),
     from: departureAirport,
     to: arrivalAirport,
-    departure: [departureDate, departureTime].filter(Boolean).join(" ").trim(),
-    arrival: [arrivalDate, arrivalTime].filter(Boolean).join(" ").trim()
+    departure: flightDataConsistency.segmentDateTime(segment, "departure"),
+    arrival: flightDataConsistency.segmentDateTime(segment, "arrival")
   };
 }
 
@@ -10390,8 +10390,8 @@ function universalFlightToOfferFlight(universalFlight = {}) {
   const outboundSegments = safeArray(universalFlight.outbound?.segments).map((segment) => ({
     from: segment.departureAirport || segment.from || "",
     to: segment.arrivalAirport || segment.to || "",
-    departure: segment.departure || [segment.departureDate, segment.departureTime].filter(Boolean).join(" ").trim(),
-    arrival: segment.arrival || [segment.arrivalDate, segment.arrivalTime].filter(Boolean).join(" ").trim(),
+    departure: flightDataConsistency.segmentDateTime(segment, "departure"),
+    arrival: flightDataConsistency.segmentDateTime(segment, "arrival"),
     airline: segment.airline || "",
     flightNumber: segment.flightNumber || "",
     duration: segment.duration || ""
@@ -10399,8 +10399,8 @@ function universalFlightToOfferFlight(universalFlight = {}) {
   const inboundSegments = safeArray(universalFlight.inbound?.segments).map((segment) => ({
     from: segment.departureAirport || segment.from || "",
     to: segment.arrivalAirport || segment.to || "",
-    departure: segment.departure || [segment.departureDate, segment.departureTime].filter(Boolean).join(" ").trim(),
-    arrival: segment.arrival || [segment.arrivalDate, segment.arrivalTime].filter(Boolean).join(" ").trim(),
+    departure: flightDataConsistency.segmentDateTime(segment, "departure"),
+    arrival: flightDataConsistency.segmentDateTime(segment, "arrival"),
     airline: segment.airline || "",
     flightNumber: segment.flightNumber || "",
     duration: segment.duration || ""
@@ -10582,6 +10582,7 @@ async function extractUniversalTravelWithGemini(files = [], { destination = "", 
     "Extract only information visible in screenshots. Do not invent missing values.",
     "Keep flight and hotel data separate even when one screenshot contains both.",
     "Preserve multi-segment and multi-airline itineraries.",
+    FLIGHT_SCREENSHOT_DATE_RULE,
     "Use empty strings or empty arrays for missing values.",
     "Add warnings for missing or uncertain critical fields.",
     destination ? `Operator destination context: ${destination}` : ""
