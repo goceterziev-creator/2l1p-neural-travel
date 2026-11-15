@@ -969,7 +969,7 @@
             </div>
           </div>
           <div class="v11-hero-visual">
-            <img class="js-selected-option-image" src="${escapeHtml(heroImage)}" alt="${escapeHtml(selectedPayload.name)}" ${heroImage ? "" : "hidden"}>
+            <img class="${abuDhabiHero ? "js-destination-hero-image" : "js-selected-option-image"}" src="${escapeHtml(heroImage)}" alt="${escapeHtml(abuDhabiHero ? title : selectedPayload.name)}" ${heroImage ? "" : "hidden"}>
             ${heroImage ? "" : '<div class="v11-hotel-image-placeholder js-selected-option-image-placeholder" data-hotel-image-placeholder="true"><span>&#1057;&#1085;&#1080;&#1084;&#1082;&#1072;&#1090;&#1072; &#1085;&#1072; &#1093;&#1086;&#1090;&#1077;&#1083;&#1072; &#1097;&#1077; &#1073;&#1098;&#1076;&#1077; &#1087;&#1086;&#1090;&#1074;&#1098;&#1088;&#1076;&#1077;&#1085;&#1072; &#1087;&#1088;&#1077;&#1076;&#1080; &#1088;&#1077;&#1079;&#1077;&#1088;&#1074;&#1072;&#1094;&#1080;&#1103;.</span></div>'}
           </div>
           <div class="v11-price-card">
