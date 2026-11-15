@@ -948,7 +948,13 @@
     const heroSubtitle = rawHeroSubtitle && !/curated private travel proposal|multi-hotel brief|ready|review/i.test(rawHeroSubtitle)
       ? rawHeroSubtitle
       : `Подбрана персонална оферта за Вашето пътуване${title ? ` до ${title}` : ""}.`;
-    const heroImage = firstHotelImage(selectedHotel, input);
+    // The cover represents the destination, not whichever hotel is selected.
+    // CC0 photo: "Abu Dhabi seen from Qasr Al Watan 6" by EditQ, Wikimedia Commons.
+    const destinationName = String(input.destination?.name || input.destination?.requested || input.content?.heroTitle || "").toLowerCase();
+    const abuDhabiHero = /(?:abu[\\s-]*dhabi|абу[\\s-]*даби)/i.test(destinationName)
+      ? "https://commons.wikimedia.org/wiki/Special:FilePath/Abu_Dhabi_seen_from_Qasr_Al_Watan_6.jpg?width=1600"
+      : "";
+    const heroImage = abuDhabiHero || firstHotelImage(selectedHotel, input);
     const facts = viewModel.heroFacts;
 
     return `
