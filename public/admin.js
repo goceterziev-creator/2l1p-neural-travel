@@ -3497,7 +3497,7 @@ async function saveOffer() {
     Number(adultsOnlyGuests[1]) === confirmedOccupancy.adults
   ) {
     const correctedGuests = `${confirmedOccupancy.adults} възрастни и ${confirmedOccupancy.children} деца`;
-    if (confirm(`Полетните пътници в офертата са "${payload.guests}", но потвърдената хотелска заетост е "${correctedGuests}". Да актуализирам ли полето Guests преди запис?`)) {
+    if (confirm(`Общите пътуващи в офертата са "${payload.guests}", но потвърдената хотелска заетост е "${correctedGuests}". Да актуализирам ли полето Guests преди запис? Това не потвърждава броя пътници по самолетните билети; проверете ги отделно.`)) {
       payload.guests = correctedGuests;
       if ($("guests")) $("guests").value = correctedGuests;
     }
