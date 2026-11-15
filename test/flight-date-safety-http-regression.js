@@ -38,8 +38,16 @@ return {clientName:'QA ONLY',destination:'Rome',travelDates:kind==='old'?'16.11 
     if(kind==='dateAlias'){segment.departureDate=segment.departure;delete segment.departure;segment.date='2020-11-16T10:30';}
     else segment.arrivalDate='2099-11-17T10:30';
   }
-  if(kind==='proposal'){payload.proposalInput=require('../gt63-core/legacy-offer-print-input').buildLegacyOfferPrintInput({...payload,id:'synthetic'});payload.proposalInput.flight.outboundSegments[0].departure='2020-11-16T10:30';}
-  const created=await http('/api/offers','POST',payload);assert.equal(created.status,200);const id=created.data.offer.id,url='/api/offers/'+id;
+  if(kind==='proposal'){payload.proposalInput=structuredClone(require('../gt63-core/legacy-offer-print-input').buildLegacyOfferPrintInput({...payload,id:'synthetic'}));payload.proposalInput.flight.outboundSegments[0].departure='2020-11-16T10:30';}
+  const consistencyInvalid=['ambiguous','proposal','dateAlias','multiDate','aliasConflict'].includes(kind);
+  const createBefore=snapshot(),created=await http('/api/offers','POST',payload);let id;
+  if(consistencyInvalid){
+   assert.equal(created.status,422);assert.equal(created.data.error,'AYA_FLIGHT_DATA_CONFLICT');assert.equal(snapshot(),createBefore);
+   // Existing legacy records must remain readable even though new contradictory writes are refused.
+   id='SYNTHETIC-LEGACY-'+kind;const db=JSON.parse(snapshot());db.offers.push({...payload,id,agencyId:'AGY-AYA',createdBy:'QA',currency:'EUR',finalPrice:315,basePrice:300,hotelPrice:100,flightPrice:200,validationWarnings:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});fs.writeFileSync(dbfile,JSON.stringify(db));
+   log(kind+' contradictory create rejected; isolated legacy fixture seeded',{status:422,error:'AYA_FLIGHT_DATA_CONFLICT',noMutation:true});
+  }else{assert.equal(created.status,200);id=created.data.offer.id;}
+  const url='/api/offers/'+id;
   let detail=await http(url);assert.equal(detail.status,200);
   if(kind==='secondFlight')assert.equal(detail.data.offer.flights.length,2);
   const flightValid=['valid','isoPeriod','missing','fr625','occupancy'].includes(kind),valid=flightValid&&kind!=='occupancy';
@@ -93,13 +101,14 @@ return {clientName:'QA ONLY',destination:'Rome',travelDates:kind==='old'?'16.11 
   detail=await http(url);
   if(!valid){
    const error=flightValid?'AYA_HOTEL_OCCUPANCY_BLOCKED':'AYA_FLIGHT_DATE_BLOCKED';
+   const writeError=consistencyInvalid?'AYA_FLIGHT_DATA_CONFLICT':error;
    const denied=[...['ready','sent','booked'].map(status=>[url+'/status','PATCH',{status}]),...['ready','sent','booked'].map(status=>[url,'PUT',{...detail.data.offer,status,expectedVersion:detail.data.offerVersion}]),[url+'/book','POST',{}]];
    if(!flightValid)denied.push([url+'/click','POST',{}]);
-   for(const [route,method,body] of denied){const before=snapshot(),r=await http(route,method,body);assert.equal(r.status,422);assert.equal(r.data.error,error);assert.equal(snapshot(),before);log(kind+' denied '+method+' '+route,{status:422,error,noMutation:true});}
-   for(const status of ['ready','sent','booked']){const before=snapshot(),r=await http('/api/offers','POST',{...payload,status});assert.equal(r.status,422);assert.equal(r.data.error,error);assert.equal(snapshot(),before);}
+   for(const [route,method,body] of denied){const before=snapshot(),r=await http(route,method,body);assert.equal(r.status,422);assert.equal(r.data.error,(method==='PUT'?writeError:error),JSON.stringify(r.data));assert.equal(snapshot(),before);log(kind+' denied '+method+' '+route,{status:422,error:method==='PUT'?writeError:error,noMutation:true});}
+   for(const status of ['ready','sent','booked']){const before=snapshot(),r=await http('/api/offers','POST',{...payload,status});assert.equal(r.status,422);assert.equal(r.data.error,writeError);assert.equal(snapshot(),before);}
    const before=snapshot(),pre=await http(url+'/qa-preview');assert.equal(pre.status,200);assert(pre.text.includes('INTERNAL QA'));assert.equal(snapshot(),before);
-   detail=await http(url);const edit=await http(url,'PUT',{...detail.data.offer,notes:'Draft edit allowed',expectedVersion:detail.data.offerVersion});assert.equal(edit.status,200);
-   log(kind+' protected create / internal QA / draft edit',{createBlocked:422,preview:200,draftPut:200});
+   detail=await http(url);const editBefore=snapshot(),edit=await http(url,'PUT',{...detail.data.offer,notes:'Draft edit allowed',expectedVersion:detail.data.offerVersion});assert.equal(edit.status,consistencyInvalid?422:200);if(consistencyInvalid){assert.equal(edit.data.error,'AYA_FLIGHT_DATA_CONFLICT');assert.equal(snapshot(),editBefore);}
+   log(kind+' protected create / internal QA / draft edit',{createBlocked:422,preview:200,draftPut:consistencyInvalid?422:200});
   }else{
    const edit=await http(url,'PUT',{...detail.data.offer,notes:'Advisory presentation QA',expectedVersion:detail.data.offerVersion});assert.equal(edit.status,200);
    detail=await http(url);for(const key of ['departure','arrival'])assert.equal(detail.data.offer.flights[0].outboundSegments[0][key],payload.flights[0].outboundSegments[0][key]);

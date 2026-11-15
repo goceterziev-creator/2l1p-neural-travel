@@ -24,14 +24,14 @@ function section(start, end, from = 0) {
 }
 function editor() {
   const fields = {}, cards = { innerHTML: "" };
-  const ctx = vm.createContext({ editingOfferId: null, URL, AYAHotelOccupancy: occupancy, hotels: [], flights: [],
+  const ctx = vm.createContext({ editingOfferId: null, AYAFlightDataConsistency: require("../public/flight-data-consistency"), URL, AYAHotelOccupancy: occupancy, hotels: [], flights: [],
     $: id => fields[id], document: { getElementById: id => id === "hotelCards" ? cards : null },
     setValue: (id, value) => { fields[id] = { value: value ?? "" }; },
     normalizeFlightFields: f => ({ ...f }), firstItem: a => a?.[0] || {},
     renderFlightCards() {}, updateAutoPrice() {}, calculatePricing() {}, alert() {},
     mergeCurrentValidationWarnings() {}, escapeHtml: v => String(v ?? "") });
   ctx.addFlight = f => ctx.flights.push({ ...f });
-  vm.runInContext(section("function isLikelyHotelImageUrl(", "function calculatePricing(") +
+  vm.runInContext(section("function reviewFlightDateConsistency(", "function syncPrimaryFlightDateFields(") + section("function isLikelyHotelImageUrl(", "function calculatePricing(") +
     section("function renderHotelCards(", "function removeHotel(") +
     section("function populateForm(", "async function editOffer(") +
     section("function applyUniversalTravelIntakeResult()", "function getImportedFlightPrice("), ctx);

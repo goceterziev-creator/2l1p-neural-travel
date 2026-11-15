@@ -2888,11 +2888,11 @@
           <div class="row">
             <div>
               <label>Flight Departure</label>
-              <input id="flightDeparture" />
+              <input id="flightDeparture" onchange="reviewMainFlightDateSummaries()" />
             </div>
             <div>
               <label>Flight Arrival</label>
-              <input id="flightArrival" />
+              <input id="flightArrival" onchange="reviewMainFlightDateSummaries()" />
             </div>
           </div>
 
@@ -3127,7 +3127,9 @@
 
   <script src="/data/descriptions.js"></script>
   <script src="/hotel-occupancy.js"></script>
-  <script src="/admin.js?v=20261014-hotel-occupancy"></script>
+  <script src="/travel-date-normalizer.js"></script>
+  <script src="/flight-data-consistency.js"></script>
+  <script src="/admin.js?v=20261114-flight-data-consistency"></script>
 </body>
 </html>
 
