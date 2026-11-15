@@ -951,7 +951,7 @@
     // The cover represents the destination, not whichever hotel is selected.
     // CC0 photo: "Abu Dhabi seen from Qasr Al Watan 6" by EditQ, Wikimedia Commons.
     const destinationName = String(input.destination?.name || input.destination?.requested || input.content?.heroTitle || "").toLowerCase();
-    const abuDhabiHero = /(?:abu[\\s-]*dhabi|абу[\\s-]*даби)/i.test(destinationName)
+    const abuDhabiHero = /(?:abu[\s-]*dhabi|абу[\s-]*даби)/i.test(destinationName)
       ? "https://commons.wikimedia.org/wiki/Special:FilePath/Abu_Dhabi_seen_from_Qasr_Al_Watan_6.jpg?width=1600"
       : "";
     const heroImage = abuDhabiHero || firstHotelImage(selectedHotel, input);
