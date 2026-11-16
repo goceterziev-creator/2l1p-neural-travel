@@ -37,6 +37,11 @@
     const hour = Number(match[1]);
     return Number(match[2]) < 60 && (match[3] ? hour >= 1 && hour <= 12 : hour < 24);
   }
+  // A yearless ISO-like value is accepted only for an explicitly reviewed manual date.
+  function partialDateTime(value) {
+    const match = String(value || "").match(/^(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+    return !!match && calendar(`2000-${match[1]}-${match[2]}`) && Number(match[3]) < 24 && Number(match[4]) < 60;
+  }
   function segmentDateTime(segment, side) {
     const raw = String(segment[side] || "").trim();
     const aliases = (side === "departure" ? [segment.departureDate, segment.date] : [segment.arrivalDate])
@@ -152,7 +157,7 @@
           const key = choice === "summary" ? supplied[index*2+offset]?.key : choice === "segments" ? tokens(segment[side])[0]?.key : reviewedDates?.[leg]?.[index]?.[side];
           if (!calendar(key)) throw new Error("An explicit valid YYYY-MM-DD is required for every segment");
           const sourceTokens = tokens(segment[side]);
-          if ((sourceTokens.length !== 1 || !sourceTokens[0].key) && !(choice === "manual" && clockOnly(segment[side]))) throw new Error("Ambiguous original segment; correct its source explicitly");
+          if ((sourceTokens.length !== 1 || !sourceTokens[0].key) && !(choice === "manual" && (clockOnly(segment[side]) || partialDateTime(segment[side])))) throw new Error("Ambiguous original segment; correct its source explicitly");
           result[side] = redated(segment[side],key);
           for (const alias of side === "departure" ? ["date","departureDate"] : ["arrivalDate"]) if (Object.hasOwn(result,alias)) result[alias] = redated(result[alias],key);
         }

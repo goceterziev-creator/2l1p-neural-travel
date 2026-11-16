@@ -52,8 +52,8 @@ function roundTripRouteKey(flight = {}) {
   return route.includes("/") ? route : "";
 }
 
-function addFlight(flight = {}) {
-  const reviewed = reviewFlightDateConsistency(flight);
+async function addFlight(flight = {}) {
+  const reviewed = await reviewFlightDateConsistencyUI(flight);
   if (!reviewed) return false;
   const cleanFlight = normalizeFlightFields(reviewed);
   const nextFlight = {
@@ -2740,8 +2740,8 @@ async function importData() {
   }
 }
 
-function applyFlightImportResult(data = {}, successMessage = "Flight screenshot imported successfully.") {
-    const reviewed = reviewFlightDateConsistency(data.flight || {});
+async function applyFlightImportResult(data = {}, successMessage = "Flight screenshot imported successfully.") {
+    const reviewed = await reviewFlightDateConsistencyUI(data.flight || {});
     if (!reviewed) return false;
     const f = normalizeFlightFields(reviewed);
     const flightPrice = getImportedFlightPrice(data, f);
@@ -2777,7 +2777,7 @@ function applyFlightImportResult(data = {}, successMessage = "Flight screenshot 
     if ($("flightBaggage")) $("flightBaggage").value = f.baggage || "";
     if ($("flightNotes")) $("flightNotes").value = f.notes || "";
     setValue("flightPrice", flightPrice.toFixed(2));
-    addFlight({ ...f, price: flightPrice });
+    await addFlight({ ...f, price: flightPrice });
 
     calculatePricing();
     if (shouldReviewFlightImport(data) && importWarnings.length) {
@@ -2813,7 +2813,7 @@ async function uploadFlightImage() {
     });
 
     console.log("FLIGHT OCR DATA:", data);
-    applyFlightImportResult(data, "Flight screenshot imported successfully.");
+    await applyFlightImportResult(data, "Flight screenshot imported successfully.");
   } catch (error) {
     console.error("Flight image import failed:", error);
     alert(`Error: ${error.message}`);
@@ -2886,7 +2886,7 @@ async function uploadFlightImageGeminiTest() {
           operatorWarnings: data.parser?.operatorWarnings || []
         };
 
-    applyFlightImportResult(
+    await applyFlightImportResult(
       selected,
       normalizedChoice === "gemini"
         ? "Gemini Vision result applied to the offer."
@@ -3160,7 +3160,7 @@ async function uploadUniversalTravelIntake() {
   }
 }
 
-function applyUniversalTravelIntakeResult() {
+async function applyUniversalTravelIntakeResult() {
   const data = latestUniversalTravelIntake || {};
   let flight = { ...(data.offerFlight || {}) };
   const hotel = { ...(data.offerHotel || {}) };
@@ -3171,7 +3171,7 @@ function applyUniversalTravelIntakeResult() {
   if ($("universalFlightArrival")) flight.arrival = $("universalFlightArrival").value.trim();
   if ($("universalFlightBaggage")) flight.baggage = $("universalFlightBaggage").value.trim();
   if ($("universalFlightPrice")) flight.price = Number($("universalFlightPrice").value || 0);
-  flight = reviewFlightDateConsistency(flight);
+  flight = await reviewFlightDateConsistencyUI(flight);
   if (!flight) return;
 
   if ($("universalHotelName")) hotel.name = $("universalHotelName").value.trim();
@@ -3198,7 +3198,7 @@ function applyUniversalTravelIntakeResult() {
   const convertedHotels = reviewedHotels.map(inEuro);
   Object.assign(flight, inEuro(flight));
   if (flight.route || flight.airline || Number(flight.price || 0) > 0) {
-    addFlight(flight);
+    await addFlight(flight);
     if ($("flightAirline")) $("flightAirline").value = flight.airline || "";
     if ($("flightRoute")) $("flightRoute").value = flight.route || "";
     if ($("flightDeparture")) $("flightDeparture").value = flight.departure || "";
@@ -3473,7 +3473,7 @@ async function saveOffer() {
     const candidate = index === 0 ? {...flight,
       departure: $("flightDeparture")?.value.trim() || flight.departure,
       arrival: $("flightArrival")?.value.trim() || flight.arrival} : flight;
-    const next = reviewFlightDateConsistency(candidate);
+    const next = await reviewFlightDateConsistencyUI(candidate);
     if (!next) return;
     reviewedFlights.push(next);
   }
@@ -3657,13 +3657,44 @@ function renderOperatorFlightSegments(flight = {}) {
   `;
 }
 
-function reviewFlightDateConsistency(flight, forceReview = false) {
+async function reviewFlightDateConsistencyUI(flight, forceReview = false) {
   const api = globalThis.AYAFlightDataConsistency;
   if (!api) { alert("Flight date checker unavailable. Reload before saving."); return null; }
   const analysis = api.inspect(flight);
   if (analysis.ok && !forceReview) return JSON.parse(JSON.stringify(flight));
-  const detail = analysis.ok ? JSON.stringify({departure:flight.departure,arrival:flight.arrival,outboundSegments:flight.outboundSegments,inboundSegments:flight.inboundSegments},null,2) : analysis.conflicts.map(item => `${item.path}: ${item.message}\n${JSON.stringify(item.values)}`).join("\n\n");
-  const choice = prompt(`Противоречиви полетни дати — няма да се записват автоматично.\n\n${detail}\n\nКои стойности потвърждавате?\nSUMMARY — дати от обобщението (само при еднозначно съпоставяне)\nSEGMENTS — запази segment датите и обнови обобщението\nMANUAL — въведи точни дати за всеки сегмент\nCancel — без промяна.`, "");
+  const choice = await new Promise(resolve => {
+    const dialog = document.createElement("dialog");
+    dialog.setAttribute("aria-label", "Потвърждаване на полетни дати");
+    dialog.style.cssText = "max-width: min(90vw, 700px); max-height: 85vh; overflow:auto; padding:20px;";
+    const title = document.createElement("h2");
+    title.textContent = "Изберете източник на полетните дати";
+    const detail = document.createElement("pre");
+    detail.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto";
+    detail.textContent = analysis.ok ? JSON.stringify(flight, null, 2) : analysis.conflicts.map(item => `${item.path}: ${item.message}\n${JSON.stringify(item.values)}`).join("\n\n");
+    dialog.append(title, detail);
+    const finish = value => { dialog.close(); dialog.remove(); resolve(value); };
+    for (const [value, label] of [["summary", "Дати от обобщението"], ["segments", "Дати от сегментите"], ["manual", "Въвеждане на точни дати"], [null, "Отказ — без промяна"]]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.dataset.dateSource = value || "cancel";
+      button.style.cssText = "display:block;width:100%;margin-top:10px;min-height:44px";
+      button.onclick = () => finish(value);
+      dialog.append(button);
+    }
+    dialog.addEventListener("cancel", event => { event.preventDefault(); finish(null); });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+  return reviewFlightDateConsistency(flight, forceReview, choice);
+}
+
+function reviewFlightDateConsistency(flight, forceReview = false, sourceChoice = null) {
+  const api = globalThis.AYAFlightDataConsistency;
+  if (!api) { alert("Flight date checker unavailable. Reload before saving."); return null; }
+  const analysis = api.inspect(flight);
+  if (analysis.ok && !forceReview) return JSON.parse(JSON.stringify(flight));
+  const choice = sourceChoice;
   if (choice === null) return null;
   const selected = choice.trim().toLowerCase();
   const reviewed = {};
@@ -3685,7 +3716,7 @@ function reviewFlightDateConsistency(flight, forceReview = false) {
   try {
     const next = api.resolve(flight, selected, reviewed);
     const changes = ["departure","arrival"].map(key => `${key}\nПреди: ${flight[key] || ""}\nСлед: ${next[key]}`).join("\n\n");
-    if (!confirm(`Потвърждавам изрично проверените полетни дати:\n\n${changes}\n\n${JSON.stringify({outbound:next.outboundSegments,inbound:next.inboundSegments},null,2)}\n\nЧасовете на сегментите се запазват. Годината не е изведена от периода на офертата. Да приложа?`)) return null;
+    if (!confirm(`Потвърждавам изрично проверените полетни дати:\n\n${changes}\n\nПреди:\n${JSON.stringify({outbound:flight.outboundSegments,inbound:flight.inboundSegments},null,2)}\nСлед:\n${JSON.stringify({outbound:next.outboundSegments,inbound:next.inboundSegments},null,2)}\n\nЧасовете на сегментите се запазват. Годината не е изведена от периода на офертата. Да приложа?`)) return null;
     return next;
   } catch (error) { alert(`Датите не са приложени: ${error.message}`); return null; }
 }
@@ -3695,16 +3726,16 @@ function syncPrimaryFlightDateFields() {
   if ($("flightArrival")) $("flightArrival").value = flights[0]?.arrival || "";
 }
 
-function editFlightDateSummary(index, field, value) {
-  const next = reviewFlightDateConsistency({...flights[index], [field]:value});
+async function editFlightDateSummary(index, field, value) {
+  const next = await reviewFlightDateConsistencyUI({...flights[index], [field]:value});
   if (next) flights[index] = next;
   syncPrimaryFlightDateFields();
   renderFlightCards();
 }
 
-function reviewMainFlightDateSummaries() {
+async function reviewMainFlightDateSummaries() {
   if (!flights.length) return;
-  const next = reviewFlightDateConsistency({...flights[0],
+  const next = await reviewFlightDateConsistencyUI({...flights[0],
     departure:$("flightDeparture")?.value.trim() || "",
     arrival:$("flightArrival")?.value.trim() || ""});
   if (next) flights[0] = next;
@@ -3712,8 +3743,8 @@ function reviewMainFlightDateSummaries() {
   renderFlightCards();
 }
 
-function reviewSavedFlightDates(index) {
-  const next = reviewFlightDateConsistency(flights[index], true);
+async function reviewSavedFlightDates(index) {
+  const next = await reviewFlightDateConsistencyUI(flights[index], true);
   if (next) { flights[index] = next; syncPrimaryFlightDateFields(); renderFlightCards(); }
 }
 
@@ -4533,7 +4564,7 @@ async function autoBuildOffer() {
       body: flightForm
     });
 
-    const f = reviewFlightDateConsistency(flightData.flight || {});
+    const f = await reviewFlightDateConsistencyUI(flightData.flight || {});
     if (!f) return;
     const flightPrice = getImportedFlightPrice(flightData, f);
     const flightImportWarnings = getFlightImportWarnings(flightData);
@@ -4640,7 +4671,7 @@ if (validationWarnings.length) {
     if (Number(h.price || 0) > 0 && $("hotelPrice")) {
       $("hotelPrice").value = Number(h.price || 0).toFixed(2);
     }
-    addFlight({ ...f, price: flightPrice });
+    await addFlight({ ...f, price: flightPrice });
     addHotel(h);
 
     // 3) Auto destination text
