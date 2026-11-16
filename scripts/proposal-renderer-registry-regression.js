@@ -70,7 +70,7 @@ assert.match(multiHotelHtml, /&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;
 assert.match(multiHotelHtml, /Hotel 10/, "multi-hotel renderer should preserve selected hotel 10 in the hero/details");
 assert.match(multiHotelHtml, /src="https:\/\/images\.example\.test\/hotel-10-1\.jpg"/, "hero image should follow the selected hotel image");
 assert.match(multiHotelHtml, /Крайна цена за избрания хотел/, "multi-hotel renderer should keep the selected option estimate label");
-assert.match(multiHotelHtml, /3,543\.75 EUR/, "hero should show the selected final package price");
+assert.match(multiHotelHtml, /3[\u00a0\u202f ]543,75 EUR/, "hero should show the selected final package price");
 assert.match(multiHotelHtml, /Дестинация/, "hero should include destination as a decision fact");
 assert.match(multiHotelHtml, /Пътуващи/, "hero should include travelers as a decision fact");
 assert.match(multiHotelHtml, /Хранене/, "hero should include concise meal information");
