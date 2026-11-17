@@ -2950,6 +2950,10 @@ function renderUniversalTravelReview(data = {}, files = []) {
         </div>
       ` : `<div class="muted">Няма критични предупреждения от Gemini.</div>`}
 
+      ${data.flightSourceReview ? `<section data-flight-source-review><h4>Полетен линк — вътрешен преглед</h4>
+        ${(data.flightSourceReview.warnings || []).map(value=>`<div class="muted">${escapeHtml(value)}</div>`).join("")}
+        ${(data.flightSourceReview.comparisons || []).map(item=>`<div><strong>${escapeHtml(item.field)} — ${escapeHtml(item.status)}</strong><br>URL подсказка: ${escapeHtml(item.urlValue)}<br>Скрийншот: ${escapeHtml(item.screenshotValue || "UNKNOWN")}</div>`).join("")}
+        <div class="muted">Всички сегменти, цена, наличност и резервация: UNKNOWN спрямо URL.</div></section>` : ""}
       ${hotelSourceLinks.map(link=>`<div class="muted">Линк към хотел: <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">${escapeHtml(link)}</a></div>`).join("")}
       <div class="muted" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin: 10px 0;">
         <div><strong>Flight source:</strong> ${escapeHtml(flight.sourceAuthority?.flightPrimary || hotelAuthority.flightPrimary || "gemini-vision")}</div>
@@ -3096,6 +3100,7 @@ async function uploadSmartImport() {
 
     smartImportInProgress = true;
     if ($("homeLastIntake")) $("homeLastIntake").textContent = "PROCESSING";
+    formData.append("flightSourceUrl", $("smartImportFlightUrl")?.value.trim() || "");
     formData.append("hotelLinks", JSON.stringify(Array.from(document.querySelectorAll("[data-hotel-import-link]")).map(input=>input.value.trim()).filter(Boolean)));
     const data = await fetchJson("/api/smart-import", {
       method: "POST",
@@ -3105,7 +3110,7 @@ async function uploadSmartImport() {
     smartImportInProgress = false;
     console.log("SMART IMPORT DATA:", data);
     data.reviewTarget = "smartImportReview";
-    if ($("homeLastIntake")) $("homeLastIntake").textContent = data.warnings?.length ? "REVIEW" : "PASS";
+    if ($("homeLastIntake")) $("homeLastIntake").textContent = (data.warnings?.length || data.flightSourceReview?.warnings?.length) ? "REVIEW" : "PASS";
     renderUniversalTravelReview(data, files.slice(0, 8));
   } catch (error) {
     smartImportInProgress = false;

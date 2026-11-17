@@ -11671,12 +11671,15 @@ function buildSmartImportResponse({
   warnings = [],
   evidence = {},
   flightResult = null,
-  hotelResult = null
+  hotelResult = null,
+  flightSourceUrl = ""
 } = {}) {
+  const flightSourceReview = require("./server/flight-import-link").reviewFlightSourceUrl(flightSourceUrl, offerFlight, {extractRouteFromUrl, extractDatesFromUrl});
   return {
     success: true,
     contractVersion: "1.0",
     mode: "GT63_SMART_IMPORT",
+    ...(flightSourceReview ? {flightSourceReview} : {}),
     intakeId,
     sources: safeArray(sources),
     classifications: safeArray(classifications),
@@ -11828,6 +11831,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
 
     const responsePayload = buildSmartImportResponse({
       intakeId,
+      flightSourceUrl: req.body?.flightSourceUrl || "",
       sources: nextSources,
       classifications,
       offerFlight,
