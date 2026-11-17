@@ -9,6 +9,62 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPrintPresentationRenderer(root) {
   const viewModelApi = root.GT63PresentationViewModel || (typeof require === "function" ? require("../presentation-view-model") : null);
 
+
+  const travelDates = typeof require === "function" ? require("../../server/travel-normalizers/date-normalizer") : root.AYATravelDates;
+  // These are visual palettes, never forecasts or assertions about local weather.
+  const seasonalRegions = [
+    { key: "temperate-north", aliases: ["rome", "roma", "рим", "tokyo", "токио", "london", "лондон", "paris", "париж", "prague", "прага", "barcelona", "барселона", "bari", "бари", "sofia", "софия"], months: ["winter", "winter", "spring", "spring", "spring", "summer", "summer", "summer", "autumn", "autumn", "autumn", "winter"] },
+    { key: "temperate-south", aliases: ["sydney", "сидни", "melbourne", "мелбърн", "cape town", "кейптаун"], months: ["summer", "summer", "autumn", "autumn", "autumn", "winter", "winter", "winter", "spring", "spring", "spring", "summer"] },
+    { key: "abu-dhabi-desert", aliases: ["abu dhabi", "абу даби", "abu dhabi, uae", "абу даби, оае"], months: ["winter", "winter", "spring", "spring", "summer", "summer", "summer", "summer", "summer", "autumn", "autumn", "winter"] },
+    { key: "dubai-desert", aliases: ["dubai", "дубай"], months: ["winter", "winter", "spring", "spring", "summer", "summer", "summer", "summer", "summer", "autumn", "autumn", "winter"] },
+    { key: "maldives-tropical", aliases: ["maldives", "малдиви", "малдивските острови"], months: Array(12).fill("summer") }
+  ];
+
+  // PDF-only labels: shared HTML presentation and saved input remain unchanged.
+  function detailNeedsConfirmation(value) {
+    return /^(?:|not specified|not provided|unknown|не е посочен[оа]?|не е потвърден[оа]?|(?:хранене|изхранване|багаж) за потвърждение|за потвърждение)$/i.test(nonEmpty(value));
+  }
+  function baggageLabel(value) {
+    return detailNeedsConfirmation(value) ? "Багажът подлежи на потвърждение" : localize(value);
+  }
+  function printNotices(input) {
+    return viewModelApi.presentationNotices(input).map(item => {
+      const prefix = item.text.match(/^\[(WARNING|INFO)\]\s*/i);
+      return { ...item, level: item.level === "blocking" ? "blocking" : prefix?.[1].toUpperCase() === "INFO" ? "info" : item.level, text: prefix ? `${prefix[1].toUpperCase() === "INFO" ? "Информация" : "Важно"}: ${item.text.slice(prefix[0].length)}` : item.text };
+    });
+  }
+
+  function resolveSeasonalTheme(input = {}) {
+    const neutral = { theme: "neutral", region: "unknown" };
+    const normalize = value => String(value || "").normalize("NFKC").toLowerCase().replace(/[\s-]+/g, " ").trim();
+    const names = [input.destination?.name, input.destination?.requested].filter(value => String(value || "").trim());
+    if (!names.length) return neutral;
+    const regions = names.map(name => seasonalRegions.find(region => region.aliases.includes(normalize(name))));
+    if (regions.some(region => !region) || new Set(regions.map(region => region.key)).size !== 1) return neutral;
+    const region = regions[0];
+    const range = String(input.client?.travelDates || "").trim().match(/^(\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.\d{4})\s*[-–—]\s*(\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.\d{4})$/);
+    if (!range || !travelDates?.normalizeTravelDate) return neutral;
+    const parse = raw => {
+      // DD.MM.YYYY is deliberately not interpreted as MM.DD.YYYY.
+      if (raw.includes(".") && Number(raw.split(".")[1]) > 12) return null;
+      const parsed = travelDates.normalizeTravelDate(raw);
+      if (!parsed.year || !parsed.month || !parsed.day) return null;
+      const key = `${String(parsed.year).padStart(4,"0")}-${String(parsed.month).padStart(2,"0")}-${String(parsed.day).padStart(2,"0")}`;
+      const date = new Date(`${key}T00:00:00Z`);
+      return Number.isFinite(date.getTime()) && date.toISOString().slice(0,10) === key ? date : null;
+    };
+    const start = parse(range[1]), end = parse(range[2]);
+    if (!start || !end || end < start) return neutral;
+    const theme = region.months[start.getUTCMonth()];
+    // Check every intersected month, including year transitions, not just endpoints.
+    const cursor = new Date(start); cursor.setUTCDate(1);
+    while (cursor <= end) {
+      if (region.months[cursor.getUTCMonth()] !== theme) return { theme: "neutral", region: region.key };
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+    return { theme, region: region.key };
+  }
+
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({
       "&": "&amp;",
@@ -199,6 +255,7 @@
         <p class="gt63-print-editorial-lead">Тази книга на пътуването събира избрания хотел, ритъма на пътуването и инвестицията в една ясна клиентска презентация.</p>
         ${facts}
         ${reasonList}
+        ${imageUrls(hotel, 3).length > 1 ? imageFrame(imageUrl(hotel), `Снимка към ${hotel.name || "избрания хотел"}`, `Избраният хотел: ${hotel.name || "За потвърждение"}`, "gt63-print-intro-image") : ""}
       </section>
     </div>`;
   }
@@ -249,6 +306,61 @@
     `;
   }
 
+  function luxuryIcon(name) {
+    const shapes = {
+      star: '<path d="m12 2 3 6.1 6.7 1-4.9 4.8 1.2 6.7-6-3.2-6 3.2 1.2-6.7-4.9-4.8 6.7-1Z" fill="currentColor" stroke="none"/>',
+      room: '<path d="M3 20V6m18 14v-8H3m0 5h18M6 8h4v4H6zm6 0h6a3 3 0 0 1 3 3v1h-9Z"/>',
+      guests: '<circle cx="12" cy="7" r="3"/><path d="M7 21v-5a5 5 0 0 1 10 0v5M3 7a2 2 0 1 0 0 4m18-4a2 2 0 1 1 0 4M2 20v-4a3 3 0 0 1 3-3m17 7v-4a3 3 0 0 0-3-3"/>',
+      meal: '<path d="M5 3v6m3-6v6m-6-6v6a3 3 0 0 0 6 0m-3 3v9m14 0V3c-5 3-5 10 0 10"/>',
+      location: '<path d="M12 22S4 14 4 9a8 8 0 0 1 16 0c0 5-8 13-8 13Z"/><circle cx="12" cy="9" r="2.5"/>',
+      price: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v5c0 4 16 4 16 0V5M4 10v5c0 4 16 4 16 0v-5M4 15v4c0 4 16 4 16 0v-4"/>',
+      info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/>',
+      warning: '<path d="m12 3 10 18H2Z"/><path d="M12 9v5m0 3v1"/>',
+      check: '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="m6.5 12 3.5 3.5 7.5-8" stroke="#fff"/>'
+    };
+    return `<svg class="gt63-luxury-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${shapes[name] || ""}</svg>`;
+  }
+
+  function luxuryHotelDetails(viewModel, hotel, images, decoration) {
+    const rawStars = viewModelApi.numericStars(hotel), count = Number(rawStars?.replace(",", "."));
+    const stars = Number.isInteger(count) && count >= 1 && count <= 5
+      ? `<div class="gt63-luxury-stars" role="img" aria-label="Категория: ${escapeHtml(rawStars)} звезди">${Array.from({length:count},()=>luxuryIcon("star")).join("")}</div>` : "";
+    const items = [
+      { icon: "star", label: "Категория", value: starsLabel(hotel) },
+      { icon: "room", label: "Стая", value: hotel.room || hotel.roomType || "Стая за потвърждение" },
+      { icon: "guests", label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) },
+      { icon: "meal", label: "Изхранване", value: viewModel.selectedMealPlan },
+      { icon: "location", label: "Локация", value: hotel.area || hotel.location || hotel.city || "Локация за потвърждение" },
+      { icon: "price", label: "Крайна цена", value: printPrice(viewModel.selectedPayload.priceDisplay) }
+    ];
+    const reasons = (viewModel.selectedRecommendationReasons || []).filter(reason => !/потвърждение|непотвърден|не е посочен/i.test(reason)).slice(0,3);
+    const benefits = reasons.length ? `<ul class="gt63-luxury-benefits">${reasons.map(reason=>`<li>${luxuryIcon("check")}<span>${escapeHtml(reason)}</span></li>`).join("")}</ul>` : "";
+    const url = hotelUrl(hotel);
+    return `<section class="gt63-print-section gt63-print-selected-details with-gallery gt63-luxury-hotel">
+      ${decoration}
+      <header class="gt63-print-section-head gt63-luxury-heading">
+        <div class="gt63-luxury-eyebrow"><p class="gt63-print-kicker">Избран хотел</p><span class="gt63-luxury-brand">AYA TRAVEL · GT63</span></div>
+        <h2>${escapeHtml(text(hotel.name,"Избран хотел за потвърждение"))}</h2>
+        ${stars}
+      </header>
+      <div class="gt63-print-editorial-grid">
+        <div class="gt63-luxury-visual-column">
+          <div class="gt63-print-hotel-imagery">
+            ${imageFrame(images[0],"Снимка на избрания хотел","","is-dominant")}
+            <div class="gt63-print-hotel-thumbs">${images.slice(1,3).map((image,index)=>imageFrame(image,`Допълнителна снимка ${index+1}`,"","is-thumb")).join("")}</div>
+          </div>
+          ${benefits}
+        </div>
+        <div class="gt63-luxury-information">
+          <p>${escapeHtml(localize(text(hotel.description,"Описание на хотела за потвърждение.")))}</p>
+          <dl class="gt63-print-fact-grid gt63-luxury-facts">${items.map(item=>`<div class="gt63-print-fact${item.icon==="price" ? " is-price" : ""}">${luxuryIcon(item.icon)}<div><dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(localize(item.value))}</dd></div></div>`).join("")}</dl>
+          ${url ? `<p class="gt63-print-link">Хотел: ${escapeHtml(url)}</p>` : ""}
+        </div>
+      </div>
+      <svg class="gt63-luxury-wave" viewBox="0 0 1000 70" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 22C220-20 600 125 1000 18V70H0Z" fill="currentColor" opacity=".22"/><path d="M0 30C250-10 610 130 1000 27V39C610 142 250 2 0 42Z" fill="currentColor"/><path d="M0 54C290 18 620 150 1000 45V70H0Z" fill="#172a43"/></svg>
+    </section>`;
+  }
+
   function selectedHotelDetails(viewModel) {
     const hotel = viewModel.selectedHotel || {};
     const images = imageUrls(hotel, 3);
@@ -261,10 +373,13 @@
       { label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) },
       { label: "Изхранване", value: viewModel.selectedMealPlan },
       { label: "Локация", value: hotel.area || hotel.location || hotel.city || "Локация за потвърждение" },
-      { label: "Крайна цена", value: viewModel.selectedPayload.priceDisplay }
+      { label: "Крайна цена", value: printPrice(viewModel.selectedPayload.priceDisplay) }
     ]);
 
-    return editorialSection("gt63-print-selected-details", "Избран хотел", text(hotel.name, "Избран хотел за потвърждение"), `
+    const decoration = images.length ? `<div class="gt63-seasonal-hotel-background" aria-hidden="true"><img src="${escapeHtml(images[images.length - 1])}" alt="" role="presentation"></div>` : "";
+    if (images.length > 1) return luxuryHotelDetails(viewModel, hotel, images, decoration);
+    return editorialSection(`gt63-print-selected-details${images.length > 1 ? " with-gallery" : ""}`, "Избран хотел", text(hotel.name, "Избран хотел за потвърждение"), `
+      ${decoration}
       <div class="gt63-print-editorial-grid">
         <div class="gt63-print-hotel-imagery">
           ${imageFrame(image, "Снимка на избрания хотел", "", "is-dominant")}
@@ -284,35 +399,23 @@
   }
 
   function includedServicesBlock(viewModel, input = {}) {
-    const hotel = viewModel.selectedHotel || {};
-    const flight = input.flight || {};
-    const transfer = input.transfer || {};
-    const services = [];
-    const add = (label, value, status = "Данни в офертата") => {
-      const cleaned = nonEmpty(value);
-      if (cleaned) services.push({ label, value: cleaned, status });
-    };
-
-    add("Настаняване", hotel.name);
-    add("Стая", hotel.room || hotel.roomType);
-    add("Изхранване", viewModel.selectedMealPlan);
-    add("Багаж", flight.baggage);
+    const hotel = viewModel.selectedHotel || {}, flight = input.flight || {}, transfer = input.transfer || {};
+    const quoted = [], included = [], pending = [];
+    if (hotel.name) quoted.push({ icon: "room", label: "Настаняване", value: hotel.name, detail: hotel.room || hotel.roomType || "Стая за потвърждение" });
+    (hotel.occupancy?.confirmed === true ? quoted : pending).push({ icon: "guests", label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) });
+    (detailNeedsConfirmation(viewModel.selectedMealPlan) ? pending : quoted).push({ icon: "meal", label: "Изхранване", value: viewModel.selectedMealPlan });
+    if (hasMeaningfulFlight(input)) (detailNeedsConfirmation(flight.baggage) ? pending : quoted).push({ icon: "info", label: "Багаж", value: baggageLabel(flight.baggage) });
     if (transfer.included || transfer.price > 0 || transfer.type || transfer.status || transfer.route || transfer.description) {
-      add("Трансфер", transfer.status || transfer.type || transfer.route || transfer.description, transfer.included ? "Посочен като включен" : "За потвърждение");
+      (transfer.included === true ? included : pending).push({ icon: "location", label: "Трансфер", value: transferSummary(input) });
     }
-    add("Контакт", input.contact?.whatsappPhone || input.contact?.phone, "За съдействие");
-
-    if (!services.length) return "";
-    return editorialSection("gt63-print-included-services", "Включено и за потвърждение", "Какво съдържа офертата", `
-      <div class="gt63-print-service-grid">
-        ${services.map((service) => `
-          <article class="gt63-print-service-card">
-            <p>${escapeHtml(service.label)}</p>
-            <strong>${escapeHtml(localize(service.value))}</strong>
-            <span>${escapeHtml(service.status)}</span>
-          </article>
-        `).join("")}
-      </div>
+    const group = (items, state, heading) => items.length ? `<div class="gt63-service-group${items.length === 1 ? " is-single" : items.length === 3 ? " is-three" : ""}" data-service-state="${state}"><h3>${escapeHtml(heading)}</h3><div class="gt63-print-service-grid">${items.map(item => `<article class="gt63-print-service-card">${luxuryIcon(item.icon)}<div><p>${escapeHtml(item.label)}</p><strong>${escapeHtml(localize(item.value))}</strong>${item.detail ? `<small>${escapeHtml(localize(item.detail))}</small>` : ""}<span>${state === "included" ? "Изрично посочено като включено" : state === "pending" ? "За потвърждение преди резервация" : "Данни за избрания вариант"}</span></div></article>`).join("")}</div></div>` : "";
+    const images = imageUrls(hotel, 3), photo = images[1] || images[0];
+    return editorialSection("gt63-print-included-services gt63-luxury-services", "Вашият избран вариант", "ЦЕНАТА ВКЛЮЧВА", `
+      <p class="gt63-service-explanation">Компонентите са данни от предложението. Непотвърдените услуги не са обозначени като включени.</p>
+      ${group(quoted, "quoted", "Компоненти на предложението")}
+      ${group(included, "included", "Посочено като включено")}
+      ${group(pending, "pending", "Условия за потвърждение")}
+      ${photo ? imageFrame(photo, `Снимка към ${hotel.name || "избрания хотел"}`, "Снимка към избрания хотел", "gt63-luxury-service-photo") : ""}
     `);
   }
 
@@ -403,28 +506,20 @@
       { label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) },
       { label: "Изхранване", value: viewModel.selectedMealPlan },
       { label: "Полети", value: input.flight?.airline || input.flight?.route },
-      { label: "Багаж", value: input.flight?.baggage },
-      { label: "Трансфер", value: input.transfer?.status || input.transfer?.type || input.transfer?.route || input.transfer?.description }
-    ].filter((item) => nonEmpty(item.value));
-    return `<div class="gt63-print-investment-page">
+      { label: "Багаж", value: baggageLabel(input.flight?.baggage) },
+      { label: "Трансфер", value: transferSummary(input) }
+    ].filter(item => nonEmpty(item.value));
+    return `<div class="gt63-print-investment-page gt63-luxury-investment-page">
       <section class="gt63-print-investment">
-        <p class="gt63-print-kicker">Инвестиция в пътуването</p>
+        <div class="gt63-luxury-eyebrow"><p class="gt63-print-kicker">Вашето предложение</p><span class="gt63-luxury-brand">AYA TRAVEL · GT63</span></div>
         <h2>Инвестиция във Вашето пътуване</h2>
+        <p class="gt63-investment-period">${escapeHtml(viewModel.travelDates)}${input.client?.travelers ? ` · ${escapeHtml(input.client.travelers)}` : ""}</p>
         <div class="gt63-print-investment-amount">
-          <span>Обща цена на пътуването</span>
-          <strong>${escapeHtml(viewModel.selectedPayload.priceDisplay)}</strong>
+          ${luxuryIcon("price")}<div><span>Обща цена на пътуването</span><strong>${escapeHtml(printPrice(viewModel.selectedPayload.priceDisplay))}</strong>
           <p>Наличността, финалните условия и статусът на резервацията подлежат на потвърждение преди запазване.</p>
+          <p class="gt63-offer-not-booking">Офертата не представлява потвърдена резервация.</p></div>
         </div>
-        ${services.length ? `
-          <div class="gt63-print-investment-list">
-            ${services.map((service) => `
-              <article>
-                <span>${escapeHtml(service.label)}</span>
-                <strong>${escapeHtml(localize(service.value))}</strong>
-              </article>
-            `).join("")}
-          </div>
-        ` : ""}
+        <div class="gt63-print-investment-list">${services.map(service => `<article><span>${escapeHtml(service.label)}</span><strong>${escapeHtml(localize(service.value))}</strong></article>`).join("")}</div>
       </section>
     </div>`;
   }
@@ -441,7 +536,7 @@
           <td>${escapeHtml(starsLabel(hotel))}</td>
           <td>${escapeHtml(localize(text(hotel.room || hotel.roomType, "За потвърждение")))}</td>
           <td>${escapeHtml(payload.mealPlan)}</td>
-          <td>${escapeHtml(payload.priceDisplay)}</td>
+          <td>${escapeHtml(printPrice(payload.priceDisplay))}</td>
         </tr>
       `;
     }).join("");
@@ -470,11 +565,12 @@
     const details = factGrid([
       { label: "Авиокомпания", value: flight.airline || "Авиокомпания за потвърждение" },
       { label: "Маршрут", value: flight.route || "Маршрут за потвърждение" },
-      { label: "Багаж", value: flight.baggage || "За потвърждение" }
+      { label: "Багаж", value: baggageLabel(flight.baggage) }
     ], "is-compact");
 
     return editorialSection("gt63-print-flight", "Полети", localize(text(flight.route || flight.airline, "Полетна информация")), `
       ${details}
+      <p class="gt63-print-local-times">Часовете са местни за съответното летище.</p>
       <div class="gt63-print-flight-columns">
         ${technicalSegments("Отиване", outbound)}
         ${technicalSegments("Връщане", inbound)}
@@ -484,39 +580,71 @@
     `);
   }
 
+  function luxuryPageWave() {
+    return `<svg class="gt63-luxury-page-wave" viewBox="0 0 1000 70" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 22C220-20 600 125 1000 18V70H0Z" fill="currentColor" opacity=".22"/><path d="M0 30C250-10 610 130 1000 27V39C610 142 250 2 0 42Z" fill="currentColor"/><path d="M0 54C290 18 620 150 1000 45V70H0Z" fill="#172a43"/></svg>`;
+  }
+
+  // PDF-only typography; never recalculate or mutate a package amount.
+  function printPrice(value) {
+    return String(value || "").replace(/(\d[\d \u00a0\u202f]*)([, .])(\d{2})(?=\s+[A-Z]{3}\b)/g, (_, integer, separator, cents) =>
+      integer.replace(/\s/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, " ") + "," + cents);
+  }
+
+  function clientPrintNotice(value) {
+    // Collection-level provenance cannot prove the condition of a particular hotel.
+    // Keep the warning and severity, with explicitly unresolved client wording.
+    return String(value).replace(/Smart Import:\s*/gi, "")
+      .replace(/храненето за поне един хотел не е потвърдено/gi, "Изхранването не е потвърдено за всички хотелски варианти. Условията за избрания хотел подлежат на проверка")
+      .replace(/Не е потвърдено изхранването за \d+ хотел\(а\)\. Проверете преди изпращане\./gi, "Изхранването не е потвърдено за всички хотелски варианти. Проверете условията за избрания хотел преди резервация.");
+  }
+
   function ctaBlock(viewModel, input = {}) {
     const contactPhone = nonEmpty(input.contact?.whatsappPhone || input.contact?.phone);
     const contactEmail = nonEmpty(input.contact?.email);
     const agency = nonEmpty(input.contact?.agency || input.agency?.name || input.brand?.agencyName || "GT63");
+    const hotel = viewModel.selectedHotel || {}, image = imageUrl(hotel);
     return `
-      <section class="gt63-print-closing">
-        <div class="gt63-print-closing-mark" aria-hidden="true">GT63</div>
+      ${image ? `<div class="gt63-luxury-closing-background" aria-hidden="true"><img src="${escapeHtml(image)}" alt="" role="presentation"></div>` : ""}
+      <section class="gt63-print-closing gt63-luxury-closing">
         <div class="gt63-print-closing-copy">
-          <p class="gt63-print-kicker">Вашето следващо пътуване започва тук</p>
+          <p class="gt63-print-kicker">AYA TRAVEL · ${escapeHtml(agency)}</p>
           <h2>Вашето пътуване започва оттук.</h2>
-          <p>Потвърдете избрания хотел, за да проверим актуалната наличност и финалните условия преди резервация.</p>
+          <p>Посочете избрания хотел на консултанта. Ще проверим актуалната наличност и непотвърдените условия, преди да продължим към резервация.</p>
+          <div class="gt63-luxury-next-step"><span>Следваща стъпка</span><strong>Свържете се с консултанта</strong><p>Изборът на хотел не е потвърдена резервация.</p></div>
         </div>
         <div class="gt63-print-closing-footer">
-          <div>
-            <span>Подготвено от</span>
-            <strong>${escapeHtml(agency)}</strong>
-          </div>
-          <div>
-            <span>Инвестиция в пътуването</span>
-            <strong>${escapeHtml(viewModel.selectedPayload.priceDisplay)}</strong>
-          </div>
+          <div><span>Избран хотел</span><strong>${escapeHtml(hotel.name || "Хотел за потвърждение")}</strong></div>
+          <div><span>Крайна цена на предложението</span><strong>${escapeHtml(printPrice(viewModel.selectedPayload.priceDisplay))}</strong></div>
+          <div><span>Период на пътуване</span><strong>${escapeHtml(viewModel.travelDates)}</strong></div>
+          <div><span>Подготвено от</span><strong>${escapeHtml(agency)}</strong></div>
           ${contactPhone ? `<div><span>Контакт с консултант</span><strong>${escapeHtml(contactPhone)}</strong></div>` : ""}
           ${contactEmail ? `<div><span>Имейл</span><strong>${escapeHtml(contactEmail)}</strong></div>` : ""}
+          ${!contactPhone && !contactEmail ? `<div><span>Контакт</span><strong>Контактите на консултанта са за потвърждение.</strong></div>` : ""}
         </div>
       </section>
+      ${luxuryPageWave()}
     `;
   }
 
   function noticeBlock(input = {}) {
-    const notices = viewModelApi.presentationNotices(input);
+    const seenMealConditions = new Set();
+    const notices = printNotices(input).map(item => {
+      // Only these complete collection-level messages describe the proven duplicate.
+      // Keep added qualifications, hotel-specific notices and other severities separate.
+      const message = item.text.replace(/^(?:Важно|Информация):\s*/, "");
+      const duplicateMeal = /^(?:Smart Import: храненето за поне един хотел не е потвърдено\.|Не е потвърдено изхранването за \d+ хотел\(а\)\. Проверете преди изпращане\.)$/.test(message);
+      return { ...item, duplicateMeal };
+    }).filter(item => {
+      if (!item.duplicateMeal) return true;
+      if (seenMealConditions.has(item.level)) return false;
+      seenMealConditions.add(item.level);
+      return true;
+    }).map(item => item.duplicateMeal ? {
+      ...item, text: `${item.level === "info" ? "Информация" : "Важно"}: Изхранването не е потвърдено за всички хотелски варианти. Проверете условията за избрания хотел преди резервация.`
+    } : item);
     if (!notices.length) return "";
     return editorialSection("gt63-print-notices", "Преди резервация", "Условия и важни бележки", `
-      <ul>${notices.map(item => `<li data-notice-level="${item.level}">${escapeHtml(localize(item.text))}</li>`).join("")}</ul>
+      <ul>${notices.map(item => `<li data-notice-level="${item.level}">${luxuryIcon(item.level === "info" ? "info" : "warning")}<span>${escapeHtml(localize(clientPrintNotice(item.text)))}</span></li>`).join("")}</ul>
     `);
   }
 
@@ -527,7 +655,9 @@
       ...input, client: { ...input.client, travelDates: "Датите са за потвърждение" }
     };
     const viewModel = viewModelApi.buildPresentationViewModel(printInput, options);
+    if (detailNeedsConfirmation(viewModel.selectedMealPlan)) viewModel.selectedMealPlan = "Хранене за потвърждение";
     const mode = viewModel.contract.mode;
+    const seasonal = resolveSeasonalTheme(input);
     const flight = flightBlock(input);
     const selectedPages = [
       contentPage("gt63-print-hotel-page", [
@@ -536,11 +666,13 @@
       ].join("")),
       contentPage(`gt63-print-services-page${flight ? " gt63-print-flight-page" : ""}`, [
         flight,
-        includedServicesBlock(viewModel, input),
-        transferBlock(input),
-        investmentPage(viewModel, input),
-        noticeBlock(input)
+        includedServicesBlock(viewModel, input)
       ].filter(Boolean).join("")),
+      contentPage("gt63-print-investment-content-page", [
+        investmentPage(viewModel, input),
+        noticeBlock(input),
+        luxuryPageWave()
+      ].join("")),
       contentPage("gt63-print-timeline-page", timelineBlock(input)),
       contentPage("gt63-print-experiences-page", optionalExperiencesBlock(input))
     ].filter(Boolean).join("");
@@ -552,7 +684,7 @@
     ].filter(Boolean).join("");
 
     return `
-      <article class="gt63-print-proposal" data-print-mode="${escapeHtml(mode)}">
+      <article class="gt63-print-proposal" data-print-mode="${escapeHtml(mode)}" data-seasonal-theme="${seasonal.theme}" data-seasonal-region="${seasonal.region}">
         ${coverPage(viewModel, input, mode)}
         ${mode === "comparison" ? printPage("gt63-print-content-page", comparisonContent) : selectedPages}
         ${printPage("gt63-print-final-page", ctaBlock(viewModel, input))}
@@ -561,6 +693,7 @@
   }
 
   return {
+    resolveSeasonalTheme,
     renderPrintProposal
   };
 });
