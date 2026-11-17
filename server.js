@@ -6496,6 +6496,54 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       gap: 8mm;
       align-items: start;
     }
+    /* Seasonal Luxury is presentation-only; all themes keep dark text on solid cards. */
+    .gt63-print-proposal[data-seasonal-theme] { --gt63-ink: #172a43; --seasonal-soft: #f5f1e8; --gt63-accent: #ab884a; }
+    .gt63-print-proposal[data-seasonal-theme="spring"] { --seasonal-soft: #edf3e9; --gt63-accent: #a1884b; --gt63-line: #d3dbc9; }
+    .gt63-print-proposal[data-seasonal-theme="summer"] { --seasonal-soft: #eaf3f5; --gt63-accent: #ad8b48; --gt63-line: #cbdde0; }
+    .gt63-print-proposal[data-seasonal-theme="autumn"] { --seasonal-soft: #f8eddf; --gt63-accent: #b08a45; --gt63-line: #dfd1bb; }
+    .gt63-print-proposal[data-seasonal-theme="winter"] { --seasonal-soft: #eef0f7; --gt63-accent: #9c895e; --gt63-line: #cfd5e2; }
+    .gt63-print-selected-details { position: relative; isolation: isolate; }
+    .gt63-print-selected-details.with-gallery { min-height: 280mm; }
+    .gt63-print-selected-details > :not(.gt63-seasonal-hotel-background) { position: relative; z-index: 1; }
+    .gt63-seasonal-hotel-background { position: absolute; left: 0; right: 0; bottom: 0; height: 110mm; pointer-events: none; z-index: 0; overflow: hidden; }
+    .gt63-seasonal-hotel-background img { width: 100%; height: 100%; object-fit: cover; opacity: .15; }
+    .gt63-seasonal-hotel-background::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, var(--gt63-paper) 0%, transparent 45%); }
+    .gt63-print-selected-details .gt63-print-fact { background: #fff; border-radius: 4mm; }
+    .gt63-print-selected-details .gt63-print-fact:last-child { background-color: #fff; background-image: linear-gradient(110deg, #fffaf0, var(--seasonal-soft)); border-color: var(--gt63-accent); }
+    .gt63-print-selected-details .gt63-print-fact:last-child dd { font-size: 17pt; color: var(--gt63-ink); }
+    .gt63-print-selected-details .gt63-print-image-frame { border-radius: 4mm; }
+    .gt63-print-selected-details .gt63-print-kicker::after { content: ""; display: inline-block; width: 18mm; height: .6mm; margin-left: 3mm; vertical-align: middle; background: linear-gradient(to right, var(--gt63-accent), transparent); }
+    /* Seasonal Luxury hotel-page composition, reusing the existing data and gallery. */
+    .gt63-print-selected-details.gt63-luxury-hotel { min-height: 286mm; margin-left: -7mm; margin-right: -7mm; padding-top: 5mm; }
+    .gt63-luxury-heading { margin-bottom: 4mm; }
+    .gt63-luxury-eyebrow { display: flex; justify-content: space-between; align-items: baseline; gap: 5mm; }
+    .gt63-luxury-brand { font-size: 12pt; color: var(--gt63-ink); white-space: nowrap; border-bottom: .5mm solid var(--gt63-accent); }
+    .gt63-luxury-heading h2 { font-size: 27pt; line-height: 1.08; margin: 1mm 0 2mm; color: var(--gt63-ink); }
+    .gt63-luxury-icon { display: block; width: 7mm; height: 7mm; flex: 0 0 7mm; color: var(--gt63-accent); }
+    .gt63-luxury-stars { display: flex; gap: 1mm; }
+    .gt63-luxury-stars .gt63-luxury-icon { width: 6mm; height: 6mm; flex-basis: 6mm; }
+    .gt63-print-selected-details.gt63-luxury-hotel.with-gallery .gt63-print-editorial-grid { grid-template-columns: 1.3fr 1fr; gap: 7mm; }
+    .gt63-print-selected-details.gt63-luxury-hotel.with-gallery .gt63-print-image-frame.is-dominant img { aspect-ratio: 4 / 3; }
+    .gt63-print-selected-details.gt63-luxury-hotel.with-gallery .gt63-print-hotel-thumbs img { aspect-ratio: 6 / 5; }
+    .gt63-luxury-information > p { font-size: 10.5pt; line-height: 1.35; margin: 0 0 3mm; }
+    .gt63-print-selected-details.gt63-luxury-hotel .gt63-luxury-facts { margin-top: 0; gap: 2.5mm; }
+    .gt63-print-selected-details.gt63-luxury-hotel .gt63-print-fact { display: grid; grid-template-columns: 7mm minmax(0, 1fr); gap: 2.5mm; padding: 3mm; }
+    .gt63-print-selected-details.gt63-luxury-hotel .gt63-print-fact dt { font-size: 8pt; color: var(--gt63-ink); }
+    .gt63-print-selected-details.gt63-luxury-hotel .gt63-print-fact dd { font-size: 10.5pt; line-height: 1.3; margin-top: .5mm; }
+    .gt63-print-selected-details.gt63-luxury-hotel .gt63-print-fact.is-price { background-color: #fff; background-image: linear-gradient(110deg, #fff8df, var(--seasonal-soft)); }
+    .gt63-print-selected-details.gt63-luxury-hotel .gt63-print-fact.is-price dd { font-size: 22pt; line-height: 1.15; white-space: nowrap; }
+    .gt63-luxury-benefits { list-style: none; margin: 5mm 0 0; padding: 0; }
+    .gt63-luxury-benefits li { display: flex; align-items: flex-start; gap: 2mm; margin: 2mm 0; font-size: 10pt; line-height: 1.35; font-weight: 700; }
+    .gt63-luxury-benefits .gt63-luxury-icon { width: 5mm; height: 5mm; flex-basis: 5mm; }
+    .gt63-print-selected-details > .gt63-luxury-wave { position: absolute; left: -9mm; bottom: 0; width: calc(100% + 18mm); height: 12mm; z-index: 0; pointer-events: none; color: var(--gt63-accent); }
+    /* Scoped print composition: preserve the existing page flow and selected hotel. */
+    .gt63-print-intro-image { margin-top: 7mm; }
+    .gt63-print-intro-image img { height: 94mm; aspect-ratio: auto; object-fit: cover; }
+    .gt63-print-selected-details.with-gallery .gt63-print-editorial-grid { grid-template-columns: 1.05fr .95fr; gap: 7mm; }
+    .gt63-print-selected-details.with-gallery .gt63-print-fact-grid { grid-template-columns: 1fr; gap: 2.5mm; margin-top: 3mm; }
+    .gt63-print-selected-details.with-gallery .gt63-print-image-frame.is-dominant img { aspect-ratio: 3 / 4; }
+    .gt63-print-selected-details.with-gallery .gt63-print-hotel-thumbs img { aspect-ratio: 4 / 3; }
+    .gt63-print-local-times { margin: 3mm 0; color: var(--gt63-muted); font-family: Arial, Helvetica, sans-serif; font-size: 9pt; }
     .gt63-print-image-frame {
       margin: 0;
       border: 1px solid var(--gt63-line);
@@ -6875,6 +6923,67 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       line-height: 1.35;
       overflow-wrap: anywhere;
     }
+    /* Final luxury pages4–6; selected-hotel page styling is unchanged. */
+    .gt63-print-services-page { display: flex; flex-direction: column; min-height: 281mm; }
+    .gt63-print-services-page .gt63-print-flight { padding-top: 0; padding-bottom: 3mm; }
+    .gt63-print-services-page .gt63-print-flight h2 { font-size: 19pt; }
+    .gt63-print-services-page .gt63-print-flight .gt63-print-fact-grid { margin-top: 2mm; }
+    .gt63-print-services-page .gt63-print-flight .gt63-print-section-head { margin-bottom: 2mm; }
+    .gt63-print-services-page .gt63-print-flight-columns { margin-top: 2mm; }
+    .gt63-print-services-page .gt63-print-local-times { margin: 2mm 0; }
+    .gt63-print-services-page .gt63-print-flight .gt63-print-fact { padding: 2.5mm; }
+    .gt63-luxury-services .gt63-service-group.is-single .gt63-print-service-grid { grid-template-columns: 1fr; }
+    .gt63-luxury-services .gt63-service-group.is-three .gt63-print-service-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .gt63-print-services-page .gt63-print-segment { padding: 2.5mm; }
+    .gt63-print-services-page .gt63-print-segment span, .gt63-print-services-page .gt63-print-segment small { font-size: 9pt; line-height: 1.3; }
+    .gt63-print-services-page .gt63-print-included-services { display: flex; flex: 1; flex-direction: column; padding: 3mm 0 0; }
+    .gt63-luxury-services h2 { font-size: 22pt; color: var(--gt63-ink); }
+    .gt63-service-explanation { font-size: 9pt; line-height: 1.35; margin-bottom: 2mm; color: var(--gt63-muted); }
+    .gt63-service-group { margin-bottom: 2mm; }
+    .gt63-service-group h3 { font-size: 9pt; color: var(--gt63-ink); margin-bottom: 2mm; }
+    .gt63-luxury-services .gt63-print-service-grid { gap: 2mm; }
+    .gt63-luxury-services .gt63-print-service-card { display: grid; grid-template-columns: 5mm minmax(0, 1fr); gap: 2mm; padding: 2.5mm; border-radius: 3mm; background: #fff; }
+    .gt63-luxury-services .gt63-print-service-card .gt63-luxury-icon { width: 5mm; height: 5mm; }
+    .gt63-luxury-services .gt63-print-service-card p { font-size: 7.5pt; margin-bottom: 1mm; }
+    .gt63-luxury-services .gt63-print-service-card strong { font-size: 10pt; line-height: 1.3; }
+    .gt63-luxury-services .gt63-print-service-card small, .gt63-luxury-services .gt63-print-service-card span { display: block; margin-top: 1mm; font-size: 8pt; line-height: 1.3; }
+    .gt63-service-group[data-service-state="pending"] .gt63-print-service-card { border-left: 1mm solid var(--gt63-accent); background: #fffaf1; }
+    .gt63-luxury-services .gt63-luxury-service-photo { margin-top: auto; padding-top: 3mm; border: 0; border-radius: 3mm; }
+    .gt63-luxury-service-photo img { height: 48mm; aspect-ratio: auto; }
+    .gt63-print-investment-content-page { break-before: page; page-break-before: always; min-height: 281mm; padding-bottom: 18mm; }
+    .gt63-luxury-investment-page .gt63-print-investment { padding-top: 1mm; }
+    .gt63-luxury-investment-page h2 { font-size: 26pt; color: var(--gt63-ink); }
+    .gt63-investment-period { color: var(--gt63-muted); margin-bottom: 0; }
+    .gt63-luxury-investment-page .gt63-print-investment-amount { display: grid; grid-template-columns: 10mm minmax(0, 1fr); gap: 4mm; padding: 6mm; border: 1px solid var(--gt63-accent); border-radius: 4mm; background: linear-gradient(110deg, #fff8df, var(--seasonal-soft)); }
+    .gt63-luxury-investment-page .gt63-print-investment-amount .gt63-luxury-icon { width: 10mm; height: 10mm; }
+    .gt63-luxury-investment-page .gt63-print-investment-amount strong { font-size: 32pt; }
+    .gt63-luxury-investment-page .gt63-print-investment-amount p { font-size: 9pt; line-height: 1.35; }
+    .gt63-offer-not-booking { margin-top: 2mm; font-weight: 700; }
+    .gt63-luxury-investment-page .gt63-print-investment-list { gap: 2.5mm; }
+    .gt63-luxury-investment-page .gt63-print-investment-list article { padding: 3mm; border: 1px solid var(--gt63-line); border-radius: 3mm; background: #fff; }
+    .gt63-luxury-investment-page .gt63-print-investment-list strong { font-size: 10pt; line-height: 1.3; }
+    .gt63-print-investment-content-page .gt63-print-notices { margin-top: 4mm; padding-top: 4mm; }
+    .gt63-print-investment-content-page .gt63-print-notices h2 { font-size: 19pt; }
+    .gt63-print-investment-content-page .gt63-print-notices ul { list-style: none; margin: 0; padding: 0; }
+    .gt63-print-investment-content-page .gt63-print-notices li { display: grid; grid-template-columns: 5mm minmax(0, 1fr); gap: 2mm; padding: 2.5mm; border: 1px solid var(--gt63-line); border-radius: 3mm; background: #fff; font-size: 9pt; line-height: 1.35; break-inside: avoid; }
+    .gt63-print-investment-content-page .gt63-print-notices .gt63-luxury-icon { width: 5mm; height: 5mm; }
+    .gt63-print-investment-content-page [data-notice-level="blocking"] { border-left: 1mm solid var(--gt63-accent); }
+    .gt63-print-investment-content-page > .gt63-luxury-page-wave { position: absolute; bottom: 0; left: 0; width: 100%; height: 10mm; color: var(--gt63-accent); }
+    .gt63-luxury-closing-background { position: absolute; inset: 0; }
+    .gt63-luxury-closing-background img { width: 100%; height: 100%; object-fit: cover; opacity: .15; }
+    .gt63-luxury-closing-background::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(16,24,36,.35), #101824); }
+    .gt63-print-closing.gt63-luxury-closing { position: relative; z-index: 1; min-height: 260mm; padding: 8mm 3mm 8mm; gap: 6mm; }
+    .gt63-luxury-closing .gt63-print-closing-copy { max-width: 160mm; margin-top: 10mm; }
+    .gt63-luxury-closing .gt63-print-closing-copy h2 { max-width: 155mm; font-size: 34pt; }
+    .gt63-luxury-closing .gt63-print-closing-copy p { max-width: 145mm; font-size: 12pt; }
+    .gt63-luxury-next-step { margin-top: 8mm; padding: 5mm; border: 1px solid var(--gt63-accent); border-radius: 4mm; background: rgba(16,24,36,.86); }
+    .gt63-luxury-next-step > span { display: block; color: #e1c38b; font-size: 9pt; text-transform: uppercase; }
+    .gt63-luxury-next-step > strong { display: block; margin-top: 2mm; color: #fff; font-size: 20pt; }
+    .gt63-luxury-next-step p { margin: 2mm 0 0; }
+    .gt63-luxury-closing .gt63-print-closing-footer { gap: 6mm 8mm; padding: 6mm; border: 1px solid rgba(225,195,139,.4); border-radius: 4mm; background: rgba(16,24,36,.65); }
+    .gt63-luxury-closing .gt63-print-closing-footer strong { font-size: 12pt; }
+    .gt63-print-final-page > .gt63-luxury-page-wave { position: absolute; z-index: 2; left: 0; bottom: 0; width: 100%; height: 12mm; color: var(--gt63-accent); }
     @page { size: A4; margin: 0; }
     @media print {
       html, body { background: #fff; }

@@ -369,7 +369,7 @@ assert.doesNotMatch(
 );
 assert.match(richSelectedHtml, /Луксозна книга на пътуването/, "selected print HTML should render Bulgarian cover label");
 assert.match(richSelectedHtml, /Инвестиция във Вашето пътуване/, "selected print HTML should render Bulgarian investment heading");
-assert.match(missingValueSelectedHtml, /Не е посочено/, "selected print HTML should render Bulgarian missing-value fallback");
+assert.match(missingValueSelectedHtml, /Багажът подлежи на потвърждение/, "selected print HTML must explicitly identify baggage as unconfirmed");
 
 async function waitForHealth(baseUrl) {
   for (let attempt = 0; attempt < 360; attempt += 1) {
