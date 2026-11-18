@@ -67,8 +67,10 @@ for (const proposal of [false,true]) for (const print of [false,true]) {
     assert.throws(() => api.assertFlightDateSafety(offer), error => error.status === 422 && error.code === 'AYA_FLIGHT_DATE_BLOCKED');
     const output = await assertNoMutation(offer, () => render(offer, print));
     assert(!output.includes('STALE_GENERATED_DATE_WARNING'));
-    assert(output.includes('[FLIGHT_DATE_SAFETY]'));
-    assert(output.includes('2020-11-16'));
+    assert(output.includes('Датите на полетите предстои да бъдат потвърдени.'));
+    assert(!output.includes('[FLIGHT_DATE_SAFETY]'));
+    assert(!output.includes('2020-11-16'));
+    assert.equal(offer.flights[0].outboundSegments[0].departure, '2020-11-16T13:25');
     for (const warning of preserved.slice(0, -1)) assert(output.includes(warning.replace(/^\[(INFO|WARNING)\] /, '')), warning);
     assert(api.flightSafetyWarnings(offer).includes(preserved.at(-1)));
     assert(!output.includes(preserved.at(-1)));
@@ -78,9 +80,12 @@ test('saved proposal flight aliases independently produce a live blocking warnin
   const offer = fixture(true);
   offer.proposalInput.flight.outboundSegments[0].departureDate = '2020-11-16';
   assert.equal(api.flightDateSafety(offer).ready, false);
+  assert.throws(() => api.assertFlightDateSafety(offer), error => error.status === 422 && error.code === 'AYA_FLIGHT_DATE_BLOCKED');
   for (const print of [false,true]) {
     const output = await assertNoMutation(offer, () => render(offer, print));
-    assert(output.includes('противоречиви date aliases'));
+    assert(output.includes('Датите на полетите предстои да бъдат потвърдени.'));
+    assert(!output.includes('противоречиви date aliases'));
+    assert(!output.includes('[FLIGHT_DATE_SAFETY]'));
     assert(output.includes('PROPOSAL_ONLY_TRANSFER_NOTE'));
     assert(!output.includes('STALE_GENERATED_DATE_WARNING'));
   }
