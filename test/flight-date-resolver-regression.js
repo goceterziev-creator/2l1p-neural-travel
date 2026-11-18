@@ -54,13 +54,15 @@ test('Smart Import -> admin edit -> save/reload preserves raw dates and resolved
  const saved=api.normalizeOffer(offer),reloaded=JSON.parse(JSON.stringify(saved));assert.equal(check(reloaded).ready,true);
  assert.equal(reloaded.flights[0].outboundSegments[0].departure,'Mon, 16 Nov 1:25 PM');assert.deepEqual(reloaded.hotels,JSON.parse(JSON.stringify(saved.hotels)));assert.equal(reloaded.finalPrice,315);
 });
-test('real HTML and print renderer use verified dates, with hotel selection and pricing preserved', async () => {
+test('real HTML and print renderer use verified dates, with hotel selection and pricing preserved', async (t) => {
+ t.mock.timers.enable({apis:['Date'],now});
  const offer=fixture(),before=JSON.stringify(offer),html=await api.renderOfferHtml(offer),print=api.renderGt63PrintOfferHtml(offer);
  assert(html.includes('16 ноември 2026'));assert(html.includes('13:25'));assert(html.includes('20 ноември 2026'));assert(html.includes('15:10'));assert(print.includes('16 ноември 2026'));assert(print.includes('13:25'));assert(print.includes('20 ноември 2026'));assert(print.includes('15:10'));
  assert(print.includes('Synthetic Alpha'));assert.equal(JSON.stringify(offer),before);
 });
 
-test('saved proposal renderer and print share the verified dates', async () => {
+test('saved proposal renderer and print share the verified dates', async (t) => {
+ t.mock.timers.enable({apis:['Date'],now});
  const offer=fixture();offer.proposalInput=require('../gt63-core/legacy-offer-print-input').buildLegacyOfferPrintInput(offer);offer.proposalTemplate={selected:'multi-hotel'};
  const before=JSON.stringify(offer),html=await api.renderOfferHtml(offer),print=api.renderGt63PrintOfferHtml(offer);
  for(const rendered of [html,print]){assert(rendered.includes('2026'));assert(rendered.includes('13:25'));assert(!rendered.includes('Mon, 16 Nov'));}
