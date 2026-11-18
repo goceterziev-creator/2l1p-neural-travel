@@ -8,7 +8,7 @@ process.env.SERPAPI_KEY = '';
 process.on('exit', () => fs.rmSync(scratch, {recursive:true, force:true}));
 const filename = path.resolve(__dirname, '../server.js'), harness = new Module(filename, module);
 harness.filename = filename; harness.paths = Module._nodeModulePaths(path.dirname(filename));
-harness._compile(fs.readFileSync(filename, 'utf8') + '\nmodule.exports.warningTest={flightDateSafety,assertFlightDateSafety,renderOfferHtml,renderGt63PrintOfferHtml};', filename);
+harness._compile(fs.readFileSync(filename, 'utf8') + '\nmodule.exports.warningTest={flightDateSafety,flightSafetyWarnings,assertFlightDateSafety,renderOfferHtml,renderGt63PrintOfferHtml};', filename);
 const api = harness.exports.warningTest;
 const adapter = require('../gt63-core/legacy-offer-print-input');
 const stale = '[WARNING] [FLIGHT_DATE_SAFETY] STALE_GENERATED_DATE_WARNING';
@@ -69,5 +69,33 @@ test('saved proposal flight aliases independently produce a live blocking warnin
     assert(output.includes('противоречиви date aliases'));
     assert(output.includes('PROPOSAL_ONLY_TRANSFER_NOTE'));
     assert(!output.includes('STALE_GENERATED_DATE_WARNING'));
+  }
+});
+
+test('operator routing diagnostics stay in Admin while mixed material notices reach all client renderers', async () => {
+  const diagnostic = require('./fixtures/smart-import/flight-hotel-mixed.json').warnings[0];
+  const risk = 'Датата на обратния полет подлежи на потвърждение.';
+  const price = 'Цената на полета подлежи на потвърждение.';
+  const meal = 'Изхранването не е потвърдено за всички хотелски варианти.';
+  const warnings = [
+    diagnostic,
+    'Flight price confidence below production threshold.',
+    `[WARNING] ${diagnostic} ${risk}`,
+    '[WARNING] Smart Import: храненето за поне един хотел не е потвърдено. Допълнително условие.',
+    '[WARNING] Наличността на хотела подлежи на потвърждение.'
+  ];
+  for (const template of [null, 'multi-hotel', 'cathedral']) {
+    const offer = fixture(Boolean(template));
+    if (template) offer.proposalTemplate.selected = offer.proposalInput.proposalTemplate.selected = template;
+    offer.validationWarnings.push(...warnings);
+    if (template) offer.proposalInput.warnings.push(...warnings);
+    assert(api.flightSafetyWarnings(offer).includes(diagnostic), 'Admin offer projection preserves the diagnostic');
+    for (const print of [false, true]) {
+      const output = await assertNoMutation(offer, () => render(offer, print));
+      assert.doesNotMatch(output, /Mixed screenshots|both engines|Final operator review|production threshold|Smart Import:/i);
+      for (const notice of [risk, price, meal, 'Допълнително условие.', 'Наличността на хотела подлежи на потвърждение.']) {
+        assert(output.includes(notice), notice);
+      }
+    }
   }
 });

@@ -55,6 +55,11 @@ assert.equal(registry.selectedTemplate(multiHotelInput), "multi-hotel", "registr
 assert.equal(registry.rendererFor(multiHotelInput).label, "Multi-Hotel Selector", "registry should select multi-hotel renderer");
 
 const multiHotelHtml = registry.renderProposal(multiHotelInput);
+const mixedDiagnostic = fixture.warnings[0];
+assert(productModel.warnings.includes(mixedDiagnostic), "operator import model keeps the full diagnostic");
+assert(multiHotelInput.warnings.includes(mixedDiagnostic), "client rendering does not alter saved proposal warnings");
+assert(!multiHotelHtml.includes(mixedDiagnostic), "operator diagnostic is absent from all client HTML source");
+
 assert.match(multiHotelHtml, /ПЕРСОНАЛНА ОФЕРТА/, "multi-hotel renderer should identify the client proposal in Bulgarian");
 assert.doesNotMatch(multiHotelHtml, /multi-hotel-sequential-grid/, "multi-hotel renderer should no longer use the old comparison grid wrapper");
 assert.match(multiHotelHtml, /v11-flight-summary-grid/, "multi-hotel renderer should show premium flight summary cards");
