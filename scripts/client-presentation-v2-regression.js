@@ -17,7 +17,13 @@ const canonicalPrice=s=>String(s).replace(/[\s\u00a0\u202f]/g,'').replace(/,(?=\
  const offer={id:'SYNTHETIC-PRESENTATION-V2',clientName:'QA ONLY — NOT PRODUCTION',destination:'Рим',travelDates:'16.11.2099 - 20.11.2099',guests:'2 възрастни',currency:'EUR',markupPercent:0,finalPrice:1034.06,flightPrice:200,status:'draft',validationWarnings:['[INFO] CIA: Проверете трансфера до хотела.','[WARNING] Условията за анулация изискват потвърждение.'],
  flights:[{route:'SOF → CIA / CIA → SOF',airline:'Buzz / Malta Air',price:200,baggage:'Тестов багаж — реалните условия са за потвърждение',outboundSegments:[{from:'SOF',to:'CIA',departure:'2099-11-16T13:25',arrival:'2099-11-16T14:15',airline:'Buzz',flightNumber:'FR625'}],inboundSegments:[{from:'CIA',to:'SOF',departure:'2099-11-20T12:25',arrival:'2099-11-20T15:10',airline:'Malta Air',flightNumber:'FR626'}]}],
  hotels:[{id:'qa-hive',name:'The Hive Hotel',price:834.06,selected:true,room:'QA стая — реалната стая е за потвърждение',meal:'Изхранване за потвърждение',description:'Синтетични данни за визуален тест. Наличността и условията не са независимо потвърдени.',area:'Рим',images:[base+'/test-images/hive.png'],occupancy:{adults:2,children:0,rooms:1,confirmed:true}},{id:'qa-triviho',name:'Triviho Hotel',price:1123.78,selected:false,room:'QA стая — реалната стая е за потвърждение',meal:'Изхранване за потвърждение',description:'Синтетични данни за визуален тест. Наличността и условията не са независимо потвърдени.',area:'Рим',images:[base+'/test-images/triviho.png'],occupancy:{adults:2,children:0,rooms:1,confirmed:true}}]};
- const before=JSON.stringify(offer),input=adapter.buildLegacyOfferPrintInput(offer),registry={...offer,proposalInput:input,proposalTemplate:{selected:'multi-hotel'}};
+ const {rawNotices, INTERNAL, MATERIAL}=require('../server/offer-notices');
+ const [transfer,terms]=rawNotices(offer);
+ offer.noticeDecisions={
+  [transfer.id]:{classification:INTERNAL,actorId:'QA',decidedAt:'2026-11-18T00:00:00Z'},
+  [terms.id]:{classification:MATERIAL,clientText:'Условията за анулация изискват потвърждение.',actorId:'QA',decidedAt:'2026-11-18T00:00:00Z'}
+ };
+ const before=JSON.stringify(offer),input=adapter.buildLegacyOfferPrintInput({...offer,validationWarnings:[]}),registry={...offer,proposalInput:input,proposalTemplate:{selected:'multi-hotel'}};
  documents['/legacy']=await api.renderOfferHtml(offer);documents['/registry']=await api.renderOfferHtml(registry);
  // Replace only navigation hosts inside this disposable fixture, never application data.
  for(const key of ['/legacy','/registry'])documents[key]=documents[key].replace(/https?:\/\/[^"<> ]+(?=\/api\/offers\/)/g,base);

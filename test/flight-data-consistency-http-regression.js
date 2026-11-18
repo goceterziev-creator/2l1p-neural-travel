@@ -37,6 +37,14 @@ function pass(name,result){rows.push({name,result:'PASS',...result});console.log
  const historical={...fixture,id:undefined,flights:[consistency.resolve(fixture.flights[0],'segments')]};const created=await request('/api/offers','POST',historical);assert.equal(created.status,200);const historyId=created.data.offer.id;assert.equal(record(historyId).flights[0].outboundSegments[0].departure,'2020-11-16T13:25');
  for(const status of ['ready','sent','booked']){const before=snapshot(),r=await request('/api/offers/'+historyId+'/status','PATCH',{status});assert.equal(r.status,422);assert.equal(r.data.error,'AYA_FLIGHT_DATE_BLOCKED');assert.equal(snapshot(),before);}const bookBefore=snapshot(),book=await request('/api/offers/'+historyId+'/book','POST',{});assert.equal(book.status,422);assert.equal(snapshot(),bookBefore);pass('historical2020 never rewritten; status and alternate book safety intact',{createDraft:200,storedYear:2020,ready:422,sent:422,booked:422,alternateBook:422});
  const unconfirmed={...fixture,id:undefined,flights:[reviewed],hotels:fixture.hotels.map(h=>({...h,occupancy:{...h.occupancy,confirmed:false}}))};const un=await request('/api/offers','POST',unconfirmed);assert.equal(un.status,200);for(const status of ['ready','sent','booked']){const before=snapshot(),r=await request('/api/offers/'+un.data.offer.id+'/status','PATCH',{status});assert.equal(r.status,422);assert.equal(r.data.error,'AYA_HOTEL_OCCUPANCY_BLOCKED');assert.equal(snapshot(),before);}pass('independent occupancy gate remains unchanged',{ready:422,sent:422,booked:422});
+ // The editor supplies an unclassified transfer note even though the server
+ // already produces the material CIA advisory. Explicitly review that copy.
+ const reopenedForReview=(await request(url)).data;
+ const [transferNotice]=reopenedForReview.offer.noticeReview.notices;
+ assert.equal(reopenedForReview.offer.noticeReview.unresolved,1);
+ assert.match(transferNotice.message,/валидно летище за Рим/);
+ const decision=await request(url+'/notice-classification','PATCH',{expectedVersion:reopenedForReview.offerVersion,noticeId:transferNotice.id,classification:'INTERNAL_DIAGNOSTIC'});
+ assert.equal(decision.status,200,decision.text);
  for(const status of ['ready','sent','booked'])assert.equal((await request(url+'/status','PATCH',{status})).status,200);pass('valid coherent future flight permits existing workflow',{ready:200,sent:200,booked:200});
  const clockId='SYNTHETIC-CLOCK-ONLY',clockOffer=structuredClone(fixture);clockOffer.id=clockId;clockOffer.travelDates='16.11.2099 - 20.11.2099';
  for(const segment of [...clockOffer.flights[0].outboundSegments,...clockOffer.flights[0].inboundSegments,...clockOffer.flights[0].segments])for(const side of ['departure','arrival'])segment[side]=segment[side].match(/\d{2}:\d{2}/)[0];

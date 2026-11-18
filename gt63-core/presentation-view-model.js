@@ -276,45 +276,18 @@
     };
   }
 
-  // Legacy import contracts store diagnostics as strings alongside client findings.
-  const importRoutingDiagnostic = /(?:^|(?<=\.\s))(?:Mixed screenshots were routed to both engines(?: and require review)?|Final operator review is recommended|Some screenshots could not be identified|Choose Flight, Hotel, or Skip manually|Operator review required|Линкът не е публичен хотелски адрес|Линковете не са разчетени|Импортът продължава със скрийншотите)(?:\.(?=\s|$)|$)/gi;
-
   const unconfirmedMealNotice = "Изхранването не е потвърдено за всички хотелски варианти. Проверете условията за избрания хотел преди резервация.";
+  const trustedNotices = new WeakMap();
 
-  const importRiskNotices = [
-    [/^Flight extraction failed:|^Missing OCR field:|^No travel data extracted\.?$/i, "Данните за пътуването подлежат на потвърждение."],
-    [/^Hotel extraction failed:|^(?:Името на хотела е подсказано от линка|Проверете дали линкът е към разпознатия хотел|Линкът не е свързан еднозначно с хотел|Няколко линка без разпознати хотелски имена)\./i, "Данните за хотела подлежат на потвърждение."],
-    [/^Airline confidence below production threshold\.$/i, "Авиокомпанията подлежи на потвърждение."],
-    [/^Route confidence below production threshold\.$/i, "Маршрутът на полета подлежи на потвърждение."],
-    [/^Flight date\/time confidence below production threshold\.$/i, "Датите и часовете на полетите подлежат на потвърждение."],
-    [/^Flight price confidence below production threshold\.$/i, "Цената на полета подлежи на потвърждение."],
-    [/^Hotel price is not visible in the screenshot\. Enter it manually\.$|^Липсва (?:крайна хотелска цена|валута):/i, "Цената за хотелското настаняване подлежи на потвърждение."]
-  ];
-
-  function clientWarning(value) {
-    const raw = text(value?.message || value, "");
-    const prefix = raw.match(/^\[(?:INFO|WARNING|CRITICAL)\]\s*/i)?.[0] || "";
-    const message = raw.slice(prefix.length)
-      .replace(importRoutingDiagnostic, "")
-      .replace(/^Smart Import:\s*/i, "")
-      .replace(/^храненето за поне един хотел не е потвърдено\./i, unconfirmedMealNotice)
-      .replace(/^Не е потвърдено изхранването за \d+ хотел\(а\)\. Проверете преди изпращане\./i, unconfirmedMealNotice)
-      .replace(/^хотелските данни посочват деца, но полето за гости не ги включва\. Потвърдете броя и възрастите преди запис\./i, "Броят и възрастта на децата за хотелското настаняване подлежат на потвърждение.")
-      .trim();
-    if (!message || /^(?:\d+ hotel image URL\(s\) не са direct image links и бяха пропуснати|\d+ хотел\(а\) нямат запазени адреси на снимки\. Проверете кориците на PDF преди изпращане)\.$/i.test(message)) return "";
-    const risk = importRiskNotices.find(([pattern]) => pattern.test(message));
-    if (risk) return prefix + risk[1];
-    return prefix + message;
+  function setTrustedNotices(input, notices) {
+    trustedNotices.set(input, notices);
   }
 
   function presentationNotices(input = {}) {
-    return [
-      ...asArray(input.blockingIssues).map(value => ({ text: clientWarning(value), level: "blocking" })),
-      ...asArray(input.warnings).map(value => {
-        const notice = clientWarning(value);
-        return { text: notice, level: /^\[INFO\]/i.test(notice) ? "info" : "warning" };
-      })
-    ].filter(item => item.text);
+    return (trustedNotices.get(input) || []).map(notice => ({
+      text: notice.message,
+      level: notice.severity === "BLOCKING" ? "blocking" : notice.severity === "INFO" ? "info" : "warning"
+    }));
   }
 
   function buildPresentationViewModel(input = {}, options = {}) {
@@ -341,7 +314,7 @@
   return {
     amount,
     presentationNotices,
-    clientWarning,
+    setTrustedNotices,
     unconfirmedMealNotice,
     buildPresentationViewModel,
     compactMealLabel,

@@ -8,6 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
+const offerNotices = require("./server/offer-notices");
 const { offerRecordVersion } = require("./server/offer-record-version");
 const hotelPersistence = require("./server/hotel-image-persistence-plan");
 const dns = require("dns");
@@ -1268,6 +1269,9 @@ function assertClientStatusSafety(offer) {
   if (hotelOccupancyQa.warning(offer)) {
     throw routeError("AYA_HOTEL_OCCUPANCY_BLOCKED", 422, hotelOccupancyQa.summary(offer));
   }
+  if (offerNotices.adminState(offer).unresolved) {
+    throw routeError("AYA_NOTICE_REVIEW_REQUIRED", 422, { code: "AYA_NOTICE_REVIEW_REQUIRED" });
+  }
 }
 function flightSafetyWarnings(offer) {
   return uniqueWarnings([...safeArray(offer.validationWarnings).filter(w => !String(w).startsWith("[WARNING] [FLIGHT_DATE_SAFETY]")), ...flightDateSafety(offer).warnings]);
@@ -1767,8 +1771,16 @@ function displayDestinationSignal(signal = {}) {
   return names[key] || String(signal.match || "").trim();
 }
 
-function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = []) {
-  const warnings = [...flightDateSafety(offer).warnings];
+function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = [], trusted = null) {
+  const warnings = [];
+  const add = (code, message, audience = "CLIENT", parameters = {}) => {
+    warnings.push(message);
+    if (trusted) trusted.push({ code, message, audience, parameters });
+  };
+  const dateSafety = flightDateSafety(offer);
+  for (const message of dateSafety.warnings) {
+    add("FLIGHT_DATE_SAFETY", message, "CLIENT", { checkedOn: dateSafety.checkedOn, travelDates: offer.travelDates || "" });
+  }
   const flights = getFlights(offer);
   const hotels = getHotels(offer);
   const flightText = flights.map((flight) => [
@@ -1812,14 +1824,14 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     const flightHasDestination = Boolean(flightSignal) || destinationNeedles.some((needle) => matchesDestinationNeedle(flightText, needle));
     const hotelHasDestination = Boolean(hotelSignal) || destinationNeedles.some((needle) => matchesDestinationNeedle(hotelText, needle));
     if (flightText && !flightHasDestination) {
-      warnings.push(`[WARNING] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043d\u0435 \u0441\u043f\u043e\u043c\u0435\u043d\u0430\u0432\u0430 \u044f\u0441\u043d\u043e \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f\u0442\u0430 "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0430 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.`);
+      add("FLIGHT_ROUTE", `[WARNING] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043d\u0435 \u0441\u043f\u043e\u043c\u0435\u043d\u0430\u0432\u0430 \u044f\u0441\u043d\u043e \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f\u0442\u0430 "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0430 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.`);
     } else if (profile && airportSignal) {
-      warnings.push(`[INFO] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043a\u0430\u0446\u0430 \u0432 ${displayDestinationSignal(airportSignal)}, \u043a\u043e\u0435\u0442\u043e \u0435 \u0432\u0430\u043b\u0438\u0434\u043d\u043e \u043b\u0435\u0442\u0438\u0449\u0435 \u0437\u0430 ${profile.label}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440\u0430 \u0434\u043e \u0445\u043e\u0442\u0435\u043b\u0430.`);
+      add("AIRPORT_TRANSFER", `[INFO] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043a\u0430\u0446\u0430 \u0432 ${displayDestinationSignal(airportSignal)}, \u043a\u043e\u0435\u0442\u043e \u0435 \u0432\u0430\u043b\u0438\u0434\u043d\u043e \u043b\u0435\u0442\u0438\u0449\u0435 \u0437\u0430 ${profile.label}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440\u0430 \u0434\u043e \u0445\u043e\u0442\u0435\u043b\u0430.`);
     }
     if (hotelText && !hotelHasDestination) {
-      warnings.push(`[WARNING] \u041b\u043e\u043a\u0430\u0446\u0438\u044f\u0442\u0430 \u043d\u0430 \u0445\u043e\u0442\u0435\u043b\u0430 \u043d\u0435 \u0441\u044a\u0432\u043f\u0430\u0434\u0430 \u044f\u0441\u043d\u043e \u0441 \u043e\u0441\u043d\u043e\u0432\u043d\u0430\u0442\u0430 \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0434\u0430\u043b\u0438 \u0442\u043e\u0432\u0430 \u0435 \u0442\u044a\u0440\u0441\u0435\u043d\u0438\u044f\u0442 \u0440\u0430\u0439\u043e\u043d.`);
+      add("HOTEL_LOCATION", `[WARNING] \u041b\u043e\u043a\u0430\u0446\u0438\u044f\u0442\u0430 \u043d\u0430 \u0445\u043e\u0442\u0435\u043b\u0430 \u043d\u0435 \u0441\u044a\u0432\u043f\u0430\u0434\u0430 \u044f\u0441\u043d\u043e \u0441 \u043e\u0441\u043d\u043e\u0432\u043d\u0430\u0442\u0430 \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0434\u0430\u043b\u0438 \u0442\u043e\u0432\u0430 \u0435 \u0442\u044a\u0440\u0441\u0435\u043d\u0438\u044f\u0442 \u0440\u0430\u0439\u043e\u043d.`);
     } else if (profile && districtSignal) {
-      warnings.push(`[INFO] \u0425\u043e\u0442\u0435\u043b\u044a\u0442 \u0435 \u0432 \u0440\u0430\u0439\u043e\u043d ${displayDestinationSignal(districtSignal)}, \u043a\u043e\u0439\u0442\u043e \u0435 \u0440\u0430\u0437\u043f\u043e\u0437\u043d\u0430\u0442 \u043a\u0430\u0442\u043e \u0447\u0430\u0441\u0442 \u043e\u0442 ${profile.label}.`);
+      add("HOTEL_AREA", `[INFO] \u0425\u043e\u0442\u0435\u043b\u044a\u0442 \u0435 \u0432 \u0440\u0430\u0439\u043e\u043d ${displayDestinationSignal(districtSignal)}, \u043a\u043e\u0439\u0442\u043e \u0435 \u0440\u0430\u0437\u043f\u043e\u0437\u043d\u0430\u0442 \u043a\u0430\u0442\u043e \u0447\u0430\u0441\u0442 \u043e\u0442 ${profile.label}.`);
     }
   }
 
@@ -1837,7 +1849,7 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
   const selectedHotelSource = hotelOccupancyQa.selected(offer) || {};
   const hotelChildren = explicitChildCount(`${selectedHotelSource.room || ""} ${selectedHotelSource.description || ""}`);
   if (hotelChildren !== null && (!selectedOccupancy.confirmed || hotelChildren !== selectedOccupancy.children)) {
-    warnings.push(createQaFinding({ severity: "WARNING", message: "Хотелският източник посочва деца, но хотелската заетост не е потвърдена или не съвпада. Проверете хотелските гости отделно от полетните пътници." }));
+    add("OCCUPANCY_CHILDREN", createQaFinding({ severity: "WARNING", message: "Хотелският източник посочва деца, но хотелската заетост не е потвърдена или не съвпада. Проверете хотелските гости отделно от полетните пътници." }));
   }
 
   const offerAdults = parseAdultCount(offer.guests);
@@ -1845,11 +1857,11 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
   const hotelAdults = parseAdultCount(`${selectedHotelSource.room || ""} ${selectedHotelSource.description || ""}`);
 
   if (offerAdults && flightAdults && offerAdults !== flightAdults) {
-    warnings.push(createQaFinding({ severity: "WARNING", message: `\u0411\u0440\u043e\u044f\u0442 \u0433\u043e\u0441\u0442\u0438 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.guests || "-"}", \u043d\u043e \u043f\u043e\u043b\u0435\u0442\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${flightAdults} \u0432\u044a\u0437\u0440\u0430\u0441\u0442\u043d\u0438. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0431\u0440\u043e\u044f \u043f\u044a\u0442\u043d\u0438\u0446\u0438.` }));
+    add("FLIGHT_GUEST_COUNT", createQaFinding({ severity: "WARNING", message: `\u0411\u0440\u043e\u044f\u0442 \u0433\u043e\u0441\u0442\u0438 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.guests || "-"}", \u043d\u043e \u043f\u043e\u043b\u0435\u0442\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${flightAdults} \u0432\u044a\u0437\u0440\u0430\u0441\u0442\u043d\u0438. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0431\u0440\u043e\u044f \u043f\u044a\u0442\u043d\u0438\u0446\u0438.` }));
   }
 
   if (selectedOccupancy.confirmed && hotelAdults && selectedOccupancy.adults !== hotelAdults) {
-    warnings.push(createQaFinding({ severity: "WARNING", message: "Потвърдените хотелски възрастни не съвпадат с хотелския източник. Проверете хотелската заетост." }));
+    add("HOTEL_ADULT_COUNT", createQaFinding({ severity: "WARNING", message: "Потвърдените хотелски възрастни не съвпадат с хотелския източник. Проверете хотелската заетост." }));
   }
 
   const offerYear = inferYearFromText(offer.travelDates) || inferYearFromText(flightText);
@@ -1869,24 +1881,24 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     const inboundMatches = offerDateMatchesFlightDate(offerDates[1], flightDates[1]);
     if (!outboundMatches || !inboundMatches) {
       console.warn("[Flight Date Source]", JSON.stringify(offer.flightDateSourceTrace));
-      warnings.push(createQaFinding({ severity: "WARNING", message: `\u041f\u0435\u0440\u0438\u043e\u0434\u044a\u0442 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.travelDates || "-"}", \u043d\u043e \u043f\u043e\u043b\u0435\u0442\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${flightDates[0]} - ${flightDates[1]}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0434\u0430\u0442\u0438\u0442\u0435 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.` }));
+      add("TRAVEL_PERIOD", createQaFinding({ severity: "WARNING", message: `\u041f\u0435\u0440\u0438\u043e\u0434\u044a\u0442 \u0432 \u043e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u0435 "${offer.travelDates || "-"}", \u043d\u043e \u043f\u043e\u043b\u0435\u0442\u044a\u0442 \u043f\u043e\u043a\u0430\u0437\u0432\u0430 ${flightDates[0]} - ${flightDates[1]}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0434\u0430\u0442\u0438\u0442\u0435 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.` }), "CLIENT", { travelDates: offer.travelDates || "", flightDates });
     }
   }
 
   for (const hotel of hotels) {
     const availability = normalizeSearchText(hotel.roomsLeft);
     if (/няма налич|няма свобод|not available|no availability|sold out|unavailable/.test(availability)) {
-      warnings.push(createQaFinding({ severity: "WARNING", message: `\u0425\u043e\u0442\u0435\u043b\u044a\u0442 "${hotel.name || "Hotel"}" \u043f\u043e\u043a\u0430\u0437\u0432\u0430 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0430 \u0438\u043b\u0438 \u043b\u0438\u043f\u0441\u0432\u0430\u0449\u0430 \u043d\u0430\u043b\u0438\u0447\u043d\u043e\u0441\u0442. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.` }));
+      add("HOTEL_AVAILABILITY", createQaFinding({ severity: "WARNING", message: `\u0425\u043e\u0442\u0435\u043b\u044a\u0442 "${hotel.name || "Hotel"}" \u043f\u043e\u043a\u0430\u0437\u0432\u0430 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0430 \u0438\u043b\u0438 \u043b\u0438\u043f\u0441\u0432\u0430\u0449\u0430 \u043d\u0430\u043b\u0438\u0447\u043d\u043e\u0441\u0442. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.` }), "CLIENT", { hotelId: hotel.id || null });
     }
   }
 
   // Missing meal is a client-facing uncertainty, not a confirmed board plan.
   const missingMealHotels = hotels.filter((hotel) => !String(hotel.meal || hotel.board || "").trim());
   if (missingMealHotels.length) {
-    warnings.push(createQaFinding({
+    add("MEALS_UNCONFIRMED", createQaFinding({
       severity: "WARNING",
       message: `Не е потвърдено изхранването за ${missingMealHotels.length} хотел(а). Проверете преди изпращане.`
-    }));
+    }), "CLIENT", { hotelIds: missingMealHotels.map(hotel => hotel.id || null) });
   }
 
   const hotelsWithoutImages = hotels.filter((hotel) => {
@@ -1894,21 +1906,22 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     return !imageCandidates.some((value) => /^https?:\/\//i.test(String(value || "").trim()));
   });
   if (hotelsWithoutImages.length) {
-    warnings.push(createQaFinding({
+    add("HOTEL_IMAGES_MISSING", createQaFinding({
       severity: "WARNING",
       message: `${hotelsWithoutImages.length} хотел(а) нямат запазени адреси на снимки. Проверете кориците на PDF преди изпращане.`
-    }));
+    }), "OPERATOR");
   }
 
   if (invalidHotelImages.length) {
-    warnings.push(createQaFinding({ severity: "INFO", message: `${invalidHotelImages.length} hotel image URL(s) \u043d\u0435 \u0441\u0430 direct image links \u0438 \u0431\u044f\u0445\u0430 \u043f\u0440\u043e\u043f\u0443\u0441\u043d\u0430\u0442\u0438.` }));
+    add("HOTEL_IMAGE_URL", createQaFinding({ severity: "INFO", message: `${invalidHotelImages.length} hotel image URL(s) \u043d\u0435 \u0441\u0430 direct image links \u0438 \u0431\u044f\u0445\u0430 \u043f\u0440\u043e\u043f\u0443\u0441\u043d\u0430\u0442\u0438.` }), "OPERATOR");
   }
 
   const finalPrice = Number(offer.finalPrice || offer.price || 0);
   if (!finalPrice) {
-    warnings.push(createQaFinding({ severity: "CRITICAL", message: "\u041a\u0440\u0430\u0439\u043d\u0430\u0442\u0430 \u0446\u0435\u043d\u0430 \u0435 0 EUR. \u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u043d\u0435 \u0442\u0440\u044f\u0431\u0432\u0430 \u0434\u0430 \u0441\u0435 \u0438\u0437\u043f\u0440\u0430\u0449\u0430 \u043f\u0440\u0435\u0434\u0438 \u0434\u0430 \u0441\u0435 \u043f\u043e\u043f\u044a\u043b\u043d\u0438 \u0446\u0435\u043d\u0430." }));
+    add("PRICE_MISSING", createQaFinding({ severity: "CRITICAL", message: "\u041a\u0440\u0430\u0439\u043d\u0430\u0442\u0430 \u0446\u0435\u043d\u0430 \u0435 0 EUR. \u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u043d\u0435 \u0442\u0440\u044f\u0431\u0432\u0430 \u0434\u0430 \u0441\u0435 \u0438\u0437\u043f\u0440\u0430\u0449\u0430 \u043f\u0440\u0435\u0434\u0438 \u0434\u0430 \u0441\u0435 \u043f\u043e\u043f\u044a\u043b\u043d\u0438 \u0446\u0435\u043d\u0430." }), "CLIENT", { amount: finalPrice, currency: offer.currency || "EUR" });
   }
 
+  if (trusted) return;
   return uniqueWarnings([...normalizeIncomingWarnings(rawBody.validationWarnings, offer), ...warnings]);
 }
 
@@ -2169,6 +2182,7 @@ const hotels = inputHotels.length
     hotels
   };
 
+  offer.legacyNoticeWarnings = safeArray(body.validationWarnings).filter(value => typeof value === "string");
   offer.validationWarnings = buildValidationWarnings(offer, body, invalidHotelImages);
   return offer;
 }
@@ -2221,7 +2235,8 @@ function summarizeOfferForList(offer) {
     finalPrice: toNumber(offer.finalPrice || offer.price, 0),
     markupPercent: toNumber(offer.markupPercent, 0),
     margin: toNumber(offer.margin || offer.marginAmount, 0),
-    validationWarnings: flightSafetyWarnings(offer)
+    validationWarnings: flightSafetyWarnings(offer),
+    unresolvedNoticeCount: offerNotices.adminState(offer).unresolved
   };
 }
 
@@ -6195,6 +6210,34 @@ function escapeGt63RegistryHtml(value) {
   }[char]));
 }
 
+function projectOfferNotices(offer) {
+  const generated = [];
+  buildValidationWarnings({ ...offer }, {}, [], generated);
+  const occurrences = new Map();
+  const trusted = generated.filter(notice => notice.audience === "CLIENT").map(({ code, message, parameters }) => {
+    const key = JSON.stringify([code, message, parameters]);
+    const occurrence = occurrences.get(key) || 0;
+    occurrences.set(key, occurrence + 1);
+    const clientText = code === "MEALS_UNCONFIRMED"
+      ? "[WARNING] " + presentationViewModel.unconfirmedMealNotice
+      : message;
+    return offerNotices.generatedNotice(offer, code, occurrence, clientText, parameters);
+  });
+  const occupancy = hotelOccupancyQa.warning(offer);
+  if (occupancy) trusted.push(offerNotices.generatedNotice(offer, "HOTEL_OCCUPANCY", 0, occupancy));
+  const state = offerNotices.adminState(offer);
+  for (const notice of state.notices) {
+    if (notice.classification === offerNotices.MATERIAL) {
+      trusted.push({ id: notice.id, source: "admin-reviewed", audience: "CLIENT", code: "LEGACY_MATERIAL",
+        severity: "WARNING", message: notice.decision.clientText });
+    }
+  }
+  if (state.unresolved) {
+    trusted.push(offerNotices.generatedNotice(offer, "UNRESOLVED", 0, "[WARNING] Офертата има условия за преглед и не е потвърдена за изпращане."));
+  }
+  return trusted;
+}
+
 function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
   offer = offerWithResolvedFlightDates(offer);
   const proposalInput = normalizeProposalInputForOffer(offer.proposalInput);
@@ -6202,10 +6245,9 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
 
   const input = hotelOccupancyQa.applyToInput(proposalInput, offer);
   if (!input) return "";
-  // Recompute generated flight findings on the detached presentation input only.
-  input.warnings = flightSafetyWarnings({
-    ...offer, validationWarnings: [...safeArray(offer.validationWarnings), ...safeArray(input.warnings)]
-  });
+  delete input.warnings;
+  delete input.blockingIssues;
+  presentationViewModel.setTrustedNotices(input, projectOfferNotices(offer));
   const clientLink = `${LIVE_BASE_URL}/api/offers/view/${encodeURIComponent(offer.id)}`;
   input.contact = {
     ...(input.contact || {}),
@@ -6308,10 +6350,9 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     error.code = "GT63_PRINT_INVALID_PROPOSAL_INPUT";
     throw error;
   }
-  // Recompute generated flight findings on the detached presentation input only.
-  input.warnings = flightSafetyWarnings({
-    ...offer, validationWarnings: [...safeArray(offer.validationWarnings), ...safeArray(input.warnings)]
-  });
+  delete input.warnings;
+  delete input.blockingIssues;
+  presentationViewModel.setTrustedNotices(input, projectOfferNotices(offer));
   input.contact = {
     ...(input.contact || {}),
     whatsappPhone: AGENCY_WHATSAPP_PHONE
@@ -7288,11 +7329,11 @@ async function renderOfferHtml(offer, options = {}) {
   const registryHtml = renderGt63RegistryOfferHtml(offer, options);
   if (registryHtml) return registryHtml;
 
-  const { forPdf = false, showWarnings = true, qaMode = false } = options;
+  const { forPdf = false, showWarnings = true } = options;
   const flights = getFlights(offer).map((flight) => withBulgarianFlightDisplay(flight));
   const hotels = getHotels(offer);
-  const validationWarnings = flightSafetyWarnings(offer).map(presentationViewModel.clientWarning).filter(Boolean);
-  const hasWarnings = showWarnings && validationWarnings.length > 0 && (qaMode || !offer.warningsDismissed || validationWarnings.some(w => String(w).includes("[FLIGHT_DATE_SAFETY]")));
+  const validationWarnings = projectOfferNotices(offer).map(notice => notice.message);
+  const hasWarnings = showWarnings && validationWarnings.length > 0;
   const clientLink = `${LIVE_BASE_URL}/api/offers/view/${encodeURIComponent(offer.id)}`;
 
   const autoImages = {
@@ -9198,7 +9239,7 @@ app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).json({ error: "Offer not found" });
   if (!canAccessOffer(req, offer)) return res.status(403).json({ error: "Forbidden" });
-  res.json({ success: true, offerVersion: offerRecordVersion(offer), offer: { ...withBulgarianOfferFlightDisplay(offer), validationWarnings: flightSafetyWarnings(offer), flightDateSafety: flightDateSafety(offer), hotelOccupancyStatus: hotelOccupancyQa.summary(offer) } });
+  res.json({ success: true, offerVersion: offerRecordVersion(offer), offer: { ...withBulgarianOfferFlightDisplay(offer), validationWarnings: flightSafetyWarnings(offer), flightDateSafety: flightDateSafety(offer), hotelOccupancyStatus: hotelOccupancyQa.summary(offer), noticeReview: offerNotices.adminState(offer) } });
 });
 
 app.post("/api/offers", requireCapability("offers.create"), async (req, res) => {
@@ -9273,6 +9314,14 @@ app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) 
         updatedAt: new Date().toISOString()
       };
 
+      if (!Object.hasOwn(req.body, "proposalInput")) {
+        updated.proposalInput = previous.proposalInput;
+        updated.proposalTemplate = previous.proposalTemplate;
+      }
+      if (!Object.hasOwn(req.body, "validationWarnings")) {
+        updated.legacyNoticeWarnings = previous.legacyNoticeWarnings ?? previous.validationWarnings ?? [];
+      }
+      updated.noticeDecisions = offerNotices.retainedDecisions(previous, updated);
       assertClientStatusSafety(updated);
       db.offers[index] = updated;
       appendAuditEvent(db, req, {
@@ -9411,6 +9460,40 @@ app.patch("/api/offers/:id/status", requireCapability("offers.update"), async (r
     res.json(response);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message || "Offer status update failed", details: err.details || null });
+  }
+});
+
+app.patch("/api/offers/:id/notice-classification", requireCapability("offers.update"), async (req, res) => {
+  if (!can(req, "users.manage")) return res.status(403).json({ error: "Forbidden", capability: "users.manage" });
+  try {
+    let result;
+    await mutateDb(db => {
+      const offer = db.offers.find(item => item.id === req.params.id);
+      if (!offer) throw routeError("Offer not found", 404);
+      if (!canAccessOffer(req, offer)) throw routeError("Forbidden", 403);
+      if (req.body?.expectedVersion !== offerRecordVersion(offer)) throw persistenceConflict();
+      const { noticeId, classification, confirmed, clientText } = req.body;
+      if (![offerNotices.UNRESOLVED, offerNotices.INTERNAL, offerNotices.MATERIAL].includes(classification)) {
+        throw routeError("Invalid notice classification", 422);
+      }
+      const notice = offerNotices.rawNotices(offer).find(item => item.id === noticeId);
+      if (!notice) throw routeError("Notice version not found", 409);
+      if (classification === offerNotices.MATERIAL &&
+          (confirmed !== true || typeof clientText !== "string" || !clientText.trim() || clientText.length > 4000)) {
+        throw routeError("Confirm the exact client condition and all its material terms", 422);
+      }
+      const decision = { classification, actorId: req.user.id, decidedAt: new Date().toISOString() };
+      if (classification === offerNotices.MATERIAL) decision.clientText = clientText.trim();
+      offer.noticeDecisions = { ...offer.noticeDecisions, [noticeId]: decision };
+      offer.editorialRevision = Number(offer.editorialRevision || 0) + 1;
+      appendAuditEvent(db, req, { type: "offer_notice_classified", category: "offer", entityType: "offer",
+        entityId: offer.id, offerId: offer.id, metadata: { noticeId, ...decision } });
+      result = { success: true, offerVersion: offerRecordVersion(offer), noticeReview: offerNotices.adminState(offer) };
+      return db;
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || "Notice classification failed" });
   }
 });
 

@@ -1,7 +1,24 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {resolveSeasonalTheme,renderPrintProposal}=require('../gt63-core/renderers/print-presentation');
+const {resolveSeasonalTheme,renderPrintProposal:renderProjectedProposal}=require('../gt63-core/renderers/print-presentation');
 const theme=(name,dates)=>resolveSeasonalTheme({destination:{name},client:{travelDates:dates}});
+const viewModel = require('../gt63-core/presentation-view-model');
+// These fixtures exercise presentation after an authoritative classification.
+function projectFixture(input) {
+  const approved = (input.warnings || []).map(value => {
+    const message = value.message || value;
+    const severity = message.startsWith('[INFO]') ? 'INFO' : 'WARNING';
+    const terms = message.replace(/^\[(?:INFO|WARNING)\] /, '');
+    const meal = terms.match(/^(?:Smart Import: храненето за поне един хотел не е потвърдено\.|Не е потвърдено изхранването за 3 хотел\(а\)\. Проверете преди изпращане\.)(.*)$/);
+    return { severity, message: meal ? `[${severity}] ${viewModel.unconfirmedMealNotice}${meal[1]}` : message };
+  });
+  viewModel.setTrustedNotices(input, [...(input.blockingIssues || []).map(value => ({severity:'BLOCKING',message:value.message || value})), ...approved]);
+}
+function renderPrintProposal(input, options) {
+  projectFixture(input);
+  return renderProjectedProposal(input, options);
+}
+
 test('explicit northern and southern calendars cover four visual themes',()=>{
  for(const[date,north,south]of [['10.01.2026 - 20.01.2026','winter','summer'],['10.04.2026 - 20.04.2026','spring','autumn'],['10.07.2026 - 20.07.2026','summer','winter'],['10.10.2026 - 20.10.2026','autumn','spring']]){assert.equal(theme('Рим',date).theme,north);assert.equal(theme('Sydney',date).theme,south);}
  assert.equal(theme('Tokyo','2026-06-10 - 2026-06-20').theme,'summer');
@@ -66,13 +83,13 @@ test('PDF groups all price displays and keeps unresolved collection warnings wit
 test('PDF merges only the proven meal duplicate, preserving distinct scope, UNKNOWN and severity',()=>{
  const warnings=['[WARNING] Smart Import: храненето за поне един хотел не е потвърдено.','[WARNING] Не е потвърдено изхранването за 3 хотел(а). Проверете преди изпращане.','[WARNING] Le Meridien: изхранване UNKNOWN.','[WARNING] Smart Import: храненето за поне един хотел не е потвърдено. Допълнително условие.','[INFO] Не е потвърдено изхранването за 3 хотел(а). Проверете преди изпращане.'];
  const input={hotelOptions:[{id:'a',name:'Le Meridien',price:9145.95}],warnings,blockingIssues:['Изхранване UNKNOWN — нужна проверка.']},before=JSON.stringify(input);
- const vm=require('../gt63-core/presentation-view-model');assert.equal(vm.presentationNotices(input).length,6);
+ projectFixture(input);assert.equal(viewModel.presentationNotices(input).length,6);
  const html=renderPrintProposal(input,{selectedHotelId:'a'});assert.equal((html.match(/data-notice-level=/g)||[]).length,5);assert(html.includes('Le Meridien: изхранване UNKNOWN.'));assert(html.includes('Допълнително условие.'));assert(html.includes('Изхранване UNKNOWN — нужна проверка.'));for(const level of ['info','warning','blocking'])assert(html.includes(`data-notice-level="${level}"`));assert.equal(JSON.stringify(input),before);
 });
 
 
 test('PDF-only normalization retains object INFO and blocking severity without changing shared HTML notices',()=>{
  const input={hotelOptions:[{id:'a',name:'QA HOTEL',price:100}],warnings:[{message:'[INFO] Проверете трансфера.'}],blockingIssues:[{message:'[INFO] Нужна е проверка.'}]};
- const vm=require('../gt63-core/presentation-view-model'),before=JSON.stringify(input),shared=JSON.stringify(vm.presentationNotices(input));
+ projectFixture(input);const vm=viewModel,before=JSON.stringify(input),shared=JSON.stringify(vm.presentationNotices(input));
  const html=renderPrintProposal(input,{selectedHotelId:'a'});assert(html.includes('data-notice-level="info"'));assert(html.includes('data-notice-level="blocking"'));assert(html.includes('Информация: Проверете трансфера.'));assert.equal(JSON.stringify(vm.presentationNotices(input)),shared);assert.equal(JSON.stringify(input),before);
 });

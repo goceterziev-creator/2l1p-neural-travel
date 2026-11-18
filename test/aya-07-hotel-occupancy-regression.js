@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const offerNotices = require("../server/offer-notices");
 const test = require("node:test");
 const occupancy = require("../public/hotel-occupancy");
 const { buildLegacyOfferPrintInput } = require("../gt63-core/legacy-offer-print-input");
@@ -16,7 +17,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start);
   return source.slice(a, b);
 }
-const ctx = vm.createContext({ AYAHotelOccupancy: occupancy, hotelOccupancyQa: occupancy,
+const ctx = vm.createContext({ offerNotices, AYAHotelOccupancy: occupancy, hotelOccupancyQa: occupancy,
   getFlightPriceFromOffer: o => o.flightPrice, getHotelPriceFromOffer: o => o.hotelPrice,
   toNumber: (v, fallback = 0) => Number.isFinite(Number(v)) ? Number(v) : fallback,
   safeArray: v => Array.isArray(v) ? v : [] });
@@ -64,6 +65,9 @@ test("recognized 2A+2C/1 room stays blocking until explicitly confirmed; flight 
 test("explicit complete confirmation removes only occupancy warning; INFO remains and costs no points", () => {
   const before = warnings(base);
   const offer = withOccupancy(normalized);
+  offer.noticeDecisions = Object.fromEntries(offerNotices.rawNotices(offer).map(notice => [
+    notice.id, { classification: offerNotices.MATERIAL, clientText: notice.message, actorId: "QA", decidedAt: "2026-11-18T00:00:00Z" }
+  ]));
   for (const view of [offer, project(offer)]) {
     assert.deepEqual(warnings(view), before.filter(w => w !== occupancy.WARNING));
     assert.equal(ctx.qaScore(view), 100);
@@ -135,14 +139,19 @@ test("saved occupancy and selection override stale proposal fields in HTML and P
 });
 
 test("READY dashboard excludes unconfirmed offers but accepts INFO-only confirmed offers", () => {
-  const offers = [base, withOccupancy({ ...normalized, confirmed: false }), withOccupancy(normalized)].map(project);
+  const offers = [base, withOccupancy({ ...normalized, confirmed: false }), withOccupancy(normalized)].map(offer => {
+    const noticeDecisions = Object.fromEntries(offerNotices.rawNotices(offer).map(notice => [
+      notice.id, { classification: offerNotices.MATERIAL, clientText: notice.message, actorId: "QA", decidedAt: "2026-11-18T00:00:00Z" }
+    ]));
+    return project({ ...offer, noticeDecisions });
+  });
   assert.equal(offers.filter(o => ctx.offerReadyToSend(o)).length, 1);
 });
 
 test("real save normalizer, JSON persistence, edit normalization and list/detail route handlers preserve independent hotel data", () => {
   const routes = new Map();
   let database = { offers: [] };
-  const integration = vm.createContext({ hotelOccupancyQa: occupancy, URL,
+  const integration = vm.createContext({ offerNotices, hotelOccupancyQa: occupancy, URL,
     offerRecordVersion: require("../server/offer-record-version").offerRecordVersion,
     crypto: require('node:crypto'), FLIGHT_AIRPORT_ALIASES: [],
     normalizeTravelDate: require('../server/travel-normalizers/date-normalizer').normalizeTravelDate,

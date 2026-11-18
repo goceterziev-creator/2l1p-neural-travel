@@ -1228,7 +1228,8 @@ function getPdfOfferUrl(id) {
 }
 
 function getWhatsAppText(id) {
-  if (!flightDateClientReady(getOfferById(id) || {})) return "";
+  const offer = getOfferById(id) || {};
+  if (!flightDateClientReady(offer) || offer.unresolvedNoticeCount > 0) return "";
   return `Здравейте!\nВашата оферта е готова:\n${getPublicOfferUrl(id)}`;
 }
 
@@ -1247,7 +1248,7 @@ function flightDateClientReady(offer = {}) {
 function offerReadyToSend(offer = {}) {
   const status = String(offer.status || "draft").toLowerCase();
   // An explicit review status still requires review; INFO alone is not a blocker.
-  return status === "draft" && flightDateClientReady(offer) && qaTone(qaScore(offer), getOfferWarnings(offer)) === "ready";
+  return status === "draft" && !(offer.unresolvedNoticeCount > 0) && flightDateClientReady(offer) && qaTone(qaScore(offer), getOfferWarnings(offer)) === "ready";
 }
 
 function syncHomeFieldsToCreateSurface() {
@@ -2029,7 +2030,7 @@ function renderWorkspaceCommandBar(offer = {}) {
         <div>
           <button type="button" ${capabilityAttrs("offers.update")} onclick="setStatus('${id}', 'viewed')">Viewed</button>
           <button type="button" onclick="copyOfferLink('${id}')">Copy</button>
-          ${waLink ? `<a href="${escapeHtml(waLink)}" target="_blank">WhatsApp</a>` : "<span>Flight-date review required before sending</span>"}
+          ${waLink ? `<a href="${escapeHtml(waLink)}" target="_blank">WhatsApp</a>` : offer.unresolvedNoticeCount > 0 ? "<span>Има предупреждения за преглед преди изпращане.</span>" : "<span>Flight-date review required before sending</span>"}
           <button type="button" ${capabilityAttrs("offers.update")} onclick="editOfferFromWorkspace('${id}')">Edit</button>
           <button class="danger-action" type="button" ${capabilityAttrs("offers.update")} onclick="setStatus('${id}', 'lost')">Lost</button>
         </div>
@@ -2587,6 +2588,7 @@ function setEditMode(offerId = null, offerVersion = null) {
   editingOfferId = offerId;
   editingOfferVersion = offerId ? offerVersion : null;
   const isEditing = Boolean(offerId);
+  if (!isEditing) window.currentValidationWarnings = [];
   if (isEditing) setCreateSurfaceOpen(true);
 
   if ($("formTitle")) $("formTitle").textContent = isEditing ? "Edit Offer" : "Create Offer";
@@ -2605,6 +2607,7 @@ function setEditMode(offerId = null, offerVersion = null) {
   reflectCapabilities();
   updateCreateSurfaceSummary();
   resetHotelPersistenceEditor();
+  $("noticeReviewPanel")?.replaceChildren();
 }
 
 function setCreateSurfaceOpen(isOpen = true) {
@@ -2683,11 +2686,65 @@ function populateForm(offer = {}) {
   updateAutoPrice();
 }
 
+function renderNoticeReview(id, review) {
+  const panel = $("noticeReviewPanel");
+  if (!panel) return;
+  panel.replaceChildren();
+  if (!review?.notices?.length) return;
+  const heading = document.createElement("h3");
+  heading.textContent = "Преглед на предупрежденията";
+  panel.append(heading);
+  for (const notice of review.notices) {
+    const row = document.createElement("div");
+    const diagnostic = document.createElement("p");
+    diagnostic.textContent = notice.message;
+    const state = document.createElement("p");
+    state.textContent = notice.classification;
+    row.append(diagnostic, state);
+    for (const [classification, label] of [
+      ["INTERNAL_DIAGNOSTIC", "Вътрешна диагностика"],
+      ["CLIENT_MATERIAL_CONDITION", "Клиентско условие"],
+      ["UNRESOLVED", "За преглед"]
+    ]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.capability = "users.manage";
+      button.textContent = label;
+      button.addEventListener("click", async () => {
+        if (editingOfferId !== id) return;
+        let clientText;
+        if (classification === "CLIENT_MATERIAL_CONDITION") {
+          clientText = window.prompt("Въведете точния текст за клиента с всички срокове, суми, валути и условия.", notice.decision?.clientText || "");
+          if (!clientText?.trim() || !window.confirm("Потвърждавате ли, че текстът запазва всички материални условия?")) return;
+        }
+        try {
+          const result = await fetchJson(`/api/offers/${encodeURIComponent(id)}/notice-classification`, {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expectedVersion: editingOfferVersion, noticeId: notice.id, classification, clientText, confirmed: Boolean(clientText) })
+          });
+          if (editingOfferId !== id) return;
+          editingOfferVersion = result.offerVersion;
+          const offer = getOfferById(id);
+          if (offer) offer.unresolvedNoticeCount = result.noticeReview.unresolved;
+          renderNoticeReview(id, result.noticeReview);
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+      row.append(button);
+    }
+    panel.append(row);
+  }
+  reflectCapabilities();
+}
+
 async function editOffer(id) {
   try {
     const data = await fetchJson(`/api/offers/${id}`);
     populateForm(data.offer || {});
+    window.currentValidationWarnings = [...(data.offer.legacyNoticeWarnings ?? data.offer.validationWarnings ?? [])];
     setEditMode(id, data.offerVersion);
+    renderNoticeReview(id, data.offer.noticeReview);
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (error) {
     alert(`Edit failed: ${error.message}`);
@@ -3258,14 +3315,23 @@ function getFlightImportWarnings(data = {}) {
   ].map((warning) => String(warning || "").trim()).filter(Boolean))];
 }
 
+function appendValidationWarnings(stored = [], findings = []) {
+  // Keep each existing occurrence and its position. Add only new editor findings.
+  const seen = new Set(stored);
+  return [...stored, ...findings.filter(message => {
+    if (seen.has(message)) return false;
+    seen.add(message);
+    return true;
+  })];
+}
+
 function mergeCurrentValidationWarnings(warnings = []) {
   const existing = Array.isArray(window.currentValidationWarnings)
     ? window.currentValidationWarnings
     : [];
-  window.currentValidationWarnings = [...new Set([
-    ...existing,
-    ...warnings.map((warning) => String(warning || "").trim()).filter(Boolean)
-  ])];
+  window.currentValidationWarnings = appendValidationWarnings(
+    existing, warnings.map(warning => String(warning || "").trim()).filter(Boolean)
+  );
   return window.currentValidationWarnings;
 }
 
@@ -3556,11 +3622,10 @@ validationWarnings.push(
   )
 );
 
-validationWarnings.push(
-  ...(Array.isArray(window.currentValidationWarnings) ? window.currentValidationWarnings : [])
-);
-
-  payload.validationWarnings = validationWarnings;
+  payload.validationWarnings = appendValidationWarnings(
+    Array.isArray(window.currentValidationWarnings) ? window.currentValidationWarnings : [],
+    validationWarnings
+  );
 console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
 
   if (!payload.destination) {

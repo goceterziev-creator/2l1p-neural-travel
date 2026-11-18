@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const vm = require("node:vm");
+const offerNotices = require("../server/offer-notices");
 const Module = require("node:module");
 const { offerRecordVersion } = require("../server/offer-record-version");
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "aya-concurrency-"));
@@ -21,7 +22,7 @@ function setup() {
   let db = { offers: [{ ...normalizeOffer({ destination: "Рим", travelDates: "16.11.2099 - 20.11.2099", flights: [{ route: "SOF -> CIA / CIA -> SOF", departure: "2099-11-16T10:30", arrival: "2099-11-20T10:30", price: 200 }], hotels: [{ id: "hotel-exact", name: "Synthetic", price: 100, selected: true, images: [], occupancy: { adults: 2, children: 0, rooms: 1, confirmed: true } }] }), id: "QA", agencyId: "A" }] };
   let writes = 0, audits = 0;
   const routes = {};
-  const ctx = vm.createContext({
+  const ctx = vm.createContext({ offerNotices,
     app: { get: (url, capability, handler) => { routes[url.includes("/view/") ? "view" : "get"] = handler || capability; }, post: (url, handler) => { routes.click = handler; }, put: (url, _, handler) => { routes.put = handler; } },
     requireCapability: x => x, offerRecordVersion, normalizeOffer,
     ...harness.exports.concurrencyTest,
@@ -44,7 +45,7 @@ function setup() {
   vm.runInContext(section('app.get("/api/offers/:id",', 'app.post("/api/offers",'), ctx);
   async function call(method, body, forbidden = false) {
     const res = { code: 200, status(code) { this.code = code; return this; }, json(data) { this.data = clone(data); }, setHeader() {}, send() {} };
-    await routes[method]({ params: { id: "QA" }, body, user: { id: "U", name: "QA" }, forbidden }, res);
+    await routes[method]({ params: { id: "QA" }, query: {}, body, user: { id: "U", name: "QA" }, forbidden }, res);
     return res;
   }
   return { call, current: () => clone(db.offers[0]), change: fn => fn(db.offers[0]), writes: () => writes, audits: () => audits };
@@ -81,11 +82,11 @@ test("queued writes compare against latest raw record; sequential save uses retu
 test("admin sends opening version, preserves edits on conflict, resets token on exit", async () => {
   const admin = fs.readFileSync(path.resolve(__dirname, "../public/admin.js"), "utf8");
   let mode, payload;
-  const ctx = vm.createContext({ fetchJson: async () => ({ offer: { id: "QA" }, offerVersion: "opening-token" }), populateForm: () => {}, setEditMode: (...args) => { mode = args; }, window: { scrollTo: () => {} }, alert: () => {} });
+  const ctx = vm.createContext({ offerNotices, fetchJson: async () => ({ offer: { id: "QA" }, offerVersion: "opening-token" }), populateForm: () => {}, setEditMode: (...args) => { mode = args; }, window: { scrollTo: () => {} }, alert: () => {} });
   vm.runInContext(admin.slice(admin.indexOf("async function editOffer(id)"), admin.indexOf("function cancelEdit()")), ctx);
   await ctx.editOffer("QA"); assert.deepEqual(Array.from(mode), ["QA", "opening-token"]);
   const start = admin.indexOf("    const wasEditing = Boolean(editingOfferId);"), end = admin.indexOf("    alert(wasEditing ?", start);
-  const save = vm.createContext({ editingOfferId: "QA", editingOfferVersion: "opening-token", payload: { hotels: [{ id: "hotel-exact" }] }, fetchJson: async (url, options) => { payload = JSON.parse(options.body); throw new Error("409"); } });
+  const save = vm.createContext({ offerNotices, editingOfferId: "QA", editingOfferVersion: "opening-token", payload: { hotels: [{ id: "hotel-exact" }] }, fetchJson: async (url, options) => { payload = JSON.parse(options.body); throw new Error("409"); } });
   await assert.rejects(vm.runInContext(`(async()=>{${admin.slice(start, end)}})()`, save), /409/);
   assert.equal(payload.expectedVersion, "opening-token");
   assert.equal(save.editingOfferVersion, "opening-token");
