@@ -478,8 +478,9 @@
 
   function finalCtaBlock(input = {}, selectedPayload = {}) {
     const agent = input.agent || input.consultant || input.agency || {};
-    const phone = text(agent.phone || input.contact?.phone || "+359 885 07 89 80", "");
-    const email = text(agent.email || input.contact?.email || "", "");
+    const clientOffer = Boolean(input.contact?.clientOfferUrl);
+    const phone = clientOffer ? "" : text(agent.phone || input.contact?.phone || "+359 885 07 89 80", "");
+    const email = clientOffer ? "" : text(agent.email || input.contact?.email || "", "");
     return `
       <section class="v11-final-cta">
         <div>
@@ -717,7 +718,8 @@
           var selectedImage = root.querySelector(".js-selected-option-image");
           var selectedImagePlaceholder = root.querySelector(".js-selected-option-image-placeholder");
           var selectedWebsite = root.querySelector(".js-selected-option-website");
-          var whatsappLinks = root.querySelectorAll(".js-selected-option-whatsapp");
+          var shell = root.closest(".shell");
+          var whatsappLinks = (shell || root).querySelectorAll(".js-selected-option-whatsapp");
           var heroFactStars = root.querySelector('[data-selected-fact="stars"] strong');
           var heroFactRoom = root.querySelector('[data-selected-fact="room"] strong');
           var heroFactMeal = root.querySelector('[data-selected-fact="meal"] strong');
@@ -806,13 +808,10 @@
           }
           root.querySelectorAll(".v11-prefer-option").forEach(function (button) {
             button.addEventListener("click", function () {
-              var shell = root.closest(".shell");
-              var pdfLink = shell && shell.querySelector("[data-offer-pdf]");
-              if (pdfLink && button.dataset.optionId) {
-                var pdfUrl = new URL(pdfLink.href, document.baseURI);
-                pdfUrl.searchParams.set("selectedHotelId", button.dataset.optionId);
-                pdfUrl.searchParams.set("mode", "selected");
-                pdfLink.href = pdfUrl.href;
+              if (shell && shell.matches("main[data-proposal-template]") && button.dataset.optionId) {
+                var offerUrl = new URL(window.location.href);
+                offerUrl.searchParams.set("selectedHotelId", button.dataset.optionId);
+                window.history.replaceState(null, "", offerUrl.href);
               }
               root.querySelectorAll(".v11-hotel-option").forEach(function (card) {
                 card.classList.remove("selected");

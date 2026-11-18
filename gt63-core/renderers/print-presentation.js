@@ -590,14 +590,6 @@
       integer.replace(/\s/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, " ") + "," + cents);
   }
 
-  function clientPrintNotice(value) {
-    // Collection-level provenance cannot prove the condition of a particular hotel.
-    // Keep the warning and severity, with explicitly unresolved client wording.
-    return String(value).replace(/Smart Import:\s*/gi, "")
-      .replace(/храненето за поне един хотел не е потвърдено/gi, "Изхранването не е потвърдено за всички хотелски варианти. Условията за избрания хотел подлежат на проверка")
-      .replace(/Не е потвърдено изхранването за \d+ хотел\(а\)\. Проверете преди изпращане\./gi, "Изхранването не е потвърдено за всички хотелски варианти. Проверете условията за избрания хотел преди резервация.");
-  }
-
   function ctaBlock(viewModel, input = {}) {
     const contactPhone = nonEmpty(input.contact?.whatsappPhone || input.contact?.phone);
     const contactEmail = nonEmpty(input.contact?.email);
@@ -632,7 +624,7 @@
       // Only these complete collection-level messages describe the proven duplicate.
       // Keep added qualifications, hotel-specific notices and other severities separate.
       const message = item.text.replace(/^(?:Важно|Информация):\s*/, "");
-      const duplicateMeal = /^(?:Smart Import: храненето за поне един хотел не е потвърдено\.|Не е потвърдено изхранването за \d+ хотел\(а\)\. Проверете преди изпращане\.)$/.test(message);
+      const duplicateMeal = message === viewModelApi.unconfirmedMealNotice;
       return { ...item, duplicateMeal };
     }).filter(item => {
       if (!item.duplicateMeal) return true;
@@ -640,11 +632,11 @@
       seenMealConditions.add(item.level);
       return true;
     }).map(item => item.duplicateMeal ? {
-      ...item, text: `${item.level === "info" ? "Информация" : "Важно"}: Изхранването не е потвърдено за всички хотелски варианти. Проверете условията за избрания хотел преди резервация.`
+      ...item, text: `${item.level === "info" ? "Информация" : "Важно"}: ${viewModelApi.unconfirmedMealNotice}`
     } : item);
     if (!notices.length) return "";
     return editorialSection("gt63-print-notices", "Преди резервация", "Условия и важни бележки", `
-      <ul>${notices.map(item => `<li data-notice-level="${item.level}">${luxuryIcon(item.level === "info" ? "info" : "warning")}<span>${escapeHtml(localize(clientPrintNotice(item.text)))}</span></li>`).join("")}</ul>
+      <ul>${notices.map(item => `<li data-notice-level="${item.level}">${luxuryIcon(item.level === "info" ? "info" : "warning")}<span>${escapeHtml(localize(item.text))}</span></li>`).join("")}</ul>
     `);
   }
 

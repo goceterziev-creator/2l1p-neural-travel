@@ -55,6 +55,11 @@ assert.equal(registry.selectedTemplate(multiHotelInput), "multi-hotel", "registr
 assert.equal(registry.rendererFor(multiHotelInput).label, "Multi-Hotel Selector", "registry should select multi-hotel renderer");
 
 const multiHotelHtml = registry.renderProposal(multiHotelInput);
+const mixedDiagnostic = fixture.warnings[0];
+assert(productModel.warnings.includes(mixedDiagnostic), "operator import model keeps the full diagnostic");
+assert(multiHotelInput.warnings.includes(mixedDiagnostic), "client rendering does not alter saved proposal warnings");
+assert(!multiHotelHtml.includes(mixedDiagnostic), "operator diagnostic is absent from all client HTML source");
+
 assert.match(multiHotelHtml, /ПЕРСОНАЛНА ОФЕРТА/, "multi-hotel renderer should identify the client proposal in Bulgarian");
 assert.doesNotMatch(multiHotelHtml, /multi-hotel-sequential-grid/, "multi-hotel renderer should no longer use the old comparison grid wrapper");
 assert.match(multiHotelHtml, /v11-flight-summary-grid/, "multi-hotel renderer should show premium flight summary cards");
@@ -70,7 +75,7 @@ assert.match(multiHotelHtml, /&#1048;&#1079;&#1073;&#1088;&#1072;&#1085; &#1093;
 assert.match(multiHotelHtml, /Hotel 10/, "multi-hotel renderer should preserve selected hotel 10 in the hero/details");
 assert.match(multiHotelHtml, /src="https:\/\/images\.example\.test\/hotel-10-1\.jpg"/, "hero image should follow the selected hotel image");
 assert.match(multiHotelHtml, /Крайна цена за избрания хотел/, "multi-hotel renderer should keep the selected option estimate label");
-assert.match(multiHotelHtml, /3,543\.75 EUR/, "hero should show the selected final package price");
+assert.match(multiHotelHtml, /3543,75 EUR/, "hero should show the selected final package price");
 assert.match(multiHotelHtml, /Дестинация/, "hero should include destination as a decision fact");
 assert.match(multiHotelHtml, /Пътуващи/, "hero should include travelers as a decision fact");
 assert.match(multiHotelHtml, /Хранене/, "hero should include concise meal information");
@@ -98,7 +103,7 @@ assert.match(multiHotelHtml, /selectedBadge\.textContent = "Избрана оп�
 assert.match(multiHotelHtml, /updateRecommendation\(button\.dataset\.optionReasons/, "recommendation should update when the client changes hotel");
 assert.match(multiHotelHtml, /updateDetailGallery\(parseImages\(button\.dataset\.optionImages/, "selected detail gallery should update when the client changes hotel");
 assert.match(multiHotelHtml, /data-option-name="Hotel 1"/, "hotel option buttons should carry alternate selected hotel names");
-assert.match(multiHotelHtml, /data-option-price="2,598\.75 EUR"/, "hotel option buttons should carry alternate selected hotel prices");
+assert.match(multiHotelHtml, /data-option-price="2598,75 EUR"/, "hotel option buttons should carry alternate selected hotel prices");
 assert.equal((comparisonSection.match(/class="v11-hotel-option /g) || []).length, 10, "comparison should render every hotel option without an artificial max");
 const selectedHotelSectionStart = multiHotelHtml.indexOf("v11-selected-hotel-card");
 const selectedHotelSectionEnd = multiHotelHtml.indexOf("v11-transfer-card", selectedHotelSectionStart);
@@ -197,7 +202,7 @@ const selectedSyncDetail = selectedSyncHtml.slice(selectedSyncHtml.indexOf("v11-
 
 assert.match(selectedSyncHero, /Home Story in Tokyo Aerial大島&amp;東京屋語/, "selectedHotelIndex=5 should drive the hero selected hotel name");
 assert.equal(/Palace Hotel Tokyo/.test(selectedSyncHero), false, "hero should not use option 1 as the selected hotel when selectedHotelIndex=5");
-assert.match(selectedSyncHero, /5,431\.93 EUR/, "hero should show the selected option 6 final price");
+assert.match(selectedSyncHero, /5431,93 EUR/, "hero should show the selected option 6 final price");
 assert.match(selectedSyncHero, /hotel-6-hero\.jpg/, "hero image should follow selected option 6 images");
 assert.match(selectedSyncTimeline, /Настаняване в Home Story in Tokyo Aerial大島&amp;東京屋語/, "timeline accommodation should use selected option 6");
 assert.match(selectedSyncTimeline, /Полет София → Токио/, "timeline summary should use destination-level outbound city route");

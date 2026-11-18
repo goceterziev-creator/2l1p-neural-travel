@@ -8,9 +8,16 @@ process.env.SERPAPI_KEY = '';
 process.on('exit', () => fs.rmSync(scratch, {recursive:true, force:true}));
 const filename = path.resolve(__dirname, '../server.js'), harness = new Module(filename, module);
 harness.filename = filename; harness.paths = Module._nodeModulePaths(path.dirname(filename));
-harness._compile(fs.readFileSync(filename, 'utf8') + '\nmodule.exports.warningTest={flightDateSafety,assertFlightDateSafety,renderOfferHtml,renderGt63PrintOfferHtml};', filename);
+harness._compile(fs.readFileSync(filename, 'utf8') + '\nmodule.exports.warningTest={flightDateSafety,flightSafetyWarnings,assertFlightDateSafety,renderOfferHtml,renderGt63PrintOfferHtml};', filename);
 const api = harness.exports.warningTest;
 const adapter = require('../gt63-core/legacy-offer-print-input');
+const { rawNotices, MATERIAL, INTERNAL } = require('../server/offer-notices');
+function reviewFixture(offer, materialText) {
+  offer.noticeDecisions = Object.fromEntries(rawNotices(offer).map(notice => {
+    const clientText = materialText(notice.message);
+    return [notice.id, { classification: clientText ? MATERIAL : INTERNAL, clientText, actorId: 'QA', decidedAt: '2026-11-18T00:00:00Z' }];
+  }));
+}
 const stale = '[WARNING] [FLIGHT_DATE_SAFETY] STALE_GENERATED_DATE_WARNING';
 const preserved = ['[INFO] CIA transfer must be checked', '[WARNING] Meal confirmation required', '[WARNING] Hotel occupancy confirmation required', 'Operator note mentioning [FLIGHT_DATE_SAFETY] must remain'];
 function fixture(proposal) {
@@ -23,6 +30,9 @@ function fixture(proposal) {
     offer.proposalInput.warnings = [stale, '[INFO] PROPOSAL_ONLY_TRANSFER_NOTE'];
     offer.proposalTemplate = {selected:'multi-hotel'};
   }
+  // The customer copy in this fixture is explicitly reviewed. The operator note
+  // remains in the source and is checked separately from the client projection.
+  reviewFixture(offer, message => /^Operator note|STALE_GENERATED/.test(message) || message.includes('STALE_GENERATED') ? '' : message);
   return offer;
 }
 async function render(offer, print) {
@@ -44,7 +54,9 @@ for (const proposal of [false,true]) for (const print of [false,true]) {
     assert.equal(api.flightDateSafety(offer).ready, true);
     const output = await assertNoMutation(offer, () => render(offer, print));
     assert(!output.includes('STALE_GENERATED_DATE_WARNING'));
-    for (const warning of preserved) assert(output.includes(warning.replace(/^\[(INFO|WARNING)\] /, '')), warning);
+    for (const warning of preserved.slice(0, -1)) assert(output.includes(warning.replace(/^\[(INFO|WARNING)\] /, '')), warning);
+    assert(api.flightSafetyWarnings(offer).includes(preserved.at(-1)));
+    assert(!output.includes(preserved.at(-1)));
     if (proposal) assert(output.includes('PROPOSAL_ONLY_TRANSFER_NOTE'));
     assert(offer.validationWarnings.includes(stale));
   });
@@ -57,7 +69,9 @@ for (const proposal of [false,true]) for (const print of [false,true]) {
     assert(!output.includes('STALE_GENERATED_DATE_WARNING'));
     assert(output.includes('[FLIGHT_DATE_SAFETY]'));
     assert(output.includes('2020-11-16'));
-    for (const warning of preserved) assert(output.includes(warning.replace(/^\[(INFO|WARNING)\] /, '')), warning);
+    for (const warning of preserved.slice(0, -1)) assert(output.includes(warning.replace(/^\[(INFO|WARNING)\] /, '')), warning);
+    assert(api.flightSafetyWarnings(offer).includes(preserved.at(-1)));
+    assert(!output.includes(preserved.at(-1)));
   });
 }
 test('saved proposal flight aliases independently produce a live blocking warning', async () => {
@@ -69,5 +83,40 @@ test('saved proposal flight aliases independently produce a live blocking warnin
     assert(output.includes('противоречиви date aliases'));
     assert(output.includes('PROPOSAL_ONLY_TRANSFER_NOTE'));
     assert(!output.includes('STALE_GENERATED_DATE_WARNING'));
+  }
+});
+
+test('operator routing diagnostics stay in Admin while mixed material notices reach all client renderers', async () => {
+  const diagnostic = require('./fixtures/smart-import/flight-hotel-mixed.json').warnings[0];
+  const risk = 'Датата на обратния полет подлежи на потвърждение.';
+  const price = 'Цената на полета подлежи на потвърждение.';
+  const meal = 'Изхранването не е потвърдено за всички хотелски варианти.';
+  const warnings = [
+    diagnostic,
+    'Flight price confidence below production threshold.',
+    `[WARNING] ${diagnostic} ${risk}`,
+    '[WARNING] Smart Import: храненето за поне един хотел не е потвърдено. Допълнително условие.',
+    '[WARNING] Наличността на хотела подлежи на потвърждение.'
+  ];
+  for (const template of [null, 'multi-hotel', 'cathedral']) {
+    const offer = fixture(Boolean(template));
+    if (template) offer.proposalTemplate.selected = offer.proposalInput.proposalTemplate.selected = template;
+    offer.validationWarnings.push(...warnings);
+    if (template) offer.proposalInput.warnings.push(...warnings);
+    const approved = new Map([
+      [warnings[1], price],
+      [warnings[2], risk],
+      [warnings[3], meal + ' Допълнително условие.'],
+      [warnings[4], 'Наличността на хотела подлежи на потвърждение.']
+    ]);
+    reviewFixture(offer, message => approved.get(message));
+    assert(api.flightSafetyWarnings(offer).includes(diagnostic), 'Admin offer projection preserves the diagnostic');
+    for (const print of [false, true]) {
+      const output = await assertNoMutation(offer, () => render(offer, print));
+      assert.doesNotMatch(output, /Mixed screenshots|both engines|Final operator review|production threshold|Smart Import:/i);
+      for (const notice of [risk, price, meal, 'Допълнително условие.', 'Наличността на хотела подлежи на потвърждение.']) {
+        assert(output.includes(notice), notice);
+      }
+    }
   }
 });

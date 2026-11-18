@@ -1,12 +1,12 @@
 "use strict";
 
 (function exposeLuxuryV11Renderer(root, factory) {
-  const api = factory();
+  const api = factory(root);
   if (typeof module === "object" && module.exports) {
     module.exports = api;
   }
   root.GT63LuxuryV11Renderer = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function createLuxuryV11Renderer() {
+})(typeof globalThis !== "undefined" ? globalThis : this, function createLuxuryV11Renderer(root) {
   const SUPPORTED_VERSION = "1.0";
   const SUPPORTED_MODE = "GT63_LUXURY_PROPOSAL_INPUT";
 
@@ -123,12 +123,14 @@
     return hotelImages.find(isUsableImageUrl) || fallbackImage(input);
   }
 
-  function warningList(items = []) {
-    if (!Array.isArray(items) || !items.length) return "";
+  function warningList(input) {
+    const model = root.GT63PresentationViewModel || (typeof require === "function" ? require("./presentation-view-model") : null);
+    const notices = model.presentationNotices(input);
+    if (!notices.length) return "";
     return `
       <section class="v11-note">
         <strong>Бележка за преглед</strong>
-        <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        <ul>${notices.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("")}</ul>
       </section>
     `;
   }
@@ -194,7 +196,7 @@
           </div>
         </section>
 
-        ${warningList(proposal.warnings)}
+        ${warningList(proposal)}
 
         <section class="v11-content-grid">
           <div class="v11-card v11-flight-card">

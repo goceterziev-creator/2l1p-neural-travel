@@ -177,16 +177,23 @@
     return 0;
   }
 
-  function selectedOptionPayload(hotel = {}, index, currency, input) {
+  function selectedOptionPayload(hotel = {}, index, currency, input, displayedTotal) {
     const label = `Хотелска опция ${index + 1}`;
     const hotelOnly = amount(hotel.price);
-    const total = optionPackageTotal(hotel, input) || hotelOnly;
+    const total = displayedTotal ?? (optionPackageTotal(hotel, input) || hotelOnly);
     const name = text(hotel.name, label);
     const priceDisplay = money(total, currency);
     const hotelPriceDisplay = money(hotelOnly, currency);
     const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
     const mealPlan = resolvedMealPlan(hotel);
-    const preferMessage = encodeURIComponent(`Предпочитам ${name} - обща пакетна цена ${priceDisplay}; хранене: ${mealPlan}`);
+    const dates = localizeClientText(input.client?.travelDates || input.destination?.requested || "Дати за потвърждение");
+    const message = [`Предпочитам ${name} - обща пакетна цена ${priceDisplay}; хранене: ${mealPlan}`, `Период: ${dates}`];
+    if (input.contact?.clientOfferUrl && URL.canParse(input.contact.clientOfferUrl)) {
+      const offerUrl = new URL(input.contact.clientOfferUrl);
+      offerUrl.searchParams.set("selectedHotelId", hotelIdentity(hotel, index));
+      message.push(offerUrl.href);
+    }
+    const preferMessage = encodeURIComponent(message.join("\n"));
 
     return {
       label,
@@ -269,12 +276,18 @@
     };
   }
 
-  // Presentation only: retain every supplied notice and blocking condition.
+  const unconfirmedMealNotice = "Изхранването не е потвърдено за всички хотелски варианти. Проверете условията за избрания хотел преди резервация.";
+  const trustedNotices = new WeakMap();
+
+  function setTrustedNotices(input, notices) {
+    trustedNotices.set(input, notices);
+  }
+
   function presentationNotices(input = {}) {
-    return [
-      ...asArray(input.blockingIssues).map(value => ({ value, level: "blocking" })),
-      ...asArray(input.warnings).map(value => ({ value, level: /^\[INFO\]/i.test(String(value)) ? "info" : "warning" }))
-    ].map(({ value, level }) => ({ text: text(value?.message || value, ""), level })).filter(item => item.text);
+    return (trustedNotices.get(input) || []).map(notice => ({
+      text: notice.message,
+      level: notice.severity === "BLOCKING" ? "blocking" : notice.severity === "INFO" ? "info" : "warning"
+    }));
   }
 
   function buildPresentationViewModel(input = {}, options = {}) {
@@ -301,6 +314,8 @@
   return {
     amount,
     presentationNotices,
+    setTrustedNotices,
+    unconfirmedMealNotice,
     buildPresentationViewModel,
     compactMealLabel,
     dateRangeNights,
