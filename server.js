@@ -1779,7 +1779,10 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
   };
   const dateSafety = flightDateSafety(offer);
   for (const message of dateSafety.warnings) {
-    add("FLIGHT_DATE_SAFETY", message, "CLIENT", { checkedOn: dateSafety.checkedOn, travelDates: offer.travelDates || "" });
+    add("FLIGHT_DATE_SAFETY", message, "OPERATOR", { checkedOn: dateSafety.checkedOn, travelDates: offer.travelDates || "" });
+  }
+  if (dateSafety.warnings.length) {
+    add("FLIGHT_DATES_UNCONFIRMED_CLIENT", "[WARNING] Датите на полетите предстои да бъдат потвърдени.", "CLIENT");
   }
   const flights = getFlights(offer);
   const hotels = getHotels(offer);
@@ -1827,7 +1830,8 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
       add("FLIGHT_ROUTE", `[WARNING] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043d\u0435 \u0441\u043f\u043e\u043c\u0435\u043d\u0430\u0432\u0430 \u044f\u0441\u043d\u043e \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f\u0442\u0430 "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0430 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.`, "OPERATOR");
       add("FLIGHT_ROUTE_CLIENT", "[WARNING] Маршрутът на полета предстои да бъде потвърден.", "CLIENT");
     } else if (profile && airportSignal) {
-      add("AIRPORT_TRANSFER", `[INFO] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043a\u0430\u0446\u0430 \u0432 ${displayDestinationSignal(airportSignal)}, \u043a\u043e\u0435\u0442\u043e \u0435 \u0432\u0430\u043b\u0438\u0434\u043d\u043e \u043b\u0435\u0442\u0438\u0449\u0435 \u0437\u0430 ${profile.label}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440\u0430 \u0434\u043e \u0445\u043e\u0442\u0435\u043b\u0430.`);
+      add("AIRPORT_TRANSFER", `[INFO] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043a\u0430\u0446\u0430 \u0432 ${displayDestinationSignal(airportSignal)}, \u043a\u043e\u0435\u0442\u043e \u0435 \u0432\u0430\u043b\u0438\u0434\u043d\u043e \u043b\u0435\u0442\u0438\u0449\u0435 \u0437\u0430 ${profile.label}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440\u0430 \u0434\u043e \u0445\u043e\u0442\u0435\u043b\u0430.`, "OPERATOR");
+      add("AIRPORT_TRANSFER_CLIENT", "[INFO] Трансферът от летището до хотела подлежи на потвърждение.", "CLIENT");
     }
     if (hotelText && !hotelHasDestination) {
       add("HOTEL_LOCATION", `[WARNING] \u041b\u043e\u043a\u0430\u0446\u0438\u044f\u0442\u0430 \u043d\u0430 \u0445\u043e\u0442\u0435\u043b\u0430 \u043d\u0435 \u0441\u044a\u0432\u043f\u0430\u0434\u0430 \u044f\u0441\u043d\u043e \u0441 \u043e\u0441\u043d\u043e\u0432\u043d\u0430\u0442\u0430 \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0434\u0430\u043b\u0438 \u0442\u043e\u0432\u0430 \u0435 \u0442\u044a\u0440\u0441\u0435\u043d\u0438\u044f\u0442 \u0440\u0430\u0439\u043e\u043d.`);
