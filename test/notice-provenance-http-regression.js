@@ -39,6 +39,13 @@ const offer = {id:offerId,agencyId:agency,status:"draft",destination:"Rome",trav
 const proposalInput = require("../gt63-core/legacy-offer-print-input").buildLegacyOfferPrintInput({...offer,validationWarnings:[]});
 proposalInput.proposalTemplate.selected = "multi-hotel";
 source.offers = [offer,{...offer,id:occupancyOfferId,proposalInput,proposalTemplate:proposalInput.proposalTemplate}];
+const operatorOfferId = "QA-OPERATOR-NOTICE-LEAK";
+source.offers.push({
+  ...offer, id:operatorOfferId, finalPrice:0, hotelPrice:0,
+  hotels:[{...hotel, price:0, roomsLeft:"available", meal:"Breakfast"}],
+  flights:[{airline:"QA Airline",route:"SOF-XYZ",departure:"2099-11-16"}],
+  flightRoute:"SOF-XYZ", validationWarnings:[]
+});
 fs.writeFileSync(dbPath, JSON.stringify(source,null,2));
 const sessionPayload = Buffer.from(JSON.stringify({userId:user,exp:Date.now()+3600000})).toString("base64url");
 const signature = crypto.createHmac("sha256",secret).update(sessionPayload).digest("base64url");
@@ -73,6 +80,23 @@ async function decide(id, expectedVersion, noticeId, classification, headers, co
       if (!healthy) await new Promise(resolve => setTimeout(resolve,250));
     }
     assert(healthy, output);
+    // The exact production-leaked operator diagnostics must not reach client HTML/print/PDF.
+    const operatorView = "/api/offers/view/"+operatorOfferId;
+    const operatorPrint = "/api/offers/"+operatorOfferId+"/print?selectedHotelId=qa-hotel";
+    for (const surface of [operatorView,operatorPrint]) {
+      const response = await request(surface);
+      assert.equal(response.status,200,response.body);
+      assert(!response.body.includes("Проверете маршрута преди изпращане"),surface);
+      assert(!response.body.includes("Офертата не трябва да се изпраща преди да се попълни цена"),surface);
+      assert(response.body.includes("Маршрутът на полета предстои да бъде потвърден"),surface);
+      assert(response.body.includes("Пакетната цена предстои да бъде потвърдена"),surface);
+    }
+    const operatorPdf = await fetch(base+"/api/offers/"+operatorOfferId+"/pdf?selectedHotelId=qa-hotel");
+    assert.equal(operatorPdf.status,200);
+    const operatorPdfText = execFileSync("pdftotext",["-","-"],{input:Buffer.from(await operatorPdf.arrayBuffer()),encoding:"utf8"});
+    assert(!operatorPdfText.includes("Проверете маршрута преди изпращане"));
+    assert(!operatorPdfText.includes("Офертата не трябва да се изпраща преди да се попълни цена"));
+    console.log("PASS operator-only route and zero-price diagnostics absent from client HTML/print/PDF");
     let priorId;
     for (const id of [offerId, occupancyOfferId]) {
       const url = "/api/offers/"+id;
