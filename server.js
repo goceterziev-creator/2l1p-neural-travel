@@ -31,6 +31,7 @@ globalThis.GT63LuxuryV11Renderer = require("./gt63-core/luxury-v11-renderer");
 globalThis.GT63MultiHotelRenderer = require("./gt63-core/renderers/multi-hotel");
 const gt63PrintPresentationRenderer = require("./gt63-core/renderers/print-presentation");
 const gt63ProposalRendererRegistry = require("./gt63-core/proposal-renderer-registry");
+const presentationViewModel = require("./gt63-core/presentation-view-model");
 const { buildLegacyOfferPrintInput } = require("./gt63-core/legacy-offer-print-input");
 const { prepareHotelPrintImages, verifiedHotelImagePath } = require("./gt63-core/hotel-print-images");
 
@@ -6205,10 +6206,44 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
   input.warnings = flightSafetyWarnings({
     ...offer, validationWarnings: [...safeArray(offer.validationWarnings), ...safeArray(input.warnings)]
   });
+  const clientLink = `${LIVE_BASE_URL}/api/offers/view/${encodeURIComponent(offer.id)}`;
   input.contact = {
     ...(input.contact || {}),
-    whatsappPhone: AGENCY_WHATSAPP_PHONE
+    whatsappPhone: AGENCY_WHATSAPP_PHONE,
+    clientOfferUrl: clientLink
   };
+
+  const template = input.proposalTemplate?.selected || "cathedral";
+  const hotelOptions = input.hotelOptions?.length ? input.hotelOptions : (input.hotel ? [input.hotel] : []);
+  const hasRequestedHotel = hotelOptions.some((hotel, index) =>
+    presentationViewModel.hotelIdentity(hotel, index) === options.selectedHotelId);
+  if (hasRequestedHotel) input.selectedHotelId = options.selectedHotelId;
+  const selection = presentationViewModel.resolveSelectedHotel(input);
+  const currency = input.pricing?.currency || "EUR";
+  if (template !== "multi-hotel" && hasRequestedHotel && hotelOptions.length > 1) {
+    input.hotel = selection.hotel;
+    const pricing = input.pricing || {};
+    input.pricing = {
+      ...pricing,
+      baseAmount: toNumber(pricing.flightAmount || input.flight?.price, 0)
+        + toNumber(selection.hotel.price, 0)
+        + toNumber(pricing.transferAmount || input.transfer?.price, 0),
+      totalAmount: presentationViewModel.optionPackageTotal(selection.hotel, input)
+    };
+    input.hotelOptions = hotelOptions.map((hotel, index) => ({ ...hotel, selected: index === selection.index }));
+  }
+  const displayedTotal = template === "multi-hotel" ? undefined
+    : input.pricing?.totalAmount || input.flight?.price || input.hotel?.price;
+  const whatsappLink = presentationViewModel.selectedOptionPayload(
+    selection.hotel, selection.index, currency, input, displayedTotal
+  ).whatsappUrl;
+  const hotelChoices = template !== "multi-hotel" && hotelOptions.length > 1
+    ? hotelOptions.map((hotel, index) => {
+        const url = new URL(clientLink);
+        url.searchParams.set("selectedHotelId", presentationViewModel.hotelIdentity(hotel, index));
+        return `<a href="${escapeGt63RegistryHtml(url.href)}"${index === selection.index ? ' aria-current="true"' : ""}>${escapeGt63RegistryHtml(hotel.name || `Хотелска опция ${index + 1}`)}</a>`;
+      }).join("")
+    : "";
 
   const title = input.content?.heroTitle || input.destination?.name || offer.destination || "AYA Travel";
   const stylesPath = path.join(GT63_CORE_DIR, "product", "styles.css");
@@ -6220,9 +6255,6 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
   }
 
   const body = gt63ProposalRendererRegistry.renderProposal(input);
-  const template = input.proposalTemplate?.selected || "cathedral";
-  const clientLink = `${LIVE_BASE_URL}/api/offers/view/${offer.id}`;
-  const pdfLink = `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`;
 
   return `<!doctype html>
 <html lang="bg">
@@ -6247,8 +6279,8 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
 <body>
   <main class="shell" data-proposal-template="${escapeGt63RegistryHtml(template)}">
     <nav class="gt63-client-actions" aria-label="Client actions">
-      <a data-offer-pdf href="${escapeGt63RegistryHtml(pdfLink)}">PDF</a>
-      <a href="https://wa.me/${escapeGt63RegistryHtml(AGENCY_WHATSAPP_PHONE)}?text=${encodeURIComponent(clientLink)}" target="_blank" rel="noreferrer">WhatsApp</a>
+      <a class="js-selected-option-whatsapp" href="${escapeGt63RegistryHtml(whatsappLink)}" target="_blank" rel="noreferrer">WhatsApp</a>
+      ${hotelChoices}
     </nav>
     ${body}
   </main>
@@ -7261,8 +7293,7 @@ async function renderOfferHtml(offer, options = {}) {
   const hotels = getHotels(offer);
   const validationWarnings = flightSafetyWarnings(offer);
   const hasWarnings = showWarnings && validationWarnings.length > 0 && (qaMode || !offer.warningsDismissed || validationWarnings.some(w => String(w).includes("[FLIGHT_DATE_SAFETY]")));
-  const clientLink = `${LIVE_BASE_URL}/api/offers/view/${offer.id}`;
-  const pdfLink = `${LIVE_BASE_URL}/api/offers/${offer.id}/pdf`;
+  const clientLink = `${LIVE_BASE_URL}/api/offers/view/${encodeURIComponent(offer.id)}`;
 
   const autoImages = {
     london: "https://images.unsplash.com/photo-1513635269975-59663e0ac1ad",
@@ -7715,23 +7746,6 @@ async function renderOfferHtml(offer, options = {}) {
   const hotelSectionTitle = hotels.length > 1
     ? "\u0425\u043e\u0442\u0435\u043b\u0441\u043a\u0438 \u043e\u043f\u0446\u0438\u0438"
     : "\u0418\u0437\u0431\u0440\u0430\u043d\u0438\u044f\u0442 \u0445\u043e\u0442\u0435\u043b";
-  const whatsappText = encodeURIComponent(`Здравейте! Вашата оферта за ${destinationName || "пътуване"} е готова:\n${clientLink}`);
-  const whatsappLink = `https://wa.me/${AGENCY_WHATSAPP_PHONE}?text=${whatsappText}`;
-  let whatsappQr = "";
-  try {
-    whatsappQr = await QRCode.toDataURL(whatsappLink, {
-      errorCorrectionLevel: "M",
-      margin: 1,
-      width: 190,
-      color: {
-        dark: "#101827",
-        light: "#ffffff"
-      }
-    });
-  } catch (error) {
-    console.warn("WhatsApp QR generation skipped:", error.message);
-  }
-
   const destinationImageKey = destinationKey(offer.destination);
   const resolvedDestinationImage =
     autoImages[destinationImageKey] ||
@@ -7847,7 +7861,9 @@ async function renderOfferHtml(offer, options = {}) {
   const printSelectionHotels = printSelectionInput?.hotelOptions || [];
   const normalizedHotels = hotelsWithImages.map((hotel, index) => ({
     ...hotel,
-    printSelectionId: require("./gt63-core/presentation-view-model").hotelIdentity(printSelectionHotels.find(item=>item.name===hotel.name && item.room===hotel.room && Number(item.price)===Number(hotel.price)) || printSelectionHotels[index] || {id:hotel.id || `legacy-hotel-${index+1}`}, index),
+    printSelectionId: presentationViewModel.hotelIdentity(
+      (offer.proposalInput && printSelectionHotels.find(item => hotel.id && item.id === hotel.id))
+      || printSelectionHotels[index] || { id: hotel.id || `legacy-hotel-${index + 1}` }, index),
     selected: selectedHotelIndex >= 0 ? index === selectedHotelIndex : index === 0
   }));
   const hasSelectedHotel = normalizedHotels.some((hotel) => Boolean(hotel.selected));
@@ -7865,6 +7881,25 @@ async function renderOfferHtml(offer, options = {}) {
       ? toNumber(offer.finalPrice, 0)
       : calculatedOptionPrice;
   });
+
+  const whatsappOptions = forPdf ? [] : await Promise.all((orderedHotels.length ? orderedHotels : [{}]).map(async (hotel, index) => {
+    const url = new URL(clientLink);
+    if (hotel.printSelectionId) url.searchParams.set("selectedHotelId", hotel.printSelectionId);
+    const price = formatMoney(hotelOptionPrices[index] ?? offer.finalPrice, offer.currency || "EUR");
+    const text = `Здравейте! Интересувам се от офертата за ${destinationName}.\n${hotel.name || "Хотел за потвърждение"} · ${price}\nПериод: ${offer.travelDates || "Дати за потвърждение"}\n${url.href}`;
+    const href = `https://wa.me/${AGENCY_WHATSAPP_PHONE}?text=${encodeURIComponent(text)}`;
+    const qr = await QRCode.toDataURL(href, {
+      errorCorrectionLevel: "M", margin: 1, width: 190,
+      color: { dark: "#101827", light: "#ffffff" }
+    }).catch(error => {
+      console.warn("WhatsApp QR generation skipped:", error.message);
+      return "";
+    });
+    return { href, qr };
+  }));
+  const requestedHotelIndex = orderedHotels.findIndex(hotel => hotel.printSelectionId === options.selectedHotelId);
+  const clientHotelIndex = requestedHotelIndex < 0 ? 0 : requestedHotelIndex;
+  const { href: whatsappLink, qr: whatsappQr } = whatsappOptions[clientHotelIndex] || {};
 
   const hotelGalleries = [];
   for (const hotel of orderedHotels) {
@@ -7899,7 +7934,8 @@ async function renderOfferHtml(offer, options = {}) {
     const description = cleanClientHotelDescription(hotel.description, hotel) ||
       `Подбран хотел в ${destinationName} с удобства за комфортен престой.`;
     const isSelected = hasSelectedHotel ? Boolean(hotel.selected) : index === 0;
-    const optionLabel = isSelected
+    const clientSelected = forPdf ? isSelected : index === clientHotelIndex;
+    const optionLabel = clientSelected
       ? "\u0412\u0430\u0448\u0438\u044F\u0442 \u0445\u043E\u0442\u0435\u043B"
       : `\u0425\u043e\u0442\u0435\u043b \u043e\u043f\u0446\u0438\u044f ${index + 1}`;
     const hotelPrice = toNumber(hotel.price, 0);
@@ -7916,7 +7952,7 @@ async function renderOfferHtml(offer, options = {}) {
     };
 
     return `
-      <article class="card hotel-card hotel-option-card${isSelected ? " selected" : ""}" data-hotel-choice-card data-hotel-id="${escapeAttr(hotel.printSelectionId)}" data-client-price="${escapeAttr(formatMoney(clientOptionPrice, offer.currency || "EUR"))}">
+      <article class="card hotel-card hotel-option-card${clientSelected ? " selected" : ""}" data-hotel-choice-card data-hotel-id="${escapeAttr(hotel.printSelectionId)}" data-client-price="${escapeAttr(formatMoney(clientOptionPrice, offer.currency || "EUR"))}"${forPdf ? "" : ` data-whatsapp="${escapeAttr(whatsappOptions[index].href)}" data-whatsapp-qr="${escapeAttr(whatsappOptions[index].qr)}"`}>
         <div class="option-badge">${escapeHtml(optionLabel)}</div>
         <div class="option-meta ${escapeAttr(optionTone.toneClass)}">${escapeHtml(optionTone.label)}</div>
         ${clientOptionPrice > 0 ? `<div class="option-price"><small>Крайна цена</small>${formatMoney(clientOptionPrice, hotel.currency || offer.currency || "EUR")}</div>` : ""}
@@ -7939,7 +7975,7 @@ async function renderOfferHtml(offer, options = {}) {
         </div>
 
         <p>${escapeHtml(description)}</p>
-        ${!forPdf && orderedHotels.length > 1 ? `<button type="button" data-hotel-choice aria-pressed="${isSelected}" style="display:block;width:100%;padding:14px;border:0;border-radius:10px;background:#1d4ed8;color:white;font:inherit;font-weight:700;cursor:pointer;margin:16px 0">${isSelected ? "Избран хотел" : "Предпочитам този хотел"}</button>` : ""}
+        ${!forPdf && orderedHotels.length > 1 ? `<button type="button" data-hotel-choice aria-pressed="${clientSelected}" style="display:block;width:100%;padding:14px;border:0;border-radius:10px;background:#1d4ed8;color:white;font:inherit;font-weight:700;cursor:pointer;margin:16px 0">${clientSelected ? "Избран хотел" : "Предпочитам този хотел"}</button>` : ""}
 
         <div class="benefit-list">
           <span>Отлична локация</span>
@@ -8438,6 +8474,7 @@ h1 {
   text-align: center;
   width: 178px;
 }
+.cta-qr[hidden] { display: none; }
 .cta-qr img {
   display: block;
   height: 132px;
@@ -8602,11 +8639,11 @@ h1 {
         <div><strong>Период:</strong> ${escapeHtml(offer.travelDates || "-")}</div>
         <div><strong>Пътуващи в офертата:</strong> ${escapeHtml(offer.guests || "-")}</div>
       </div>
-      <div class="price" data-client-price>${formatMoney(offer.finalPrice, offer.currency)}</div>
+      <div class="price" data-client-price>${formatMoney(forPdf ? offer.finalPrice : (hotelOptionPrices[clientHotelIndex] ?? offer.finalPrice), offer.currency)}</div>
       <div class="included">
         ${included.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}
       </div>
-      ${forPdf ? "" : `<div class="actions"><a href="${pdfLink}" data-selected-hotel-pdf target="_blank">PDF</a><a href="${whatsappLink}" data-selected-hotel-whatsapp target="_blank">WhatsApp</a></div>`}
+      ${forPdf ? "" : `<div class="actions"><a href="${escapeAttr(whatsappLink)}" data-selected-hotel-whatsapp target="_blank" rel="noreferrer">WhatsApp</a></div>`}
     </div>
   </section>
 
@@ -8641,9 +8678,9 @@ h1 {
       <div class="cta-contact">
         <div>
           <p><strong>За резервация:</strong> Биляна Билбилова-Терзиева</p>
-          <p><strong>+359 885 07 89 80</strong></p>
+          ${forPdf ? "<p><strong>+359 885 07 89 80</strong></p>" : ""}
         </div>
-        ${whatsappQr ? `<div class="cta-qr"><img src="${escapeAttr(whatsappQr)}" alt="WhatsApp QR" /><span>Сканирайте за WhatsApp връзка</span></div>` : ""}
+        ${forPdf ? "" : `<div class="cta-qr" data-selected-hotel-qr ${whatsappQr ? "" : "hidden"}><img ${whatsappQr ? `src="${escapeAttr(whatsappQr)}"` : ""} alt="WhatsApp QR" /><span>Сканирайте за WhatsApp връзка</span></div>`}
       </div>
       <div class="cta-meta">
         <span>Offer ID: ${escapeHtml(offer.id || "-")}</span>
@@ -9037,7 +9074,9 @@ app.get("/admin", (req, res) => res.sendFile(path.join(PUBLIC_DIR, "admin.html")
 app.get("/offer/:id", (req, res) => {
   const offer = readDb().offers.find(item => item.id === req.params.id);
   if (!offer) return res.status(404).send("Offer not found");
-  res.redirect(`/api/offers/view/${req.params.id}`);
+  const target = new URL(`/api/offers/view/${encodeURIComponent(req.params.id)}`, LIVE_BASE_URL);
+  if (typeof req.query.selectedHotelId === "string") target.searchParams.set("selectedHotelId", req.query.selectedHotelId);
+  res.redirect(target.pathname + target.search);
 });
 
 app.get("/api/offers", requireCapability("offers.view"), (req, res) => {
@@ -9494,7 +9533,7 @@ if (offer.status === "sent") offer.status = "viewed";
     return res.status(err.status || 500).json({ error: err.message || "Offer view failed", details: err.details || null });
   }
 
-  const html = await renderOfferHtml(offerForRender);
+  const html = await renderOfferHtml(offerForRender, { selectedHotelId: req.query.selectedHotelId });
   res.setHeader("Content-Type", "text/html; charset=UTF-8");
   res.send(html);
 });

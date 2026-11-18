@@ -14,8 +14,8 @@ const canonicalPrice=s=>String(s).replace(/[\s\u00a0\u202f]/g,'').replace(/,(?=\
 (async()=>{try{
  server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http://localhost');if(url.pathname==='/offer-hotel-selection.js'){res.setHeader('Content-Type','text/javascript');res.end(fs.readFileSync(path.join(root,'public/offer-hotel-selection.js')));return;}if(url.pathname.startsWith('/test-images/')){const hive=url.pathname.includes('hive');res.setHeader('Content-Type','image/png');res.end(await require('sharp')(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640"><rect width="960" height="640" fill="${hive?'#235c66':'#886749'}"/><path d="M0 480L400 160L960 480V640H0" fill="#ffffff" opacity=".12"/><text x="60" y="100" fill="white" font-size="30">SYNTHETIC QA IMAGE — NOT A HOTEL PHOTO</text><text x="60" y="350" fill="white" font-size="70">${hive?'THE HIVE':'TRIVIHO'}</text></svg>`)).png().toBuffer());return;}if(documents[url.pathname]){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(documents[url.pathname]);return;}res.writeHead(404);res.end();});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`;
- const offer={id:'SYNTHETIC-PRESENTATION-V2',clientName:'QA ONLY — NOT PRODUCTION',destination:'Рим',travelDates:'16.11.2026 - 20.11.2026',guests:'2 възрастни',currency:'EUR',markupPercent:0,finalPrice:1034.06,flightPrice:200,status:'draft',validationWarnings:['[INFO] CIA: Проверете трансфера до хотела.','[WARNING] Условията за анулация изискват потвърждение.'],
- flights:[{route:'SOF → CIA / CIA → SOF',airline:'Buzz / Malta Air',price:200,baggage:'Тестов багаж — реалните условия са за потвърждение',outboundSegments:[{from:'SOF',to:'CIA',departure:'2026-11-16T13:25',arrival:'2026-11-16T14:15',airline:'Buzz',flightNumber:'FR625'}],inboundSegments:[{from:'CIA',to:'SOF',departure:'2026-11-20T12:25',arrival:'2026-11-20T15:10',airline:'Malta Air',flightNumber:'FR626'}]}],
+ const offer={id:'SYNTHETIC-PRESENTATION-V2',clientName:'QA ONLY — NOT PRODUCTION',destination:'Рим',travelDates:'16.11.2099 - 20.11.2099',guests:'2 възрастни',currency:'EUR',markupPercent:0,finalPrice:1034.06,flightPrice:200,status:'draft',validationWarnings:['[INFO] CIA: Проверете трансфера до хотела.','[WARNING] Условията за анулация изискват потвърждение.'],
+ flights:[{route:'SOF → CIA / CIA → SOF',airline:'Buzz / Malta Air',price:200,baggage:'Тестов багаж — реалните условия са за потвърждение',outboundSegments:[{from:'SOF',to:'CIA',departure:'2099-11-16T13:25',arrival:'2099-11-16T14:15',airline:'Buzz',flightNumber:'FR625'}],inboundSegments:[{from:'CIA',to:'SOF',departure:'2099-11-20T12:25',arrival:'2099-11-20T15:10',airline:'Malta Air',flightNumber:'FR626'}]}],
  hotels:[{id:'qa-hive',name:'The Hive Hotel',price:834.06,selected:true,room:'QA стая — реалната стая е за потвърждение',meal:'Изхранване за потвърждение',description:'Синтетични данни за визуален тест. Наличността и условията не са независимо потвърдени.',area:'Рим',images:[base+'/test-images/hive.png'],occupancy:{adults:2,children:0,rooms:1,confirmed:true}},{id:'qa-triviho',name:'Triviho Hotel',price:1123.78,selected:false,room:'QA стая — реалната стая е за потвърждение',meal:'Изхранване за потвърждение',description:'Синтетични данни за визуален тест. Наличността и условията не са независимо потвърдени.',area:'Рим',images:[base+'/test-images/triviho.png'],occupancy:{adults:2,children:0,rooms:1,confirmed:true}}]};
  const before=JSON.stringify(offer),input=adapter.buildLegacyOfferPrintInput(offer),registry={...offer,proposalInput:input,proposalTemplate:{selected:'multi-hotel'}};
  documents['/legacy']=await api.renderOfferHtml(offer);documents['/registry']=await api.renderOfferHtml(registry);
@@ -24,16 +24,32 @@ const canonicalPrice=s=>String(s).replace(/[\s\u00a0\u202f]/g,'').replace(/,(?=\
  for(const id of ['qa-hive','qa-triviho'])documents['/print-'+id]=api.renderGt63PrintOfferHtml(offer,{selectedHotelId:id});
  assert.equal(JSON.stringify(offer),before);
  browser=await puppeteer.launch({headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});const page=await browser.newPage();
+ const whatsappRequests=[];
+ const initialPageCount=(await browser.pages()).length;
  const genericImage=await require('sharp')({create:{width:960,height:640,channels:3,background:'#193245'}}).png().toBuffer();
- await page.setRequestInterception(true);page.on('request',r=>r.url().startsWith(base)||r.url().startsWith('data:')?r.continue():r.resourceType()==='image'?r.respond({contentType:'image/png',body:genericImage}):r.abort());
+ await page.setRequestInterception(true);page.on('request',r=>{
+  if(new URL(r.url()).hostname==='wa.me')whatsappRequests.push(r.url());
+  return r.url().startsWith(base)||r.url().startsWith('data:')?r.continue():r.resourceType()==='image'?r.respond({contentType:'image/png',body:genericImage}):r.abort();
+ });
  for(const mode of ['legacy','registry'])for(const width of [360,390,430]){
   await page.setViewport({width,height:844,deviceScaleFactor:1});await page.goto(base+'/'+mode,{waitUntil:'networkidle0'});
   for(const [id,total]of [['qa-triviho',1323.78],['qa-hive',1034.06]]){
    const selector=mode==='legacy'?`[data-hotel-choice-card][data-hotel-id="${id}"] [data-hotel-choice]`:`button[data-option-id="${id}"]`;
    await page.click(selector);
    await page.evaluate(()=>Promise.all([...document.images].map(image=>image.decode().catch(()=>{}))));
-   const actual=await page.evaluate(mode=>({overflow:document.documentElement.scrollWidth>innerWidth+1,price:document.querySelector(mode==='legacy'?'[data-client-price]':'.js-selected-option-price').textContent,link:document.querySelector(mode==='legacy'?'[data-selected-hotel-pdf]':'[data-offer-pdf]').href,warnings:[...document.querySelectorAll('.aya-client-notices li,.v11-note li,.warning li')].map(x=>({text:x.textContent,visible:x.getBoundingClientRect().height>0})),broken:[...document.images].filter(x=>!x.hidden&&x.getBoundingClientRect().width>0&&(!x.complete||!x.naturalWidth)).length,selectedImage:document.querySelector(mode==='legacy'?'.hotel-option-card.selected .hotel-images img':'.js-selected-option-image')?.src,smallTargets:[...document.querySelectorAll('button[data-hotel-choice],button.v11-prefer-option,.actions a,.gt63-client-actions a')].filter(x=>x.getBoundingClientRect().height<44).length}),mode);
-   assert(actual.link.includes('selectedHotelId='+id));assert.equal(Number(canonicalPrice(actual.price).replace(/EUR/g,'')),total);
+   const actual=await page.evaluate(mode=>({overflow:document.documentElement.scrollWidth>innerWidth+1,price:document.querySelector(mode==='legacy'?'[data-client-price]':'.js-selected-option-price').textContent,links:[...document.querySelectorAll('a[href^="https://wa.me/"]')].map(a=>a.href),selectedId:new URL(location.href).searchParams.get('selectedHotelId'),pdfActions:document.querySelectorAll('a[href*="/pdf"],[data-offer-pdf],[data-selected-hotel-pdf]').length,warnings:[...document.querySelectorAll('.aya-client-notices li,.v11-note li,.warning li')].map(x=>({text:x.textContent,visible:x.getBoundingClientRect().height>0})),broken:[...document.images].filter(x=>!x.hidden&&x.getBoundingClientRect().width>0&&(!x.complete||!x.naturalWidth)).length,selectedImage:document.querySelector(mode==='legacy'?'.hotel-option-card.selected .hotel-images img':'.js-selected-option-image')?.src,smallTargets:[...document.querySelectorAll('button[data-hotel-choice],button.v11-prefer-option,.actions a,.gt63-client-actions a')].filter(x=>x.getBoundingClientRect().height<44).length}),mode);
+   assert.equal(actual.selectedId,id);assert.equal(actual.pdfActions,0);
+   assert.equal(Number(canonicalPrice(actual.price).replace(/EUR/g,'')),total);
+   assert(actual.links.length>=1);
+   for(const link of actual.links){
+    const message=new URL(link).searchParams.get('text');
+    assert(message.includes(id==='qa-hive'?'The Hive Hotel':'Triviho Hotel'));
+    assert(message.includes('16.11.2099 - 20.11.2099'));
+    assert(canonicalPrice(message).includes(String(total)+'EUR'));
+    assert.equal(new URL(message.split('\n').at(-1)).searchParams.get('selectedHotelId'),id);
+   }
+   assert.equal(whatsappRequests.length,0,'choosing a hotel must not request WhatsApp');
+   assert.equal((await browser.pages()).length,initialPageCount,'choosing a hotel must not open a new page');
    if(!captureOnly){assert.equal(actual.overflow,false,mode+' '+width+' overflow');assert.equal(actual.broken,0);assert(actual.selectedImage.includes('/test-images/'+(id==='qa-hive'?'hive':'triviho')+'.png'));assert(actual.warnings.some(w=>w.text.includes('анулация')));assert.equal(actual.smallTargets,0);assert.equal(actual.warnings.length,2);assert(actual.warnings.every(w=>w.visible));}
    await page.screenshot({path:path.join(out,`${mode}-${width}-${id}.png`),fullPage:true});rows.push({mode,width,id,...actual});
   }

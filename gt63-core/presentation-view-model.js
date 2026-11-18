@@ -177,16 +177,23 @@
     return 0;
   }
 
-  function selectedOptionPayload(hotel = {}, index, currency, input) {
+  function selectedOptionPayload(hotel = {}, index, currency, input, displayedTotal) {
     const label = `Хотелска опция ${index + 1}`;
     const hotelOnly = amount(hotel.price);
-    const total = optionPackageTotal(hotel, input) || hotelOnly;
+    const total = displayedTotal ?? (optionPackageTotal(hotel, input) || hotelOnly);
     const name = text(hotel.name, label);
     const priceDisplay = money(total, currency);
     const hotelPriceDisplay = money(hotelOnly, currency);
     const whatsappPhone = String(input.contact?.whatsappPhone || "359885078980").replace(/[^\d]/g, "");
     const mealPlan = resolvedMealPlan(hotel);
-    const preferMessage = encodeURIComponent(`Предпочитам ${name} - обща пакетна цена ${priceDisplay}; хранене: ${mealPlan}`);
+    const dates = localizeClientText(input.client?.travelDates || input.destination?.requested || "Дати за потвърждение");
+    const message = [`Предпочитам ${name} - обща пакетна цена ${priceDisplay}; хранене: ${mealPlan}`, `Период: ${dates}`];
+    if (input.contact?.clientOfferUrl && URL.canParse(input.contact.clientOfferUrl)) {
+      const offerUrl = new URL(input.contact.clientOfferUrl);
+      offerUrl.searchParams.set("selectedHotelId", hotelIdentity(hotel, index));
+      message.push(offerUrl.href);
+    }
+    const preferMessage = encodeURIComponent(message.join("\n"));
 
     return {
       label,

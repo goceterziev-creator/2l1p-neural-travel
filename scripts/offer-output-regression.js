@@ -66,44 +66,77 @@ async function check(name, fn) {
   await check("explicit malformed proposal remains a controlled error", () => {
     assert.throws(() => api.renderGt63PrintOfferHtml({ ...legacy, proposalInput: { mode: "broken" } }), /invalid/i);
   });
-  await check("hotel selection updates PDF link and print hotel with matching price", () => {
-    const input = require("../gt63-core/legacy-offer-print-input").buildLegacyOfferPrintInput({ ...legacy, hotels: [legacy.hotels[0], { id: "zurich-second", name: "Zurich Second Hotel", price: 100 }] });
-    const html = api.renderGt63RegistryOfferHtml({ ...legacy, proposalInput: input, proposalTemplate: input.proposalTemplate });
-    assert.match(html, /data-offer-pdf/);
-    assert.match(html, /data-option-id="zurich-second"/);
-    const pdfLink = { href: "https://aya.example/api/offers/QA/pdf?keep=1" };
-    let click;
-    const button = { dataset: { optionId: "zurich-second", optionIndex: "1" }, addEventListener: (_, fn) => { click = fn; }, closest: () => null };
-    const root = { querySelector: () => null, querySelectorAll: selector => selector === ".v11-prefer-option" ? [button] : [], closest: () => ({ querySelector: () => pdfLink }) };
-    const document = { currentScript: { closest: () => root }, baseURI: "https://aya.example/", addEventListener: () => {} };
-    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-    require("vm").runInNewContext(script, { document, URL });
-    click();
-    const url = new URL(pdfLink.href);
-    assert.equal(url.searchParams.get("selectedHotelId"), "zurich-second");
-    assert.equal(url.searchParams.get("mode"), "selected");
-    assert.equal(url.searchParams.get("keep"), "1");
-    const print = api.renderGt63PrintOfferHtml({ ...legacy, proposalInput: input }, { selectedHotelId: url.searchParams.get("selectedHotelId") });
-    assert.match(print, /Zurich Second Hotel/);
-    assert.match(print, /438,32 EUR/);
+  function assertWhatsApp(href, id, hotel, price) {
+    const url = new URL(href);
+    assert.equal(url.hostname, "wa.me");
+    const message = url.searchParams.get("text");
+    assert.ok(message.includes(hotel));
+    assert.ok(message.includes(price));
+    assert.ok(message.includes("05.10.2026 - 07.10.2026"));
+    const offerUrl = new URL(message.split("\n").at(-1));
+    assert.equal(offerUrl.searchParams.get("selectedHotelId"), id);
+  }
+
+  await check("single-hotel legacy and registry offers expose WhatsApp and no PDF action", async () => {
+    const input = require("../gt63-core/legacy-offer-print-input").buildLegacyOfferPrintInput(legacy);
+    for (const offer of [legacy, { ...legacy, proposalInput: input, proposalTemplate: input.proposalTemplate }]) {
+      const html = await api.renderOfferHtml(offer);
+      assert.doesNotMatch(html, /<a[^>]+href="[^"]+\/pdf(?:[?"#])/i);
+      const href = html.match(/<a[^>]+href="(https:\/\/wa\.me\/[^"]+)"/)[1];
+      assertWhatsApp(href, input.hotelOptions[0].id, "a&o London", "395,39");
+    }
+    assert.doesNotMatch(fs.readFileSync(path.join(__dirname, "../public/offer.html"), "utf8"), /window\.print/);
   });
-  await check("standard HTML hotel choice keeps original IDs and sends matching price to PDF", async () => {
-    const offer={...legacy,hotels:[{name:"First",price:50},{name:"Second",price:100,selected:true},{name:"Third",price:150}],hotelPrice:100,finalPrice:500};
-    const before=JSON.stringify(offer);
-    const html=await api.renderOfferHtml(offer);
-    assert.match(html,/data-hotel-id="legacy-hotel-2"/);
-    assert.match(html,/data-hotel-id="legacy-hotel-1"/);
-    assert.match(html,/Предпочитам този хотел/);
-    assert.match(html,/offer-hotel-selection.js/);
-    const cards=[...html.matchAll(/data-hotel-id="([^"]+)" data-client-price="([^"]+)"/g)].map(m=>({dataset:{hotelId:m[1],clientPrice:m[2]},classList:{toggle(){}},querySelector:()=>null}));
-    const pdf={href:"https://aya.test/api/offers/QA/pdf?keep=1"}; const price={textContent:""};
-    const context={URL,window:{location:{href:"https://aya.test/view?selectedHotelId=legacy-hotel-3"},history:{replaceState(){}}},document:{querySelectorAll:selector=>selector==="[data-hotel-choice-card]"?cards:selector===".price[data-client-price]"?[price]:[pdf]}};
-    require("node:vm").runInNewContext(fs.readFileSync(path.join(__dirname,"../public/offer-hotel-selection.js"),"utf8"),context);
-    assert.equal(new URL(pdf.href).searchParams.get("selectedHotelId"),"legacy-hotel-3");
-    assert.equal(new URL(pdf.href).searchParams.get("keep"),"1");
-    assert.match(price.textContent,/552[,.]50/);
-    const print=api.renderGt63PrintOfferHtml(offer,{selectedHotelId:"legacy-hotel-3"});
-    assert.match(print,/Third/);assert.match(print,/552,50 EUR/);assert.equal(JSON.stringify(offer),before);
+
+  await check("registry deep links preserve the hotel ID and agree with selected print price", () => {
+    const input = require("../gt63-core/legacy-offer-print-input").buildLegacyOfferPrintInput({
+      ...legacy, hotels: [legacy.hotels[0], { id: "zurich-second", name: "Zurich Second Hotel", price: 100 }]
+    });
+    for (const selected of ["multi-hotel", "cathedral", "city-discovery", "multi-city"]) {
+      const proposalTemplate = { ...input.proposalTemplate, selected };
+      const offer = { ...legacy, proposalInput: { ...input, proposalTemplate }, proposalTemplate };
+      const html = api.renderGt63RegistryOfferHtml(offer, { selectedHotelId: "zurich-second" });
+      assert.doesNotMatch(html, /data-offer-pdf|mailto:|tel:/);
+      assert.match(html, /Zurich Second Hotel/);
+      const href = html.match(/<a[^>]+href="(https:\/\/wa\.me\/[^"]+)"/)[1];
+      assertWhatsApp(href, "zurich-second", "Zurich Second Hotel", "438,32");
+      const print = api.renderGt63PrintOfferHtml(offer, { selectedHotelId: "zurich-second" });
+      assert.match(print, /Zurich Second Hotel/);
+      assert.match(print, /438,32 EUR/);
+    }
+  });
+
+  await check("legacy choice preserves original ID, WhatsApp context and print price", async () => {
+    const offer = { ...legacy, hotels: [
+      { name: "Same Hotel", price: 50 }, { name: "Second", price: 100, selected: true },
+      { name: "Third", price: 150 }, { name: "Same Hotel", price: 50 }
+    ], hotelPrice: 100, finalPrice: 500 };
+    const before = JSON.stringify(offer);
+    const html = await api.renderOfferHtml(offer);
+    assert.doesNotMatch(html, /data-selected-hotel-pdf/);
+    assert.match(html, /data-hotel-id="legacy-hotel-4"/);
+    const cards = [...html.matchAll(/data-hotel-id="([^"]+)" data-client-price="([^"]+)" data-whatsapp="([^"]+)"/g)]
+      .map(([, hotelId, clientPrice, whatsapp]) => ({
+        dataset: { hotelId, clientPrice, whatsapp }, classList: { toggle() {} }, querySelector: () => null
+      }));
+    const link = { href: "" }, price = { textContent: "" };
+    const context = {
+      URL,
+      window: { location: { href: "https://aya.test/view?selectedHotelId=legacy-hotel-3" } },
+      document: {
+        querySelector: () => null,
+        querySelectorAll: selector => ({
+          "[data-hotel-choice-card]": cards, ".price[data-client-price]": [price], "[data-selected-hotel-whatsapp]": [link]
+        })[selector] || []
+      }
+    };
+    require("node:vm").runInNewContext(fs.readFileSync(path.join(__dirname, "../public/offer-hotel-selection.js"), "utf8"), context);
+    assert.match(price.textContent, /552[,.]50/);
+    assertWhatsApp(link.href, "legacy-hotel-3", "Third", price.textContent);
+    const print = api.renderGt63PrintOfferHtml(offer, { selectedHotelId: "legacy-hotel-3" });
+    assert.match(print, /Third/);
+    assert.match(print, /552,50 EUR/);
+    assert.equal(JSON.stringify(offer), before);
   });
   await check("existing proposal price calculation is preserved", () => {
     assert.equal(viewModel.optionPackageTotal({ price: 59.11 }, { pricing: { flightAmount: 317.45, marginPercent: 5 } }).toFixed(2), "395.39");

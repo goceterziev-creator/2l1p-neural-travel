@@ -11,22 +11,14 @@
       if (badge) badge.textContent = selected ? 'Вашият хотел' : 'Хотелска опция';
     });
     document.querySelectorAll('.price[data-client-price]').forEach(item => { item.textContent = card.dataset.clientPrice; });
-    document.querySelectorAll('[data-selected-hotel-pdf]').forEach(link => {
-      const url = new URL(link.href, window.location.href);
-      url.searchParams.set('selectedHotelId', card.dataset.hotelId);
-      url.searchParams.set('mode', 'selected');
-      link.href = url.href;
-    });
-    document.querySelectorAll('[data-selected-hotel-whatsapp]').forEach(link => {
-      const whatsappUrl = new URL(link.href, window.location.href);
-      const message = whatsappUrl.searchParams.get('text') || '';
-      const lineBreak = message.lastIndexOf('\n');
-      if (lineBreak < 0) return;
-      const selectedOfferUrl = new URL(window.location.href);
-      selectedOfferUrl.searchParams.set('selectedHotelId', card.dataset.hotelId);
-      whatsappUrl.searchParams.set('text', message.slice(0, lineBreak + 1) + selectedOfferUrl.href);
-      link.href = whatsappUrl.href;
-    });
+    document.querySelectorAll('[data-selected-hotel-whatsapp]').forEach(link => { link.href = card.dataset.whatsapp; });
+    const qr = document.querySelector('[data-selected-hotel-qr]');
+    if (qr) {
+      const image = qr.querySelector('img');
+      if (card.dataset.whatsappQr) image.src = card.dataset.whatsappQr;
+      else image.removeAttribute('src');
+      qr.hidden = !card.dataset.whatsappQr;
+    }
     if (updateAddress) {
       const url = new URL(window.location.href);
       url.searchParams.set('selectedHotelId', card.dataset.hotelId);
