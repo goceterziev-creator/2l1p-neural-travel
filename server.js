@@ -1824,7 +1824,8 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
     const flightHasDestination = Boolean(flightSignal) || destinationNeedles.some((needle) => matchesDestinationNeedle(flightText, needle));
     const hotelHasDestination = Boolean(hotelSignal) || destinationNeedles.some((needle) => matchesDestinationNeedle(hotelText, needle));
     if (flightText && !flightHasDestination) {
-      add("FLIGHT_ROUTE", `[WARNING] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043d\u0435 \u0441\u043f\u043e\u043c\u0435\u043d\u0430\u0432\u0430 \u044f\u0441\u043d\u043e \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f\u0442\u0430 "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0430 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.`);
+      add("FLIGHT_ROUTE", `[WARNING] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043d\u0435 \u0441\u043f\u043e\u043c\u0435\u043d\u0430\u0432\u0430 \u044f\u0441\u043d\u043e \u0434\u0435\u0441\u0442\u0438\u043d\u0430\u0446\u0438\u044f\u0442\u0430 "${offer.destination || "-"}". \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0430 \u043f\u0440\u0435\u0434\u0438 \u0438\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435.`, "OPERATOR");
+      add("FLIGHT_ROUTE_CLIENT", "[WARNING] Маршрутът на полета предстои да бъде потвърден.", "CLIENT");
     } else if (profile && airportSignal) {
       add("AIRPORT_TRANSFER", `[INFO] \u041f\u043e\u043b\u0435\u0442\u044a\u0442 \u043a\u0430\u0446\u0430 \u0432 ${displayDestinationSignal(airportSignal)}, \u043a\u043e\u0435\u0442\u043e \u0435 \u0432\u0430\u043b\u0438\u0434\u043d\u043e \u043b\u0435\u0442\u0438\u0449\u0435 \u0437\u0430 ${profile.label}. \u041f\u0440\u043e\u0432\u0435\u0440\u0435\u0442\u0435 \u0442\u0440\u0430\u043d\u0441\u0444\u0435\u0440\u0430 \u0434\u043e \u0445\u043e\u0442\u0435\u043b\u0430.`);
     }
@@ -1918,7 +1919,8 @@ function buildValidationWarnings(offer = {}, rawBody = {}, invalidHotelImages = 
 
   const finalPrice = Number(offer.finalPrice || offer.price || 0);
   if (!finalPrice) {
-    add("PRICE_MISSING", createQaFinding({ severity: "CRITICAL", message: "\u041a\u0440\u0430\u0439\u043d\u0430\u0442\u0430 \u0446\u0435\u043d\u0430 \u0435 0 EUR. \u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u043d\u0435 \u0442\u0440\u044f\u0431\u0432\u0430 \u0434\u0430 \u0441\u0435 \u0438\u0437\u043f\u0440\u0430\u0449\u0430 \u043f\u0440\u0435\u0434\u0438 \u0434\u0430 \u0441\u0435 \u043f\u043e\u043f\u044a\u043b\u043d\u0438 \u0446\u0435\u043d\u0430." }), "CLIENT", { amount: finalPrice, currency: offer.currency || "EUR" });
+    add("PRICE_MISSING", createQaFinding({ severity: "CRITICAL", message: "\u041a\u0440\u0430\u0439\u043d\u0430\u0442\u0430 \u0446\u0435\u043d\u0430 \u0435 0 EUR. \u041e\u0444\u0435\u0440\u0442\u0430\u0442\u0430 \u043d\u0435 \u0442\u0440\u044f\u0431\u0432\u0430 \u0434\u0430 \u0441\u0435 \u0438\u0437\u043f\u0440\u0430\u0449\u0430 \u043f\u0440\u0435\u0434\u0438 \u0434\u0430 \u0441\u0435 \u043f\u043e\u043f\u044a\u043b\u043d\u0438 \u0446\u0435\u043d\u0430." }), "OPERATOR", { amount: finalPrice, currency: offer.currency || "EUR" });
+    add("PRICE_UNCONFIRMED_CLIENT", "[WARNING] Пакетната цена предстои да бъде потвърдена.", "CLIENT");
   }
 
   if (trusted) return;
