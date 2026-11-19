@@ -1992,6 +1992,7 @@ function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
   );
 
   return withBulgarianFlightDisplay({
+    ...(f.dateResolution?.version === 2 ? { dateResolution: cloneJsonSafe(f.dateResolution) } : {}),
     airline: f.airline || "",
     route: f.route || "",
     departure: cleanFlightDisplayField(f.departure || ""),
