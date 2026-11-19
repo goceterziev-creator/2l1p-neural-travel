@@ -7588,29 +7588,7 @@ async function renderOfferHtml(offer, options = {}) {
   }
 
   function clientSafeBaggageSummary(value = "") {
-    const text = cleanText(value).toLowerCase();
-    if (!text || /needs review/i.test(text)) return "\u0421\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\u0442\u0430.";
-
-    const hasPersonal = /personal item|small bag|under the seat|личен багаж|малък личен|малка чанта/.test(text);
-    const hasCabin = /carry-on|cabin|ръчен багаж|салонен/.test(text);
-    const hasChecked = /checked bag|hold luggage|чекиран/.test(text);
-    const hasPaidOption = /срещу доплащане|available in the next steps|can be added|for a fee|\+\s*€|€\s*\d/.test(text);
-
-    if (hasPaidOption && (hasCabin || hasChecked)) {
-      return hasPersonal
-        ? "\u0412\u043A\u043B\u044E\u0447\u0435\u043D \u043B\u0438\u0447\u0435\u043D \u0431\u0430\u0433\u0430\u0436. \u0414\u043E\u043F\u044A\u043B\u043D\u0438\u0442\u0435\u043B\u043D\u0438\u044F\u0442 \u0431\u0430\u0433\u0430\u0436 \u0441\u0435 \u043F\u043E\u0442\u0432\u044A\u0440\u0436\u0434\u0430\u0432\u0430 \u043F\u0440\u0435\u0434\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u0430\u0446\u0438\u044F."
-        : "\u0411\u0430\u0433\u0430\u0436\u044A\u0442 \u0441\u0435 \u043F\u043E\u0442\u0432\u044A\u0440\u0436\u0434\u0430\u0432\u0430 \u043F\u0440\u0435\u0434\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u0430\u0446\u0438\u044F.";
-    }
-
-    if (hasCabin && hasChecked) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D cabin + checked baggage.";
-    if (hasChecked) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D checked baggage.";
-    if (hasCabin) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D cabin baggage.";
-    if (hasPersonal) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D \u043B\u0438\u0447\u0435\u043D \u0431\u0430\u0433\u0430\u0436.";
-    if (/според условията|according to airline conditions|included/.test(text)) {
-      return "\u0411\u0430\u0433\u0430\u0436 \u0441\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\u0442\u0430.";
-    }
-
-    return clientSafeFlightText(value, "\u0421\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\u0442\u0430.");
+    return presentationViewModel.baggageLabel(value);
   }
 
   function destinationKey(value = "") {

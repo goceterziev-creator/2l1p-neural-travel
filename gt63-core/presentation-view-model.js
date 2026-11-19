@@ -284,11 +284,19 @@
   }
 
   function presentationNotices(input = {}, options = {}) {
-    const selectedId = resolveSelectedHotel(input, options).selectedHotelId;
-    return (trustedNotices.get(input) || []).filter(notice=>options.allHotels || !notice.parameters?.hotelId || notice.parameters.hotelId === selectedId).map(notice => ({
-      text: notice.message, hotelId: notice.parameters?.hotelId || "",
-      level: notice.severity === "BLOCKING" ? "blocking" : notice.severity === "INFO" ? "info" : "warning"
-    }));
+    const selection = resolveSelectedHotel(input, options);
+    const comparison = (options.mode || input.printMode) === "comparison";
+    return (trustedNotices.get(input) || []).filter(notice=>options.allHotels || !notice.parameters?.hotelId || (comparison ? selection.hotelOptions.some((hotel,index)=>hotelIdentity(hotel,index) === notice.parameters.hotelId) : notice.parameters.hotelId === selection.selectedHotelId)).map(notice => {
+      const hotelId = notice.parameters?.hotelId || "";
+      let message = notice.message;
+      if (comparison && hotelId) {
+        const hotel = selection.hotelOptions.find((item,index)=>hotelIdentity(item,index) === hotelId);
+        const prefix = message.match(/^\[(?:INFO|WARNING|CRITICAL)\]\s*/)?.[0] || "";
+        message = `${prefix}${hotel?.name || hotelId}: ${message.slice(prefix.length)}`;
+      }
+      return {text:message, hotelId,
+        level: notice.severity === "BLOCKING" ? "blocking" : notice.severity === "INFO" ? "info" : "warning"};
+    });
   }
 
   function baggageLabel(value) {
