@@ -46,6 +46,21 @@ source.offers.push({
   flights:[{airline:"QA Airline",route:"SOF-XYZ",departure:"2099-11-16"}],
   flightRoute:"SOF-XYZ", validationWarnings:[]
 });
+// Synthetic reproduction of the reported OFF-1795075499083-irs0e symptoms;
+// not a snapshot of the production offer or supplier evidence.
+const clientAudienceIds = ["QA-AUDIENCE-LEGACY","QA-AUDIENCE-REGISTRY"];
+const materialTransfer = "Трансферът до хотела подлежи на потвърждение преди резервация.";
+const internalReview = "Офертата има условия за преглед и не е потвърдена за изпращане";
+const occupancyConfirmed = {adults:2,children:2,rooms:1,childAges:[1,9],confirmed:true};
+for (const [index,id] of clientAudienceIds.entries()) {
+ const row={id,agencyId:agency,status:"draft",clientName:"SYNTHETIC AUDIENCE QA",destination:"Abu Dhabi",travelDates:"21.11.2099 - 29.11.2099",guests:"2 adults, 2 children",markupPercent:5,finalPrice:2100,
+  flights:[{airline:"Turkish Airlines",route:"SOF -> IST -> AUH / AUH -> IST -> SOF",price:1000,baggage:{checked:{pieces:1,weightKg:23}},outboundSegments:[{from:"SOF",to:"IST",flightNumber:"TK1030",departure:"2099-11-21T21:45",arrival:"2099-11-22T00:15"},{from:"IST",to:"AUH",flightNumber:"TK866",departure:"2099-11-22T01:15",arrival:"2099-11-22T06:45"}],inboundSegments:[{from:"AUH",to:"IST",flightNumber:"TK869",departure:"2099-11-29T02:35",arrival:"2099-11-29T07:00"},{from:"IST",to:"SOF",flightNumber:"TK1027",departure:"2099-11-29T08:20",arrival:"2099-11-29T08:40"}]}],
+  hotels:[{id:"aud-a",name:"QA Abu Dhabi Alpha",area:"Abu Dhabi",selected:true,price:1000,meal:"Breakfast",occupancy:occupancyConfirmed},{id:"aud-b",name:"QA Abu Dhabi Beta",area:"Abu Dhabi",price:1200,meal:"UNKNOWN",occupancy:{...occupancyConfirmed,confirmed:false}},{id:"aud-c",name:"QA Abu Dhabi Gamma",area:"Abu Dhabi",price:1400,meal:"Half board",roomsLeft:"sold out",occupancy:occupancyConfirmed}],
+  validationWarnings:["[WARNING] Smart Import: храненето за поне един хотел не е потвърдено.","[INFO] INTERNAL_QA_STATUS_ONLY",materialTransfer]};
+ row.noticeDecisions=Object.fromEntries(require("../server/offer-notices").rawNotices(row).filter(notice=>notice.message===materialTransfer).map(notice=>[notice.id,{classification:"CLIENT_MATERIAL_CONDITION",clientText:materialTransfer,actorId:user,decidedAt:now}]));
+ if(index){row.proposalInput=require("../gt63-core/legacy-offer-print-input").buildLegacyOfferPrintInput(row);row.proposalTemplate={selected:"multi-hotel"};row.proposalInput.proposalTemplate.selected="multi-hotel";row.proposalInput.flight.baggage=row.flights[0].baggage;}
+ source.offers.push(row);
+}
 fs.writeFileSync(dbPath, JSON.stringify(source,null,2));
 const sessionPayload = Buffer.from(JSON.stringify({userId:user,exp:Date.now()+3600000})).toString("base64url");
 const signature = crypto.createHmac("sha256",secret).update(sessionPayload).digest("base64url");
@@ -80,6 +95,49 @@ async function decide(id, expectedVersion, noticeId, classification, headers, co
       if (!healthy) await new Promise(resolve => setTimeout(resolve,250));
     }
     assert(healthy, output);
+    const puppeteer=require("puppeteer"),browser=await puppeteer.launch({headless:true,args:["--no-sandbox","--disable-dev-shm-usage"]});
+    try {
+      for(const id of clientAudienceIds) {
+        const admin=await open(id),before=JSON.stringify(JSON.parse(fs.readFileSync(dbPath)).offers.find(row=>row.id===id));
+        assert(admin.offer.noticeReview.notices.some(notice=>notice.message.includes("Smart Import:")));
+        assert(admin.offer.noticeReview.notices.some(notice=>notice.message.includes("INTERNAL_QA_STATUS_ONLY")));
+        assert(admin.offer.noticeReview.unresolved>0);
+        const gate=await request(`/api/offers/${id}/status`,{method:"PATCH",body:JSON.stringify({status:"sent"})});assert.equal(gate.status,422);
+        for(const selectedHotelId of ["aud-a","aud-b","aud-c"]) {
+          const page=await browser.newPage();
+          await page.setRequestInterception(true);page.on("request",req=>req.isNavigationRequest()||req.url().startsWith(base)||req.url().startsWith("data:")?req.continue():req.abort());
+          await page.goto(`${base}/api/offers/view/${id}?selectedHotelId=${selectedHotelId}`,{waitUntil:"networkidle0"});
+          const visible=await page.evaluate(()=>document.body.innerText);
+          assert(!visible.includes(internalReview));assert(!visible.includes("Smart Import:"));assert(!visible.includes("INTERNAL_QA_STATUS_ONLY"));assert(!visible.includes("[object Object]"));assert(visible.includes(materialTransfer));assert(visible.includes("Багажът подлежи на потвърждение"));
+          {
+            const scoped=await page.$eval(".aya-client-notices",node=>node.innerText);
+            assert.equal(scoped.includes("Изхранването за избрания хотел"),selectedHotelId==="aud-b");
+            assert.equal(scoped.includes("Хотелската заетост"),selectedHotelId==="aud-b");
+            assert.equal(scoped.includes("ограничена или липсваща наличност"),selectedHotelId==="aud-c");
+            if(selectedHotelId==="aud-a") {
+              await page.click(id.endsWith("REGISTRY") ? '.v11-prefer-option[data-option-id="aud-b"]' : '[data-hotel-id="aud-b"] [data-hotel-choice]');assert((await page.$eval(".aya-client-notices",node=>node.innerText)).includes("Изхранването за избрания хотел"));
+              await page.click(id.endsWith("REGISTRY") ? '.v11-prefer-option[data-option-id="aud-a"]' : '[data-hotel-id="aud-a"] [data-hotel-choice]');assert(!(await page.$eval(".aya-client-notices",node=>node.innerText)).includes("Изхранването за избрания хотел"));
+            }
+          }
+          await page.close();
+          const print=await request(`/api/offers/${id}/print?selectedHotelId=${selectedHotelId}`);assert.equal(print.status,200,print.body);
+          const response=await fetch(`${base}/api/offers/${id}/pdf?selectedHotelId=${selectedHotelId}`);assert.equal(response.status,200);const bytes=Buffer.from(await response.arrayBuffer());assert.equal(bytes.subarray(0,4).toString(),"%PDF");
+          const pdfText=execFileSync("pdftotext",["-","-"],{input:bytes,encoding:"utf8"}).replace(/\s+/g," ");
+          const pageCount=Number(execFileSync("pdfinfo",["-"],{input:bytes,encoding:"utf8"}).match(/^Pages:\s+(\d+)/m)?.[1]);assert.equal(pageCount,5,"same minimal synthetic fixture is five pages on baseline 83939ba");
+          const expectedPrice={"aud-a":"2 100,00 EUR","aud-b":"2 310,00 EUR","aud-c":"2 520,00 EUR"}[selectedHotelId];assert(pdfText.includes(expectedPrice),pdfText);
+          if(process.env.AYA_AUDIENCE_EVIDENCE_DIR){fs.mkdirSync(process.env.AYA_AUDIENCE_EVIDENCE_DIR,{recursive:true});const prefix=path.join(process.env.AYA_AUDIENCE_EVIDENCE_DIR,id+"-"+selectedHotelId);fs.writeFileSync(prefix+".pdf",bytes);fs.writeFileSync(prefix+".txt",pdfText);fs.writeFileSync(prefix+".html",print.body);}
+
+          for(const text of [print.body,pdfText]) {
+            assert(!text.includes(internalReview));assert(!text.includes("Smart Import:"));assert(!text.includes("INTERNAL_QA_STATUS_ONLY"));assert(!text.includes("[object Object]"));assert(!text.includes("всички хотелски варианти"));assert(text.includes(materialTransfer));assert(text.includes("Багажът подлежи на потвърждение"));
+            assert.equal(text.includes("Изхранването за избрания хотел"),selectedHotelId==="aud-b");assert.equal(text.includes("Хотелската заетост и броят стаи"),selectedHotelId==="aud-b");assert.equal(text.includes("ограничена или липсваща наличност"),selectedHotelId==="aud-c");
+            assert(text.includes({"aud-a":"QA Abu Dhabi Alpha","aud-b":"QA Abu Dhabi Beta","aud-c":"QA Abu Dhabi Gamma"}[selectedHotelId]));
+          }
+          console.log("PASS audience HTML/Print/actual PDF",id,selectedHotelId,bytes.length);
+        }
+        const after=JSON.parse(fs.readFileSync(dbPath)).offers.find(row=>row.id===id);const original=JSON.parse(before);
+        for(const field of ["hotels","flights","finalPrice","markupPercent","guests","travelDates","status","noticeDecisions","validationWarnings"])assert.deepEqual(after[field],original[field],field+" source mutation");
+      }
+    } finally {await browser.close();}
     // The exact production-leaked operator diagnostics must not reach client HTML/print/PDF.
     const operatorView = "/api/offers/view/"+operatorOfferId;
     const operatorPrint = "/api/offers/"+operatorOfferId+"/print?selectedHotelId=qa-hotel";
@@ -111,6 +169,7 @@ async function decide(id, expectedVersion, noticeId, classification, headers, co
       const unpublished = await request(view);
       assert.equal(unpublished.status,200,unpublished.body);
       assert(!unpublished.body.includes(term));
+      assert(!unpublished.body.includes("Офертата има условия за преглед"));
       const select = (row, classification, headers, confirmed) => decide(id,current.offerVersion,row.id,classification,headers,confirmed);
       if (priorId) assert.equal((await select({id:priorId},"INTERNAL_DIAGNOSTIC")).status,409);
       assert.equal((await select(rows[0],"INTERNAL_DIAGNOSTIC",{Cookie:""})).status,401);
@@ -135,7 +194,7 @@ async function decide(id, expectedVersion, noticeId, classification, headers, co
         assert.equal(result.status,200,result.body);
         assert(result.body.includes(term));
         assert(result.body.includes("ограничена или липсваща наличност"));
-        assert(result.body.includes("Изхранването не е потвърдено"));
+        assert(result.body.includes("Изхранването за избрания хотел подлежи на потвърждение"));
         assert(!result.body.includes("Вътрешна опашка"));
         assert(!result.body.includes("night desk"));
       }

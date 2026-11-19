@@ -220,7 +220,7 @@
     add("Настаняване", Boolean(selectedHotel.name || selectedHotel.room || selectedHotel.area));
     add(`Изхранване: ${resolvedMealPlan(selectedHotel)}`, Boolean(selectedHotel.name || selectedHotel.room || selectedHotel.area || selectedHotel.meal || selectedHotel.board));
     add("Летищен трансфер", Boolean(transfer.included || transfer.type || transfer.status || transfer.price > 0));
-    add(`Багаж: ${localizeClientText(text(flight.baggage, ""))}`, Boolean(flight.baggage));
+    add(`Багаж: ${localizeClientText(presentationViewModel.baggageLabel(flight.baggage))}`, Boolean(flight.baggage) && presentationViewModel.baggageLabel(flight.baggage) !== "Багажът подлежи на потвърждение");
     add("Медицинска застраховка", /insurance|застрах/i.test(String(input.notes || input.content?.notes || "")));
     add("Курортни такси", /tax|taxes|resort/i.test(String(selectedHotel.description || selectedHotel.notes || "")));
     add("Частен трансфер", /private|частен/i.test(String(transfer.type || transfer.status || transfer.note || "")));
@@ -299,7 +299,7 @@
       ["Авиокомпания", localizeClientText(text(flight.airline, "За потвърждение"))],
       ["Дати", dates],
       ...(flightStops(flight) ? [["Прекачвания", flightStops(flight)]] : []),
-      ["Багаж", localizeClientText(text(flight.baggage, "За потвърждение"))],
+      ["Багаж", localizeClientText(presentationViewModel.baggageLabel(flight.baggage))],
       ["Сегменти", segments.length ? String(segments.length) : "За потвърждение"],
       ["Продължителност", duration || "Вижте детайлите по сегменти"]
     ];
@@ -622,12 +622,13 @@
   }
 
   function warningList(input = {}) {
-    const notices = presentationViewModel.presentationNotices(input);
+    const notices = presentationViewModel.presentationNotices(input,{allHotels:true});
+    const selectedId = presentationViewModel.resolveSelectedHotel(input).selectedHotelId;
     if (!notices.length) return "";
     return `
-      <aside class="v11-note aya-client-notices" aria-label="Условия и важни бележки">
+      <aside class="v11-note aya-client-notices" aria-label="Условия и важни бележки"${notices.some(item=>!item.hotelId || item.hotelId === selectedId) ? "" : " hidden"}>
         <strong>Условия и важни бележки</strong>
-        <ul>${notices.map(item => `<li data-notice-level="${item.level}">${escapeHtml(item.text)}</li>`).join("")}</ul>
+        <ul>${notices.map(item => `<li data-notice-level="${item.level}"${item.hotelId ? ` data-notice-hotel="${escapeHtml(item.hotelId)}"${item.hotelId === selectedId ? "" : " hidden"}` : ""}>${escapeHtml(item.text)}</li>`).join("")}</ul>
       </aside>
     `;
   }
@@ -833,6 +834,9 @@
                 }
                 button.textContent = "Избран хотел";
               }
+              root.querySelectorAll("[data-notice-hotel]").forEach(function (notice) { notice.hidden = notice.dataset.noticeHotel !== button.dataset.optionId; });
+              var noticeBox = root.querySelector(".aya-client-notices");
+              if (noticeBox) noticeBox.hidden = !Array.from(noticeBox.querySelectorAll("li")).some(function (notice) { return !notice.hidden; });
               if (selectedName) selectedName.textContent = button.dataset.optionName || "Хотелска опция";
               if (selectedPrice) selectedPrice.textContent = button.dataset.optionPrice || "-";
               if (selectedSubtitle) selectedSubtitle.textContent = button.dataset.optionSubtitle || "";
@@ -1030,7 +1034,7 @@
           ${segmentGroup("Връщане", flight.inboundSegments || [], flight.inbound)}
           <div class="v11-detail-row">
             <span>Багаж</span>
-            <strong>${escapeHtml(localizeClientText(text(flight.baggage, "За потвърждение")))}</strong>
+            <strong>${escapeHtml(localizeClientText(presentationViewModel.baggageLabel(flight.baggage)))}</strong>
           </div>
         </section>
 
