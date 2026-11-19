@@ -67,7 +67,7 @@ return {clientName:'QA ONLY',destination:'Rome',travelDates:kind==='old'?'16.11 
   for(const route of [`/offer/${id}`,`/api/offers/view/${id}`,url+'/print',url+'/print?qa=1&bypass=true',url+'/print?selectedHotelId=b',url+'/pdf',url+'/pdf?selectedHotelId=b']){
    const before=snapshot(),r=await http(route,'GET',undefined,'');assert.equal(r.status,route.startsWith('/offer/')?302:200,kind+' '+route);
    if(route.includes('/print')){
-    if(!flightValid)assert(r.text.includes('[FLIGHT_DATE_SAFETY]'),'current date warning must be visible');
+    if(!flightValid)assert(r.text.includes('Датите на полетите предстои да бъдат потвърдени.'),'current date warning must be visible');
     if(kind==='occupancy'||kind==='mixed'){
      // Alternate selected hotel B is confirmed; default hotel A is not.
      if(!route.includes('selectedHotelId=b'))assert(r.text.includes('непотвърдена заетост'));
@@ -75,15 +75,15 @@ return {clientName:'QA ONLY',destination:'Rome',travelDates:kind==='old'?'16.11 
     if(route.includes('selectedHotelId=b'))assert(r.text.includes('QA Beta'));
    }
    if(route.includes('/view/')){
-    if(!flightValid)assert(r.text.includes('[FLIGHT_DATE_SAFETY]'));
+    if(!flightValid)assert(r.text.includes('Датите на полетите предстои да бъдат потвърдени.'));
     if(kind==='occupancy'||kind==='mixed')assert(r.text.includes('непотвърдена заетост'));
    }
    if(route.includes('/pdf')){
     assert(r.pdf);const extracted=pdfTools.extractPdfText(r.bytes),text=extracted.compactText;
     assert(extracted.pageCount>0);assert(/\/Subtype\s*\/Image\b/.test(r.bytes.toString('latin1')),'controlled hotel image must be embedded');
-    if(!flightValid)assert(text.includes('[FLIGHT_DATE_SAFETY]'),'PDF must include current warning');
+    if(!flightValid)assert(text.includes('Датите на полетите предстои да бъдат потвърдени.'.replace(/\s+/g,'')),'PDF must include neutral current warning');
     if((kind==='occupancy'||kind==='mixed')&&!route.includes('selectedHotelId=b'))assert(text.includes('непотвърденазаетост'));
-    if(kind==='old'||kind==='mixed'||kind==='dismissed')assert(text.includes('2020'),'never repair the reported year');
+    if(kind==='old'||kind==='mixed'||kind==='dismissed'){assert(!text.includes('[FLIGHT_DATE_SAFETY]'),'operator diagnostic prefix stays out of client PDF');assert(JSON.stringify(JSON.parse(snapshot()).offers.find(o=>o.id===id).flights).includes('2020'),'saved reported year must remain unchanged');}
     if(route.includes('selectedHotelId=b'))assert(text.includes('QABeta')&&!text.includes('QAAlpha'));
    }
    if(route.startsWith('/offer/')||route.includes('/print'))assert.equal(snapshot(),before,'redirect/print must not write metrics');

@@ -12,7 +12,7 @@ function buildLegacyOfferPrintInput(offer = {}) {
     selected: hotels.some(item => item.selected) ? Boolean(hotel.selected) : index === 0
   }));
   const selected = options.find(hotel => hotel.selected) || options[0] || null;
-  const join = key => [...new Set(flights.map(flight => flight[key]).filter(Boolean))].join(" / ");
+  const join = key => [...new Set(flights.map(flight => key === "baggage" ? require("./presentation-view-model").baggageLabel(flight[key]) : flight[key]).filter(Boolean))].join(" / ");
   const flightAmount = amount(offer.flightPrice) || flights.reduce((sum, flight) => sum + amount(flight.price), 0);
   const hotelAmount = selected ? amount(selected.price) : amount(offer.hotelPrice);
   const transferAmount = amount(offer.transferPrice);

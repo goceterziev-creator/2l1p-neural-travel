@@ -10,6 +10,9 @@
       const badge = item.querySelector('.option-badge');
       if (badge) badge.textContent = selected ? 'Вашият хотел' : 'Хотелска опция';
     });
+    document.querySelectorAll('[data-notice-hotel]').forEach(notice => { notice.hidden = notice.dataset.noticeHotel !== card.dataset.hotelId; });
+    const notices = document.querySelector('.aya-client-notices');
+    if (notices) notices.hidden = !Array.from(notices.querySelectorAll('li')).some(notice => !notice.hidden);
     document.querySelectorAll('.price[data-client-price]').forEach(item => { item.textContent = card.dataset.clientPrice; });
     document.querySelectorAll('[data-selected-hotel-whatsapp]').forEach(link => { link.href = card.dataset.whatsapp; });
     const qr = document.querySelector('[data-selected-hotel-qr]');

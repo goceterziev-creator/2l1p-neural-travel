@@ -75,7 +75,7 @@ test('PDF groups all price displays and keeps unresolved collection warnings wit
  const input={client:{travelDates:'21.11.2026 - 29.11.2026'},pricing:{currency:'EUR'},hotelOptions:[{id:'a',name:'QA HOTEL',price}],warnings:['[WARNING] Smart Import: храненето за поне един хотел не е потвърдено.','[WARNING] Не е потвърдено изхранването за 3 хотел(а). Проверете преди изпращане.','[INFO] Проверете трансфера.']};
  const before=JSON.stringify(input),html=renderPrintProposal(input,{selectedHotelId:'a'});
  const expected=price.toFixed(2).replace('.',',').replace(/\B(?=(\d{3})+(?!\d))/g,' ');
- assert(html.includes(expected+' EUR'),expected);assert(!html.includes('Smart Import:'));assert(!html.includes('3 хотел(а)'));assert(html.includes('не е потвърдено за всички хотелски варианти'));assert(html.includes('Проверете трансфера.'));assert.equal((html.match(/data-notice-level=/g)||[]).length,2);assert.equal(JSON.stringify(input),before);
+ assert(html.includes(expected+' EUR'),expected);assert(!html.includes('Smart Import:'));assert(!html.includes('3 хотел(а)'));assert(html.includes(viewModel.unconfirmedMealNotice));assert(html.includes('Проверете трансфера.'));assert.equal((html.match(/data-notice-level=/g)||[]).length,2);assert.equal(JSON.stringify(input),before);
  }
 });
 

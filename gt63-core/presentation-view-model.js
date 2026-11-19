@@ -276,18 +276,46 @@
     };
   }
 
-  const unconfirmedMealNotice = "Изхранването не е потвърдено за всички хотелски варианти. Проверете условията за избрания хотел преди резервация.";
+  const unconfirmedMealNotice = "Изхранването за избрания хотел подлежи на потвърждение преди резервация.";
   const trustedNotices = new WeakMap();
 
   function setTrustedNotices(input, notices) {
     trustedNotices.set(input, notices);
   }
 
-  function presentationNotices(input = {}) {
-    return (trustedNotices.get(input) || []).map(notice => ({
-      text: notice.message,
-      level: notice.severity === "BLOCKING" ? "blocking" : notice.severity === "INFO" ? "info" : "warning"
-    }));
+  function presentationNotices(input = {}, options = {}) {
+    const selection = resolveSelectedHotel(input, options);
+    const comparison = (options.mode || input.printMode) === "comparison";
+    return (trustedNotices.get(input) || []).filter(notice=>options.allHotels || !notice.parameters?.hotelId || (comparison ? selection.hotelOptions.some((hotel,index)=>hotelIdentity(hotel,index) === notice.parameters.hotelId) : notice.parameters.hotelId === selection.selectedHotelId)).map(notice => {
+      const hotelId = notice.parameters?.hotelId || "";
+      let message = notice.message;
+      if (comparison && hotelId) {
+        const hotel = selection.hotelOptions.find((item,index)=>hotelIdentity(item,index) === hotelId);
+        const prefix = message.match(/^\[(?:INFO|WARNING|CRITICAL)\]\s*/)?.[0] || "";
+        message = `${prefix}${hotel?.name || hotelId}: ${message.slice(prefix.length)}`;
+      }
+      return {text:message, hotelId,
+        level: notice.severity === "BLOCKING" ? "blocking" : notice.severity === "INFO" ? "info" : "warning"};
+    });
+  }
+
+  function baggageLabel(value) {
+    const pending = "Багажът подлежи на потвърждение";
+    if (value && typeof value === "object") {
+      if (value.confirmed !== true) return pending;
+      const parts = [];
+      for (const [key,label] of [["checked","Регистриран багаж"],["cabin","Ръчен багаж"],["personalItem","Личен багаж"]]) {
+        const detail = value[key];
+        if (!detail || typeof detail !== "object" || detail.confirmed === false) continue;
+        const facts = [];
+        if (Number.isInteger(detail.pieces) && detail.pieces >= 0) facts.push(`${detail.pieces} бр.`);
+        if (typeof detail.weightKg === "number" && Number.isFinite(detail.weightKg) && detail.weightKg > 0) facts.push(`${detail.weightKg} кг`);
+        if (facts.length) parts.push(`${label}: ${facts.join(", ")}`);
+      }
+      return parts.join("; ") || pending;
+    }
+    const raw = typeof value === "string" ? value.trim() : "";
+    return !raw || /\[object Object\]|^(?:unknown|not specified|not provided|BusinessPrime|PrimeFly|(?:багаж )?за потвърждение|багажът подлежи на потвърждение|не е посочен[оа]?)$/i.test(raw) ? pending : raw;
   }
 
   function buildPresentationViewModel(input = {}, options = {}) {
@@ -313,6 +341,7 @@
 
   return {
     amount,
+    baggageLabel,
     presentationNotices,
     setTrustedNotices,
     unconfirmedMealNotice,

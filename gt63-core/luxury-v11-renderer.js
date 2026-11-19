@@ -7,6 +7,11 @@
   }
   root.GT63LuxuryV11Renderer = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function createLuxuryV11Renderer(root) {
+  // Product preview loads this renderer before the shared view model.
+  function baggageLabel(value) {
+    const presentation = root.GT63PresentationViewModel || (typeof require === "function" ? require("./presentation-view-model") : null);
+    return presentation.baggageLabel(value);
+  }
   const SUPPORTED_VERSION = "1.0";
   const SUPPORTED_MODE = "GT63_LUXURY_PROPOSAL_INPUT";
 
@@ -129,7 +134,7 @@
     if (!notices.length) return "";
     return `
       <section class="v11-note">
-        <strong>Бележка за преглед</strong>
+        <strong>Условия и важни бележки</strong>
         <ul>${notices.map((item) => `<li>${escapeHtml(item.text)}</li>`).join("")}</ul>
       </section>
     `;
@@ -165,11 +170,9 @@
     const hotelOptions = Array.isArray(proposal.hotelOptions) ? proposal.hotelOptions : [];
     const currency = proposal.pricing?.currency || "EUR";
     const title = proposal.content?.heroTitle || proposal.destination?.name || "Персонално предложение";
-    const subtitle = proposal.content?.heroSubtitle || "Персонално подготвено пътуване за клиентски преглед.";
+    const subtitle = proposal.content?.heroSubtitle || "Персонално подготвено предложение за Вашето пътуване.";
     const travelDates = proposal.client?.travelDates || proposal.destination?.requested || "";
     const total = proposal.pricing?.totalAmount || flight.price || hotel.price;
-    const baseTotal = proposal.pricing?.baseAmount;
-    const marginPercent = proposal.pricing?.marginPercent;
     const image = proposalImage(proposal);
 
     return `
@@ -191,8 +194,6 @@
           <div class="v11-price-card">
             <span>Ориентировъчна крайна цена</span>
             <strong>${escapeHtml(money(total, currency))}</strong>
-            ${baseTotal && marginPercent ? `<small>База ${escapeHtml(money(baseTotal, currency))} + ${escapeHtml(marginPercent)}% марж</small>` : ""}
-            <small>Подготвено за финален преглед</small>
           </div>
         </section>
 
@@ -207,7 +208,7 @@
             ${segmentGroup("Връщане", flight.inboundSegments, flight.inbound)}
             <div class="v11-detail-row">
               <span>Багаж</span>
-              <strong>${escapeHtml(text(flight.baggage, "За потвърждение"))}</strong>
+              <strong>${escapeHtml(baggageLabel(flight.baggage))}</strong>
             </div>
           </div>
 
@@ -233,10 +234,10 @@
 
         <section class="v11-closing">
           <div>
-            <p class="v11-kicker">Готово за клиентски преглед</p>
+            <p class="v11-kicker">Следваща стъпка</p>
             <h4>${escapeHtml(text(proposal.content?.primaryCta, "Прегледайте предложението"))}</h4>
           </div>
-          <span>${proposal.readiness === "ready" ? "ГОТОВО" : "ЗА ПРЕГЛЕД"}</span>
+          <span>Вашето пътуване</span>
         </section>
       </article>
     `;

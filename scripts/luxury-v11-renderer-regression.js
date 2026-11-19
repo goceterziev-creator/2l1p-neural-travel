@@ -25,14 +25,16 @@ assert.match(html, /Luxury V11 proposal preview/, "renderer should expose V11 pr
 assert.match(html, /КЛИЕНТСКО ПРЕДЛОЖЕНИЕ/, "renderer should expose localized V11 client brief label");
 assert.match(html, /Maldives/, "renderer should render destination");
 assert.match(html, /Ориентировъчна крайна цена/, "renderer should render localized investment block");
-assert.match(html, /12,675 EUR/, "renderer should render combined preview amount");
+assert.equal(proposalInput.pricing.totalAmount, 13308.75, "fixture final amount retains existing 5% pricing");
+assert.match(html, /13,308\.75 EUR/, "renderer should render the client final amount, not the internal base");
 assert.match(html, /Полет/, "renderer should render localized flight section");
 assert.match(html, /Emirates EK2229/, "renderer should render outbound flight segment");
 assert.match(html, /Etihad Airways EY377/, "renderer should render inbound flight segment");
 assert.match(html, /Хотел/, "renderer should render localized hotel section");
 assert.match(html, /Patina Maldives/, "renderer should render hotel name");
 assert.match(html, /images\.unsplash\.com/, "renderer should render a usable visual fallback when fixture image is placeholder");
-assert.match(html, /ГОТОВО/, "renderer should expose localized readiness status");
+assert.doesNotMatch(html, /5% марж|% марж|Подготвено за финален преглед|ЗА ПРЕГЛЕД|>ГОТОВО</, "client renderer must not expose operator margin or readiness");
+assert.match(html, /Вашето пътуване/, "renderer should retain a neutral client closing label");
 assert.equal(/V11 CLIENT BRIEF|Estimated investment|Flight Experience|Hotel Selection|Ready for client preview|Review proposal|READY|REVIEW/.test(html), false, "renderer should not output English client-facing labels");
 assert.equal(/contractVersion|classifications|universalIntakeDeprecated|debug|sourceAuthority/.test(html), false, "renderer must not leak engine fields");
 assert.equal(/example\.com/.test(html), false, "renderer must not render placeholder image URLs");

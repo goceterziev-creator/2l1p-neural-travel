@@ -25,10 +25,10 @@
     return /^(?:|not specified|not provided|unknown|не е посочен[оа]?|не е потвърден[оа]?|(?:хранене|изхранване|багаж) за потвърждение|за потвърждение)$/i.test(nonEmpty(value));
   }
   function baggageLabel(value) {
-    return detailNeedsConfirmation(value) ? "Багажът подлежи на потвърждение" : localize(value);
+    return localize(viewModelApi.baggageLabel(value));
   }
-  function printNotices(input) {
-    return viewModelApi.presentationNotices(input).map(item => {
+  function printNotices(input, options = {}) {
+    return viewModelApi.presentationNotices(input, options).map(item => {
       const prefix = item.text.match(/^\[(WARNING|INFO)\]\s*/i);
       return { ...item, level: item.level === "blocking" ? "blocking" : prefix?.[1].toUpperCase() === "INFO" ? "info" : item.level, text: prefix ? `${prefix[1].toUpperCase() === "INFO" ? "Информация" : "Важно"}: ${item.text.slice(prefix[0].length)}` : item.text };
     });
@@ -404,7 +404,7 @@
     if (hotel.name) quoted.push({ icon: "room", label: "Настаняване", value: hotel.name, detail: hotel.room || hotel.roomType || "Стая за потвърждение" });
     (hotel.occupancy?.confirmed === true ? quoted : pending).push({ icon: "guests", label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) });
     (detailNeedsConfirmation(viewModel.selectedMealPlan) ? pending : quoted).push({ icon: "meal", label: "Изхранване", value: viewModel.selectedMealPlan });
-    if (hasMeaningfulFlight(input)) (detailNeedsConfirmation(flight.baggage) ? pending : quoted).push({ icon: "info", label: "Багаж", value: baggageLabel(flight.baggage) });
+    if (hasMeaningfulFlight(input)) (baggageLabel(flight.baggage) === "Багажът подлежи на потвърждение" || detailNeedsConfirmation(flight.baggage) ? pending : quoted).push({ icon: "info", label: "Багаж", value: baggageLabel(flight.baggage) });
     if (transfer.included || transfer.price > 0 || transfer.type || transfer.status || transfer.route || transfer.description) {
       (transfer.included === true ? included : pending).push({ icon: "location", label: "Трансфер", value: transferSummary(input) });
     }
@@ -618,9 +618,9 @@
     `;
   }
 
-  function noticeBlock(input = {}) {
+  function noticeBlock(input = {}, options = {}) {
     const seenMealConditions = new Set();
-    const notices = printNotices(input).map(item => {
+    const notices = printNotices(input, options).map(item => {
       // Only these complete collection-level messages describe the proven duplicate.
       // Keep added qualifications, hotel-specific notices and other severities separate.
       const message = item.text.replace(/^(?:Важно|Информация):\s*/, "");
@@ -662,7 +662,7 @@
       ].filter(Boolean).join("")),
       contentPage("gt63-print-investment-content-page", [
         investmentPage(viewModel, input),
-        noticeBlock(input),
+        noticeBlock(input, options),
         luxuryPageWave()
       ].join("")),
       contentPage("gt63-print-timeline-page", timelineBlock(input)),
@@ -672,7 +672,7 @@
       recommendationBlock(viewModel),
       comparisonTable(viewModel),
       flightBlock(input),
-      noticeBlock(input)
+      noticeBlock(input, options)
     ].filter(Boolean).join("");
 
     return `

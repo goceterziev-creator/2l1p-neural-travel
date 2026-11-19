@@ -6220,18 +6220,31 @@ function escapeGt63RegistryHtml(value) {
 function projectOfferNotices(offer) {
   const generated = [];
   buildValidationWarnings({ ...offer }, {}, [], generated);
+  const hotelCodes = new Set(["MEALS_UNCONFIRMED","HOTEL_AVAILABILITY","HOTEL_LOCATION","HOTEL_AREA","HOTEL_ADULT_COUNT","OCCUPANCY_CHILDREN"]);
   const occurrences = new Map();
-  const trusted = generated.filter(notice => notice.audience === "CLIENT").map(({ code, message, parameters }) => {
+  const trusted = generated.filter(notice => notice.audience === "CLIENT" && !hotelCodes.has(notice.code)).map(({ code, message, parameters }) => {
     const key = JSON.stringify([code, message, parameters]);
     const occurrence = occurrences.get(key) || 0;
     occurrences.set(key, occurrence + 1);
-    const clientText = code === "MEALS_UNCONFIRMED"
-      ? "[WARNING] " + presentationViewModel.unconfirmedMealNotice
-      : message;
+    const clientText = code === "FLIGHT_GUEST_COUNT" ? "[WARNING] Броят на пътниците подлежи на потвърждение." : message;
     return offerNotices.generatedNotice(offer, code, occurrence, clientText, parameters);
   });
-  const occupancy = hotelOccupancyQa.warning(offer);
-  if (occupancy) trusted.push(offerNotices.generatedNotice(offer, "HOTEL_OCCUPANCY", 0, occupancy));
+  (getHotels(offer).length ? getHotels(offer) : safeArray(offer.proposalInput?.hotelOptions).length ? offer.proposalInput.hotelOptions : offer.proposalInput?.hotel ? [offer.proposalInput.hotel] : []).forEach((hotel,index)=>{
+    const proposalHotels = offer.proposalInput?.hotelOptions;
+    const matches = Array.isArray(proposalHotels) ? proposalHotels.filter(item=>hotel.id ? item.id === hotel.id : hotel.name && item.name === hotel.name) : [];
+    const hotelId = Array.isArray(proposalHotels) ? matches.length === 1 ? presentationViewModel.hotelIdentity(matches[0],proposalHotels.indexOf(matches[0])) : null : hotel.id || `legacy-hotel-${index+1}`;
+    const scopedOffer = {...offer, hotels:[hotel], hotelOptions:[hotel]};
+    const scoped = [];
+    buildValidationWarnings(scopedOffer,{},[],scoped);
+    for (const notice of scoped.filter(item=>item.audience === "CLIENT" && hotelCodes.has(item.code) && item.code !== "MEALS_UNCONFIRMED")) {
+      const message = ["HOTEL_ADULT_COUNT","OCCUPANCY_CHILDREN"].includes(notice.code) ? "[WARNING] Съставът на гостите за хотелското настаняване подлежи на потвърждение."
+        : notice.code === "HOTEL_LOCATION" ? "[WARNING] Местоположението на хотела подлежи на потвърждение."
+        : notice.message.replace("Проверете преди изпращане.","Наличността подлежи на потвърждение преди резервация.");
+      trusted.push(offerNotices.generatedNotice(offer,notice.code,index,message,{...notice.parameters,hotelId}));
+    }
+    if (/^(?:|unknown|not specified|not provided|не е посочено|хранене за потвърждение|изхранване за потвърждение)$/i.test(presentationViewModel.resolvedMealPlan(hotel))) trusted.push(offerNotices.generatedNotice(offer,"MEALS_UNCONFIRMED",index,"[WARNING] " + (hotelId ? presentationViewModel.unconfirmedMealNotice : "Изхранването за хотелски вариант подлежи на потвърждение преди резервация."),{hotelId}));
+    if (hotelOccupancyQa.warning(scopedOffer)) trusted.push(offerNotices.generatedNotice(offer,"HOTEL_OCCUPANCY",index,"[WARNING] Хотелската заетост и броят стаи за избрания хотел подлежат на потвърждение.",{hotelId}));
+  });
   const state = offerNotices.adminState(offer);
   for (const notice of state.notices) {
     if (notice.classification === offerNotices.MATERIAL) {
@@ -6239,14 +6252,18 @@ function projectOfferNotices(offer) {
         severity: "WARNING", message: notice.decision.clientText });
     }
   }
-  if (state.unresolved) {
-    trusted.push(offerNotices.generatedNotice(offer, "UNRESOLVED", 0, "[WARNING] Офертата има условия за преглед и не е потвърдена за изпращане."));
-  }
   return trusted;
 }
 
+function clientBaggageProjection(offer) {
+  const copy = {...offer};
+  for (const key of ["flights","flightOptions"]) if (Array.isArray(copy[key])) copy[key] = copy[key].map(flight=>({...flight,baggage:presentationViewModel.baggageLabel(flight.baggage)}));
+  if (copy.proposalInput?.flight) copy.proposalInput = {...copy.proposalInput,flight:{...copy.proposalInput.flight,baggage:presentationViewModel.baggageLabel(copy.proposalInput.flight.baggage)}};
+  return copy;
+}
+
 function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
-  offer = offerWithResolvedFlightDates(offer);
+  offer = clientBaggageProjection(offerWithResolvedFlightDates(offer));
   const proposalInput = normalizeProposalInputForOffer(offer.proposalInput);
   if (!proposalInput || !offer.proposalTemplate?.selected) return "";
 
@@ -6338,7 +6355,7 @@ function renderGt63RegistryOfferHtml(offer = {}, options = {}) {
 }
 
 function renderGt63PrintOfferHtml(offer = {}, options = {}) {
-  offer = offerWithResolvedFlightDates(offer);
+  offer = clientBaggageProjection(offerWithResolvedFlightDates(offer));
   const hasProposalInput = offer.proposalInput != null;
   const proposalInput = hasProposalInput
     ? normalizeProposalInputForOffer(offer.proposalInput)
@@ -6367,6 +6384,7 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
 
   const title = input.content?.heroTitle || input.destination?.name || offer.destination || "AYA Travel";
   const mode = options.mode || "selected";
+  if (options.selectedHotelId) input.selectedHotelId = options.selectedHotelId;
   const body = gt63PrintPresentationRenderer.renderPrintProposal(input, {
     mode,
     selectedHotelId: options.selectedHotelId
@@ -7332,15 +7350,18 @@ async function resolveGt63HotelPrintImage(rawUrl) {
 }
 
 async function renderOfferHtml(offer, options = {}) {
-  offer = offerWithResolvedFlightDates(offer);
+  offer = clientBaggageProjection(offerWithResolvedFlightDates(offer));
   const registryHtml = renderGt63RegistryOfferHtml(offer, options);
   if (registryHtml) return registryHtml;
 
   const { forPdf = false, showWarnings = true } = options;
   const flights = getFlights(offer).map((flight) => withBulgarianFlightDisplay(flight));
   const hotels = getHotels(offer);
-  const validationWarnings = projectOfferNotices(offer).map(notice => notice.message);
-  const hasWarnings = showWarnings && validationWarnings.length > 0;
+  const noticeInput = buildLegacyOfferPrintInput(offer);
+  presentationViewModel.setTrustedNotices(noticeInput,projectOfferNotices(offer));
+  const clientNotices = presentationViewModel.presentationNotices(noticeInput,{allHotels:true});
+  const noticeHotelId = presentationViewModel.resolveSelectedHotel(noticeInput,{selectedHotelId:options.selectedHotelId}).selectedHotelId;
+  const hasWarnings = showWarnings && clientNotices.length > 0;
   const clientLink = `${LIVE_BASE_URL}/api/offers/view/${encodeURIComponent(offer.id)}`;
 
   const autoImages = {
@@ -7567,29 +7588,7 @@ async function renderOfferHtml(offer, options = {}) {
   }
 
   function clientSafeBaggageSummary(value = "") {
-    const text = cleanText(value).toLowerCase();
-    if (!text || /needs review/i.test(text)) return "\u0421\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\u0442\u0430.";
-
-    const hasPersonal = /personal item|small bag|under the seat|личен багаж|малък личен|малка чанта/.test(text);
-    const hasCabin = /carry-on|cabin|ръчен багаж|салонен/.test(text);
-    const hasChecked = /checked bag|hold luggage|чекиран/.test(text);
-    const hasPaidOption = /срещу доплащане|available in the next steps|can be added|for a fee|\+\s*€|€\s*\d/.test(text);
-
-    if (hasPaidOption && (hasCabin || hasChecked)) {
-      return hasPersonal
-        ? "\u0412\u043A\u043B\u044E\u0447\u0435\u043D \u043B\u0438\u0447\u0435\u043D \u0431\u0430\u0433\u0430\u0436. \u0414\u043E\u043F\u044A\u043B\u043D\u0438\u0442\u0435\u043B\u043D\u0438\u044F\u0442 \u0431\u0430\u0433\u0430\u0436 \u0441\u0435 \u043F\u043E\u0442\u0432\u044A\u0440\u0436\u0434\u0430\u0432\u0430 \u043F\u0440\u0435\u0434\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u0430\u0446\u0438\u044F."
-        : "\u0411\u0430\u0433\u0430\u0436\u044A\u0442 \u0441\u0435 \u043F\u043E\u0442\u0432\u044A\u0440\u0436\u0434\u0430\u0432\u0430 \u043F\u0440\u0435\u0434\u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u0430\u0446\u0438\u044F.";
-    }
-
-    if (hasCabin && hasChecked) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D cabin + checked baggage.";
-    if (hasChecked) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D checked baggage.";
-    if (hasCabin) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D cabin baggage.";
-    if (hasPersonal) return "\u0412\u043A\u043B\u044E\u0447\u0435\u043D \u043B\u0438\u0447\u0435\u043D \u0431\u0430\u0433\u0430\u0436.";
-    if (/според условията|according to airline conditions|included/.test(text)) {
-      return "\u0411\u0430\u0433\u0430\u0436 \u0441\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\u0442\u0430.";
-    }
-
-    return clientSafeFlightText(value, "\u0421\u043F\u043E\u0440\u0435\u0434 \u0443\u0441\u043B\u043E\u0432\u0438\u044F\u0442\u0430 \u043D\u0430 \u0430\u0432\u0438\u043E\u043A\u043E\u043C\u043F\u0430\u043D\u0438\u044F\u0442\u0430.");
+    return presentationViewModel.baggageLabel(value);
   }
 
   function destinationKey(value = "") {
@@ -8695,7 +8694,7 @@ h1 {
     </div>
   </section>
 
-  ${hasWarnings ? `<aside class="aya-client-notices" id="offerWarning" aria-label="Условия и важни бележки"><strong>Условия и важни бележки</strong><ul>${validationWarnings.map(warning => `<li>${escapeHtml(cleanText(displayValidationWarning(warning)))}</li>`).join("")}</ul></aside>` : ""}
+  ${hasWarnings ? `<aside class="aya-client-notices" id="offerWarning" aria-label="Условия и важни бележки"${clientNotices.some(item=>!item.hotelId || item.hotelId === noticeHotelId) ? "" : " hidden"}><strong>Условия и важни бележки</strong><ul>${clientNotices.map(item => `<li${item.hotelId ? ` data-notice-hotel="${escapeAttr(item.hotelId)}"${item.hotelId === noticeHotelId ? "" : " hidden"}` : ""}>${escapeHtml(cleanText(displayValidationWarning(item.text)))}</li>`).join("")}</ul></aside>` : ""}
 
   <section class="section pdf-skip">
     <h2>Какво ви очаква в ${escapeHtml(destinationName || "дестинацията")}</h2>
