@@ -7089,7 +7089,21 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
       .gt63-print-cover,
       .gt63-print-final-page { height: 297mm; }
       .gt63-print-flow-page { height: auto; min-height: 0; }
+      /* Page-specific overrides after flow rules; other PDF pages keep their layout. */
+      .gt63-print-investment-content-page { min-height: 297mm; padding-bottom: 23mm; }
     }
+    .gt63-print-cover-overview { position: absolute; top: 18mm; left: 18mm; right: 18mm; padding: 6mm; border-radius: 5mm; background: rgba(18,34,54,.9); color: #fff; font-family: Arial, Helvetica, sans-serif; }
+    .gt63-print-cover-overview .gt63-print-kicker { color: var(--gt63-accent); }
+    .gt63-print-cover-overview p { font-size: 9pt; line-height: 1.4; margin: 2mm 0 0; }
+    .gt63-print-cover-overview .gt63-print-journey-overview,
+    .gt63-print-investment-overview .gt63-print-journey-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5mm; font-family: Arial, Helvetica, sans-serif; }
+    .gt63-print-cover-overview strong,
+    .gt63-print-investment-overview strong { display: block; font-size: 11pt; overflow-wrap: anywhere; }
+    .gt63-print-cover-overview span,
+    .gt63-print-investment-overview span { display: block; font-size: 8pt; color: var(--gt63-accent); margin-bottom: 2mm; }
+    .gt63-print-investment-overview { margin-top: 7mm; padding-top: 4mm; border-top: 1px solid var(--gt63-line); break-inside: avoid; }
+    .gt63-print-investment-overview h3 { margin: 0 0 4mm; font-size: 17pt; }
+    .gt63-print-investment-overview p { font-size: 8pt; line-height: 1.5; margin: 2mm 0 0; }
   </style>
 </head>
 <body>
