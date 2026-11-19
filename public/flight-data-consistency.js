@@ -37,10 +37,10 @@
     const hour = Number(match[1]);
     return Number(match[2]) < 60 && (match[3] ? hour >= 1 && hour <= 12 : hour < 24);
   }
-  // A yearless ISO-like value is accepted only for an explicitly reviewed manual date.
+  // A yearless numeric date is accepted only with a reviewed full calendar date.
   function partialDateTime(value) {
     const match = String(value || "").match(/^(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-    return !!match && calendar(`2000-${match[1]}-${match[2]}`) && Number(match[3]) < 24 && Number(match[4]) < 60;
+    return !!match && (calendar(`2000-${match[1]}-${match[2]}`) || calendar(`2000-${match[2]}-${match[1]}`)) && Number(match[3]) < 24 && Number(match[4]) < 60;
   }
   function segmentDateTime(segment, side) {
     const raw = String(segment[side] || "").trim();
@@ -173,6 +173,82 @@
     if (!verdict.ok) throw new Error("Flight dates remain inconsistent");
     return next;
   }
+  // Resolve a detached candidate, never the screenshot evidence or editor state.
+  // Context must be supplied explicitly; arbitrary URL text is not trusted context.
+  function resolveYearContext(flight, context = {}) {
+    try {
+      const today = (context.now || new Date()).toISOString().slice(0,10);
+      const periodRaw = String(context.verifiedTravelDates || "").trim();
+      const period = tokens(periodRaw).map(item => item.key);
+      if (periodRaw && (period.length !== 2 || !period.every(calendar) || period[0] > period[1])) throw Error("Unverified travel period");
+      if (period.length && Number(period[1].slice(0,4)) - Number(period[0].slice(0,4)) > 1) throw Error("Ambiguous multi-year travel period");
+      const analysis = inspect(flight), reviewed = {}, evidence = [];
+      if (![...analysis.legs.outbound,...analysis.legs.inbound].length) throw Error("No explicit leg mapping");
+      if (analysis.conflicts.some(item=>["Conflicting segment representations","Combined segments differ from leg segments","Invalid segment array","Invalid combined segment array"].includes(item.message))) throw Error("Conflicting segment copies");
+      const canonical = [...analysis.legs.outbound,...analysis.legs.inbound];
+      for (const [expected,list] of [[canonical,flight.segments],[analysis.legs.outbound,flight.outbound?.segments],[analysis.legs.inbound,flight.inbound?.segments]]) {
+        if (Array.isArray(list) && list.length && (list.length !== expected.length || list.some((segment,index)=>identity(segment)!==identity(expected[index]) || ["departure","arrival"].some(side=>String(segment?.[side] || "").trim() !== String(expected[index]?.[side] || "").trim())))) throw Error("Conflicting raw segment copies");
+      }
+      const sourceYears = [...new Set([...analysis.legs.outbound,...analysis.legs.inbound].flatMap(segment=>["departure","arrival","date","departureDate","arrivalDate"].flatMap(key=>tokens(segment?.[key]).filter(item=>calendar(item.key)).map(item=>Number(item.key.slice(0,4))))))];
+      if (!period.length && sourceYears.length > 1) throw Error("Rollover requires verified travel period");
+      let previous = "", previousArrival = null;
+      for (const leg of ["outbound","inbound"]) {
+        reviewed[leg] = analysis.legs[leg].map((segment,index) => {
+          const result = {};
+          for (const side of ["departure","arrival"]) {
+            const raw = String(segment?.[side] || "");
+            const parsed = tokens(raw);
+            const partial = raw.match(/^(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+            let explicit = parsed.length === 1 && calendar(parsed[0].key) ? parsed[0].key : "";
+            let monthDays = [];
+            if (explicit) monthDays = [explicit.slice(5)];
+            else if (partial && Number(partial[3]) < 24 && Number(partial[4]) < 60) {
+              monthDays = [...new Set([`${partial[1]}-${partial[2]}`,`${partial[2]}-${partial[1]}`])].filter(md => calendar(`2000-${md}`));
+            } else if (parsed.length === 1 && parsed[0].key?.startsWith("????")) monthDays = [parsed[0].key.slice(5)];
+            else throw Error("Ambiguous source date");
+            const aliases = side === "departure" ? ["date","departureDate"] : ["arrivalDate"];
+            const explicitAliases = aliases.filter(key=>segment[key]).map(key=>tokens(segment[key]));
+            if (explicitAliases.some(items=>items.length !== 1 || !items[0].key)) throw Error("Ambiguous date alias");
+            const aliasDates = explicitAliases.map(items=>items[0].key).filter(calendar);
+            if (new Set([explicit,...aliasDates].filter(Boolean)).size > 1) throw Error("Conflicting explicit source years/dates");
+            explicit = explicit || aliasDates[0] || "";
+            const years = explicit ? [Number(explicit.slice(0,4))] : period.length ? [...new Set(period.map(day=>Number(day.slice(0,4))))] : sourceYears.length ? sourceYears : [Number(today.slice(0,4))];
+            const candidates = years.flatMap(year=>monthDays.map(md=>`${year}-${md}`)).filter(day=>calendar(day) && (!explicit || day === explicit) && (period.length ? day >= period[0] && day <= period[1] : true) && (explicit ? day >= today : day > today));
+            const compatible = candidates.filter(day=>!previous || day >= previous);
+            if (compatible.length !== 1) throw Error("No unique future chronological year");
+            const day = compatible[0];
+            if (explicitAliases.some(items=>items[0].key.slice(5) !== day.slice(5))) throw Error("Conflicting date aliases");
+            const clock = dates.extractTime(raw);
+            if (side === "departure" && previousArrival?.airport === segment.from && clock && previousArrival.time > `${day}T${clock}`) throw Error("Connection departs before arrival at the same airport");
+            if (side === "arrival") previousArrival = {airport:segment.to,time:clock ? `${day}T${clock}` : ""};
+            previous = day; result[side] = day;
+            evidence.push({leg,index,side,raw,resolved:day,provenance:explicit ? "EXPLICIT_SOURCE_YEAR" : "CONTEXT_RESOLVED_YEAR",basis:explicit ? "source" : period.length ? "verifiedTravelDates" : sourceYears.length ? "explicitSourceYear" : "futureCurrentYear"});
+          }
+          return result;
+        });
+      }
+      // Explicit years in the summary are evidence too; never overwrite a conflict.
+      for (const [leg,field] of [["outbound","departure"],["inbound","arrival"]]) {
+        const parsed = tokens(flight[field]);
+        if (parsed.some(item=>!item.key)) throw Error("Ambiguous summary evidence");
+        const hints = parsed.map(item=>[item.key]);
+        for (const match of String(flight[field] || "").matchAll(/(?<![\d-])(\d{2})-(\d{2})T\d{2}:\d{2}/g)) hints.push([...new Set([`????-${match[1]}-${match[2]}`,`????-${match[2]}-${match[1]}`])].filter(key=>calendar(key.replace("????","2000"))));
+        const bounds = reviewed[leg].flatMap(item=>[item.departure,item.arrival]);
+        const expected = hints.length === 1 ? bounds.slice(0,1) : hints.length === 2 ? [bounds[0],bounds.at(-1)] : bounds;
+        if (hints.length && (hints.length !== expected.length || hints.some((keys,index)=>keys.filter(key=>key === expected[index] || key === `????-${expected[index]?.slice(5)}`).length !== 1))) throw Error("Summary contradicts source/context");
+      }
+      const next = resolve(flight,"manual",reviewed);
+      const rawDates = {};
+      const collect = (record,path) => {
+        if (!record || typeof record !== "object") return;
+        for (const key of ["departure","arrival","date","departureDate","arrivalDate"]) if (Object.hasOwn(record,key)) rawDates[`${path}.${key}`] = record[key];
+      };
+      collect(flight,"flight");
+      for (const [path,list] of [["outboundSegments",flight.outboundSegments],["inboundSegments",flight.inboundSegments],["segments",flight.segments],["outbound.segments",flight.outbound?.segments],["inbound.segments",flight.inbound?.segments]]) if (Array.isArray(list)) list.forEach((record,index)=>collect(record,`${path}[${index}]`));
+      next.dateResolution = {version:2,evidence,rawDates};
+      return {ok:true,flight:next};
+    } catch (error) { return {ok:false,reason:error.message}; }
+  }
   function offerConflicts(body = {}) {
     if (!body || typeof body !== "object" || Array.isArray(body)) return [{path:"offer",message:"Invalid offer payload"}];
     const conflicts = [];
@@ -195,5 +271,5 @@
     }
     return conflicts;
   }
-  return {inspect,resolve,tokens,calendar,offerConflicts,summary,segmentDateTime};
+  return {inspect,resolve,resolveYearContext,tokens,calendar,offerConflicts,summary,segmentDateTime};
 });

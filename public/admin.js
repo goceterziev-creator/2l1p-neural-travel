@@ -3731,6 +3731,15 @@ async function reviewFlightDateConsistencyUI(flight, forceReview = false) {
   const api = globalThis.AYAFlightDataConsistency;
   if (!api) { alert("Flight date checker unavailable. Reload before saving."); return null; }
   const analysis = api.inspect(flight);
+  if (!analysis.ok && !forceReview && api.resolveYearContext) {
+    const verifiedTravelDates = typeof $ === "function" ? $("travelDates")?.value.trim() || "" : "";
+    const candidate = api.resolveYearContext(flight, { verifiedTravelDates });
+    if (candidate.ok) {
+      const evidence = candidate.flight.dateResolution.evidence;
+      if (!confirm(`Потвърдете полетните дати и източника на годината:\n${evidence.map(item => `${item.raw} → ${item.resolved} (${item.provenance}; ${item.basis})`).join("\n")}\nОригиналните стойности се запазват. Да приложа?`)) return null;
+      return candidate.flight;
+    }
+  }
   if (analysis.ok && !forceReview) return JSON.parse(JSON.stringify(flight));
   const choice = await new Promise(resolve => {
     const dialog = document.createElement("dialog");
