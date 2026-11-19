@@ -6,7 +6,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (dates) {
   if (!dates?.normalizeTravelDate || !dates?.extractTime) throw new Error("Existing travel date normalizer is required");
   const copy = value => JSON.parse(JSON.stringify(value));
-  const months = "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември";
+  const months = "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември|яну?|февр?|мар|апр|авг|септ?|окт|ноем?|дек";
   function calendar(value) {
     const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!match) return false;
