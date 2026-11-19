@@ -201,6 +201,19 @@
     `;
   }
 
+  // Compact PDF-only projection of the existing segments; never infer itinerary facts.
+  function journeyOverview(input = {}, detailed = false) {
+    const flight = input.flight || {};
+    const legs = [["Отиване", flight.outboundSegments], ["Връщане", flight.inboundSegments]];
+    const cards = legs.filter(([, segments]) => Array.isArray(segments) && segments.length).map(([label, segments]) => {
+      const first = segments[0], last = segments[segments.length - 1];
+      const route = [first.from, ...segments.map(segment => segment.to)].filter(Boolean).join(" → ");
+      const times = [first.departure, last.arrival].filter(Boolean).map(formatPrintDateTime).join(" — ");
+      return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(route)}</strong>${detailed && times ? `<p>${escapeHtml(times)}</p>` : ""}</div>`;
+    });
+    return cards.length ? `<div class="gt63-print-journey-overview">${cards.join("")}</div>` : "";
+  }
+
   function coverPage(viewModel, input = {}, mode = "selected") {
     const hotel = viewModel.selectedHotel || {};
     const destination = text(input.destination?.name || input.destination?.requested || input.content?.heroTitle, "Персонална оферта");
@@ -219,6 +232,12 @@
         ${heroImage ? `<img class="gt63-print-cover-hero" src="${escapeHtml(heroImage)}" alt="${escapeHtml(`Снимка към ${hotelName}`)}">` : `<span data-print-image-placeholder="true">Снимка за потвърждение</span>`}
       </figure>
       <div class="gt63-print-cover-shade"></div>
+      <aside class="gt63-print-cover-overview">
+        <p class="gt63-print-kicker">Вашето пътуване накратко</p>
+        ${journeyOverview(input)}
+        <p>${escapeHtml([viewModel.travelDates, input.flight?.airline].filter(Boolean).join(" · "))}</p>
+        <p>${escapeHtml([hotelName, viewModel.selectedMealPlan].filter(Boolean).join(" · "))}</p>
+      </aside>
       <header class="gt63-print-cover-copy">
         <p class="gt63-print-brand">AYA Travel · GT63</p>
         <p class="gt63-print-kicker">Луксозна книга на пътуването</p>
@@ -524,6 +543,7 @@
           <p class="gt63-offer-not-booking">Офертата не представлява потвърдена резервация.</p></div>
         </div>
         <div class="gt63-print-investment-list">${services.map(service => `<article${service.level ? ` data-material-condition data-notice-level="${service.level}"` : ""}><span>${escapeHtml(service.label)}</span><strong>${escapeHtml(localize(service.value))}</strong></article>`).join("")}</div>
+        ${journeyOverview(input, true) ? `<section class="gt63-print-investment-overview"><h3>Пътуването с един поглед</h3>${journeyOverview(input, true)}</section>` : ""}
       </section>
     </div>`;
   }
