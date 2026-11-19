@@ -35,6 +35,10 @@ const MONTH_ALIASES = new Map([
   ["dec", 12], ["december", 12], ["декември", 12]
 ]);
 
+// Bulgarian abbreviated month labels used by supplier screenshots.
+const BG_MONTH_ABBREVIATIONS = [["ян",1],["яну",1],["фев",2],["февр",2],["мар",3],["апр",4],["авг",8],["сеп",9],["септ",9],["окт",10],["ное",11],["ноем",11],["дек",12]];
+for (const [label, month] of BG_MONTH_ABBREVIATIONS) MONTH_ALIASES.set(label, month);
+
 function clean(value = "") {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -125,7 +129,7 @@ function normalizeTravelDate(value = "", options = {}) {
     return result;
   }
 
-  match = raw.match(/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\s*(\d{1,2})\s+([A-Za-z]+|януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември)(?:\s+(\d{2,4})(?:\s*г\.?)?)?/i);
+  match = raw.match(/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\s*(\d{1,2})\s+([A-Za-z]+|януари|февруари|март|април|май|юни|юли|август|септември|октомври|ноември|декември|яну?|февр?|мар|апр|авг|септ?|окт|ноем?|дек)(?![А-Яа-яA-Za-z])\.?(?:\s+(\d{2,4})(?:\s*г\.?)?)?/i);
   if (match) {
     const month = MONTH_ALIASES.get(String(match[2]).toLowerCase());
     const explicitYear = normalizeYear(match[3]);
