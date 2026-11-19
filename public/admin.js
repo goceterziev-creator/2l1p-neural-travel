@@ -1148,6 +1148,7 @@ function selectedHotel() {
 
 function syncLegacyFieldsFromBuilder() {
   const firstFlight = flights[0] || {};
+  if (adminBaggageInputEdited("flightBaggage")) firstFlight.baggage = readAdminBaggageInput("flightBaggage", firstFlight.baggage);
   const hotel = selectedHotel();
   const flightTotal = flights.reduce((sum, flight) => sum + Number(flight.price || 0), 0);
 
@@ -2580,6 +2581,7 @@ function firstItem(items) {
 }
 
 function setValue(id, value = "") {
+  if (id === "flightBaggage") return setAdminBaggageInput(id, value);
   const el = $(id);
   if (el) el.value = value ?? "";
 }
@@ -2660,7 +2662,7 @@ function populateForm(offer = {}) {
   setValue("flightRoute", flight.route || offer.flightRoute);
   setValue("flightDeparture", flight.departure);
   setValue("flightArrival", flight.arrival);
-  setValue("flightBaggage", flight.baggage);
+  setValue("flightBaggage", flight.baggage ?? offer.flightBaggage);
   setValue("flightNotes", flight.notes);
 
   setValue("hotelName", hotel.name || offer.hotel);
@@ -2831,7 +2833,7 @@ async function applyFlightImportResult(data = {}, successMessage = "Flight scree
     if ($("mainFlightRoute")) $("mainFlightRoute").value = f.route || "";
     if ($("flightDeparture")) $("flightDeparture").value = f.departure || "";
     if ($("flightArrival")) $("flightArrival").value = f.arrival || "";
-    if ($("flightBaggage")) $("flightBaggage").value = f.baggage || "";
+    setAdminBaggageInput("flightBaggage", f.baggage || "");
     if ($("flightNotes")) $("flightNotes").value = f.notes || "";
     setValue("flightPrice", flightPrice.toFixed(2));
     await addFlight({ ...f, price: flightPrice });
@@ -3031,7 +3033,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
             <label>Inbound</label>
             <input id="universalFlightArrival" value="${escapeHtml(flight.arrival || "")}" />
             <label>Baggage</label>
-            <input id="universalFlightBaggage" value="${escapeHtml(flight.baggage || "")}" />
+            <input id="universalFlightBaggage" value="${escapeHtml(adminBaggageText(flight.baggage))}" />
             <label>Flight Price (${escapeHtml(flight.currency || "неизвестна валута")})</label>
             <input id="universalFlightPrice" type="number" step="0.01" value="${Number(flight.price || 0)}" />
             ${flight.displayBg?.itineraryText ? `<pre class="flight-segment-summary" style="white-space:pre-wrap; line-height:1.45;">${escapeHtml(flight.displayBg.itineraryText)}</pre>` : ""}
@@ -3083,6 +3085,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
       </details>
     </div>
   `;
+  if (hasFlight) setAdminBaggageInput("universalFlightBaggage", flight.baggage || "");
   if (sourceCurrencies.length) loadReviewExchangeRates(data, sourceCurrencies);
 }
 
@@ -3231,7 +3234,7 @@ async function applyUniversalTravelIntakeResult() {
   if ($("universalFlightRoute")) flight.route = $("universalFlightRoute").value.trim();
   if ($("universalFlightDeparture")) flight.departure = $("universalFlightDeparture").value.trim();
   if ($("universalFlightArrival")) flight.arrival = $("universalFlightArrival").value.trim();
-  if ($("universalFlightBaggage")) flight.baggage = $("universalFlightBaggage").value.trim();
+  if ($("universalFlightBaggage")) flight.baggage = readAdminBaggageInput("universalFlightBaggage", flight.baggage);
   if ($("universalFlightPrice")) flight.price = Number($("universalFlightPrice").value || 0);
   flight = await reviewFlightDateConsistencyUI(flight);
   if (!flight) return;
@@ -3265,7 +3268,7 @@ async function applyUniversalTravelIntakeResult() {
     if ($("flightRoute")) $("flightRoute").value = flight.route || "";
     if ($("flightDeparture")) $("flightDeparture").value = flight.departure || "";
     if ($("flightArrival")) $("flightArrival").value = flight.arrival || "";
-    if ($("flightBaggage")) $("flightBaggage").value = flight.baggage || "";
+    setAdminBaggageInput("flightBaggage", flight.baggage || "");
     if ($("flightNotes")) $("flightNotes").value = flight.notes || "";
     if ($("flightPrice")) $("flightPrice").value = Number(flight.price || 0).toFixed(2);
   }
@@ -3499,7 +3502,7 @@ formValidationWarnings.push(
     flightRoute: $("flightRoute")?.value.trim() || "",
     flightDeparture: $("flightDeparture")?.value.trim() || "",
     flightArrival: $("flightArrival")?.value.trim() || "",
-    flightBaggage: $("flightBaggage")?.value.trim() || "",
+    flightBaggage: readAdminBaggageInput("flightBaggage"),
     flightNotes: $("flightNotes")?.value.trim() || "",
 
     hotelName: $("hotelName")?.value.trim() || "",
@@ -3543,7 +3546,8 @@ async function saveOffer() {
   for (const [index, flight] of flights.entries()) {
     const candidate = index === 0 ? {...flight,
       departure: $("flightDeparture")?.value.trim() || flight.departure,
-      arrival: $("flightArrival")?.value.trim() || flight.arrival} : flight;
+      arrival: $("flightArrival")?.value.trim() || flight.arrival,
+      baggage: readAdminBaggageInput("flightBaggage", flight.baggage)} : flight;
     const next = await reviewFlightDateConsistencyUI(candidate);
     if (!next) return;
     reviewedFlights.push(next);
@@ -3828,6 +3832,12 @@ async function reviewSavedFlightDates(index) {
   if (next) { flights[index] = next; syncPrimaryFlightDateFields(); renderFlightCards(); }
 }
 
+function editFlightBaggage(index, value) {
+  flights[index].baggage = value;
+  if (index === 0) setAdminBaggageInput("flightBaggage", value);
+  updateAutoPrice();
+}
+
 function renderFlightCards() {
   const box = document.getElementById("flightCards");
 
@@ -3839,7 +3849,7 @@ function renderFlightCards() {
       <input placeholder="Route" value="${escapeHtml(f.route || "")}" onchange="flights[${i}].route=this.value;updateAutoPrice();" />
       <input placeholder="Departure" value="${escapeHtml(f.departure || "")}" onchange="editFlightDateSummary(${i}, 'departure', this.value)" />
       <input placeholder="Arrival" value="${escapeHtml(f.arrival || "")}" onchange="editFlightDateSummary(${i}, 'arrival', this.value)" />
-      <input placeholder="Baggage" value="${escapeHtml(f.baggage || "")}" onchange="flights[${i}].baggage=this.value;updateAutoPrice();" />
+      <input placeholder="Baggage" value="${escapeHtml(adminBaggageText(f.baggage))}" onchange="editFlightBaggage(${i},this.value);" />
       <input type="number" step="0.01" placeholder="Price" value="${Number(f.price || 0)}" onchange="flights[${i}].price=Number(this.value||0);updateAutoPrice();" />
       <textarea class="flight-notes-field" rows="6" placeholder="Flight Notes" onchange="flights[${i}].notes=this.value;updateAutoPrice();">${escapeHtml(f.notes || "")}</textarea>
       ${renderOperatorFlightSegments(f)}
@@ -4131,6 +4141,7 @@ function clearForm() {
   ids.forEach((id) => {
     if ($(id)) $("" + id).value = "";
   });
+  setAdminBaggageInput("flightBaggage", "");
 
   if ($("flightPrice")) $("flightPrice").value = "0";
   if ($("hotelPrice")) $("hotelPrice").value = "0";
@@ -4173,7 +4184,39 @@ function cleanFlightDisplayField(value = "") {
   return text;
 }
 
+const adminBaggageBindings = new WeakMap();
+
+function adminBaggageText(value) {
+  const formatter = globalThis.GT63PresentationViewModel?.baggageLabel;
+  return formatter ? formatter(value) : value && typeof value === "object" ? "Багажът подлежи на потвърждение" : String(value || "");
+}
+
+function setAdminBaggageInput(id, value) {
+  const input = $(id);
+  if (!input) return;
+  input.value = adminBaggageText(value);
+  if (!adminBaggageBindings.has(input)) input.addEventListener("input", () => {
+    const binding = adminBaggageBindings.get(input);
+    if (binding) binding.edited = true;
+  });
+  adminBaggageBindings.set(input, {raw:structuredClone(value ?? ""), display:input.value, edited:false});
+}
+
+function adminBaggageInputEdited(id) {
+  const input = $(id), binding = input && adminBaggageBindings.get(input);
+  return Boolean(binding && (binding.edited || input.value !== binding.display));
+}
+
+function readAdminBaggageInput(id, fallback = "") {
+  const input = $(id);
+  if (!input) return structuredClone(fallback);
+  const binding = adminBaggageBindings.get(input);
+  return binding && !binding.edited && input.value === binding.display
+    ? structuredClone(binding.raw) : input.value.trim();
+}
+
 function cleanFlightBaggage(value = "") {
+  if (value && typeof value === "object") return structuredClone(value);
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (!text) return "";
   if (/checked bags|max weight|carry-on bags|personal items/i.test(text)) {
@@ -4735,7 +4778,7 @@ if (validationWarnings.length) {
     if ($("flightRoute")) $("flightRoute").value = f.route || "";
     if ($("flightDeparture")) $("flightDeparture").value = f.departure || "";
     if ($("flightArrival")) $("flightArrival").value = f.arrival || "";
-    if ($("flightBaggage")) $("flightBaggage").value = f.baggage || "";
+    setAdminBaggageInput("flightBaggage", f.baggage || "");
     if ($("flightNotes")) $("flightNotes").value = f.notes || "";
     setValue("flightPrice", flightPrice.toFixed(2));
 

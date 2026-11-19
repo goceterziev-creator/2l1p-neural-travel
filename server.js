@@ -1997,7 +1997,7 @@ function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
     route: f.route || "",
     departure: cleanFlightDisplayField(f.departure || ""),
     arrival: cleanFlightDisplayField(f.arrival || ""),
-    baggage: cleanFlightBaggage(f.baggage || ""),
+    baggage: f.baggage && typeof f.baggage === "object" ? cloneJsonSafe(f.baggage) : cleanFlightBaggage(f.baggage || ""),
     notes: cleanFlightNotes(f.notes || ""),
     price: toNumber(f.price, fallbackPrice),
     segments: storedSegments,
