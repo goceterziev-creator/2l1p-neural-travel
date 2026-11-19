@@ -18,5 +18,19 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   if(approved){assert.equal(resolved.result.outboundSegments[0].departure,'2026-11-21T21:45');assert.equal(resolved.result.outboundSegments[0].arrival,'2026-11-22T00:15');}
  }
  console.log('PASS real Chromium: future current-year proposal, provenance, approval/cancel and no source mutation');
+ await page.evaluate(()=>{window.$=()=>({value:'21.11.2026 - 29.11.2026'});window.fixture={outboundSegments:[{from:'SOF',to:'IST',departure:'21 Nov 21:45',arrival:'22 Nov 00:15'}]};window.before=JSON.stringify(fixture);if(!AYAFlightDataConsistency.inspect(fixture).ok)throw Error('Expected recognized yearless input');});
+ for(const approved of [false,true]) {
+  page.once('dialog',async dialog=>{assert.equal(dialog.type(),'confirm');assert(dialog.message().includes('CONTEXT_RESOLVED_YEAR'));if(approved)await dialog.accept();else await dialog.dismiss();});
+  const resolved=await page.evaluate(async()=>({result:await reviewFlightDateConsistencyUI(fixture),unchanged:before===JSON.stringify(fixture)}));
+  assert.equal(Boolean(resolved.result),approved);assert(resolved.unchanged);
+  if(approved){assert.equal(resolved.result.outboundSegments[0].departure,'2026-11-21T21:45');assert.equal(resolved.result.dateResolution.evidence[0].raw,'21 Nov 21:45');}
+ }
+ console.log('PASS real Chromium F3: recognized yearless confirmation, provenance and cancel nonmutation');
+ await page.evaluate(()=>{window.$=()=>({value:''});window.fixture={outboundSegments:[{from:'SOF',to:'IST',departure:'16 Nov 21:45',arrival:'17 Nov 00:15'}]};window.before=JSON.stringify(fixture);window.pending=reviewFlightDateConsistencyUI(fixture);});
+ await page.waitForSelector('dialog[open]');await page.click('[data-date-source="cancel"]');
+ assert.equal(await page.evaluate(()=>pending),null);assert(await page.evaluate(()=>before===JSON.stringify(fixture)));
+ console.log('PASS real Chromium F3: unresolved recognized yearless dates retain manual source dialog and cancel nonmutation');
+
+
 
  }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

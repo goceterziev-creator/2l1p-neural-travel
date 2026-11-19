@@ -168,10 +168,21 @@
       next[field] = summary(selected[leg]);
     }
     if (Array.isArray(next.segments)) next.segments = alignCopies(next.segments,[...selected.outbound,...selected.inbound]);
+    if (next.dateResolution?.version === 2 && Array.isArray(next.dateResolution.evidence) && next.dateResolution.evidence.some(item=>selected[item.leg]?.[item.index]?.[item.side]?.slice(0,10) !== item.resolved)) {
+      next.dateResolution = {...next.dateResolution, status:"INVALIDATED", reason:"MANUAL_DATE_CORRECTION",
+        supersededEvidence:[...(next.dateResolution.supersededEvidence || []),...next.dateResolution.evidence], evidence:[]};
+    }
     delete next.displayBg; // Derived display is rebuilt by the existing server normalizer.
     const verdict = inspect(next);
     if (!verdict.ok) throw new Error("Flight dates remain inconsistent");
     return next;
+  }
+  function needsYearResolution(flight) {
+    const analysis = inspect(flight);
+    return [...analysis.legs.outbound,...analysis.legs.inbound].some(segment=>["departure","arrival"].some(side=>{
+      const raw = segment?.[side], parsed = tokens(raw);
+      return partialDateTime(raw) || parsed.some(item=>item.key?.startsWith("????"));
+    }));
   }
   // Resolve a detached candidate, never the screenshot evidence or editor state.
   // Context must be supplied explicitly; arbitrary URL text is not trusted context.
@@ -227,6 +238,15 @@
           return result;
         });
       }
+      // Validate aliases in every redundant representation before alignCopies can redate them.
+      for (const [expected,list] of [[reviewed.outbound,flight.outboundSegments],[reviewed.inbound,flight.inboundSegments],[reviewed.outbound,flight.outbound?.segments],[reviewed.inbound,flight.inbound?.segments],[[...reviewed.outbound,...reviewed.inbound],flight.segments]]) {
+        if (!Array.isArray(list)) continue;
+        for (const [index,segment] of list.entries()) for (const [alias,side] of [["date","departure"],["departureDate","departure"],["arrivalDate","arrival"]]) {
+          if (!segment?.[alias]) continue;
+          const parsed = tokens(segment[alias]), day = expected[index]?.[side];
+          if (parsed.length !== 1 || !day || !(parsed[0].key === day || parsed[0].key === `????-${day.slice(5)}`)) throw Error("Conflicting or ambiguous source date alias in segment copy");
+        }
+      }
       // Explicit years in the summary are evidence too; never overwrite a conflict.
       for (const [leg,field] of [["outbound","departure"],["inbound","arrival"]]) {
         const parsed = tokens(flight[field]);
@@ -271,5 +291,5 @@
     }
     return conflicts;
   }
-  return {inspect,resolve,resolveYearContext,tokens,calendar,offerConflicts,summary,segmentDateTime};
+  return {inspect,resolve,resolveYearContext,needsYearResolution,tokens,calendar,offerConflicts,summary,segmentDateTime};
 });

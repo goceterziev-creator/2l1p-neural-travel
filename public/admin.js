@@ -3731,7 +3731,8 @@ async function reviewFlightDateConsistencyUI(flight, forceReview = false) {
   const api = globalThis.AYAFlightDataConsistency;
   if (!api) { alert("Flight date checker unavailable. Reload before saving."); return null; }
   const analysis = api.inspect(flight);
-  if (!analysis.ok && !forceReview && api.resolveYearContext) {
+  const requiresYearResolution = api.needsYearResolution?.(flight) === true;
+  if ((!analysis.ok || requiresYearResolution) && !forceReview && api.resolveYearContext) {
     const verifiedTravelDates = typeof $ === "function" ? $("travelDates")?.value.trim() || "" : "";
     const candidate = api.resolveYearContext(flight, { verifiedTravelDates });
     if (candidate.ok) {
@@ -3740,7 +3741,7 @@ async function reviewFlightDateConsistencyUI(flight, forceReview = false) {
       return candidate.flight;
     }
   }
-  if (analysis.ok && !forceReview) return JSON.parse(JSON.stringify(flight));
+  if (analysis.ok && !requiresYearResolution && !forceReview) return JSON.parse(JSON.stringify(flight));
   const choice = await new Promise(resolve => {
     const dialog = document.createElement("dialog");
     dialog.setAttribute("aria-label", "Потвърждаване на полетни дати");
@@ -3765,7 +3766,7 @@ async function reviewFlightDateConsistencyUI(flight, forceReview = false) {
     document.body.append(dialog);
     dialog.showModal();
   });
-  return reviewFlightDateConsistency(flight, forceReview, choice);
+  return reviewFlightDateConsistency(flight, forceReview || requiresYearResolution, choice);
 }
 
 function reviewFlightDateConsistency(flight, forceReview = false, sourceChoice = null) {
