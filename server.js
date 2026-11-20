@@ -7087,9 +7087,27 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     .gt63-luxury-closing .gt63-print-closing-footer { gap: 6mm 8mm; padding: 6mm; border: 1px solid rgba(225,195,139,.4); border-radius: 4mm; background: rgba(16,24,36,.65); }
     .gt63-luxury-closing .gt63-print-closing-footer strong { font-size: 12pt; }
     .gt63-print-final-page > .gt63-luxury-page-wave { position: absolute; z-index: 2; left: 0; bottom: 0; width: 100%; height: 12mm; color: var(--gt63-accent); }
+    /* Repeated page-edge ornament; existing full-page artwork paints above it. */
+    .gt63-print-flow-footer { display: none; }
+    .gt63-print-flight .gt63-print-segment-list { gap: 5mm; }
+    .gt63-print-services-page .gt63-print-flight .gt63-print-segment { position: relative; padding: 5mm 4mm; border-left: 1mm solid var(--gt63-accent); border-radius: 3mm; }
+    .gt63-print-services-page .gt63-print-flight .gt63-print-segment strong { font-size: 12pt; }
+    .gt63-print-services-page .gt63-print-flight .gt63-print-segment span,
+    .gt63-print-services-page .gt63-print-flight .gt63-print-segment small { font-size: 10pt; line-height: 1.6; }
+    .gt63-print-connection { display: grid; gap: 1mm; padding: 3mm 4mm; margin: 0 0 1mm; border-left: .5mm dashed var(--gt63-accent); font-family: Arial, Helvetica, sans-serif; }
+    .gt63-print-connection span { color: var(--gt63-muted); font-size: 9pt; }
+    .gt63-print-connection strong { color: var(--gt63-ink); font-size: 11pt; }
+    .gt63-print-connection small { color: var(--gt63-muted); font-size: 8pt; }
     @page { size: A4; margin: 0; }
     @media print {
       html, body { background: #fff; }
+      .gt63-print-flow-footer { display: block; position: fixed; left: 0; right: 0; bottom: 0; height: 10mm; z-index: 3; pointer-events: none; color: var(--gt63-accent); }
+      .gt63-print-flow-footer svg { width: 100%; height: 100%; display: block; }
+      .gt63-print-cover { z-index: 4; }
+      .gt63-print-proposal[data-print-mode="selected"] .gt63-print-selected-details > .gt63-luxury-wave,
+      .gt63-print-proposal[data-print-mode="selected"] .gt63-print-investment-content-page > .gt63-luxury-page-wave,
+      .gt63-print-proposal[data-print-mode="selected"] .gt63-print-final-page > .gt63-luxury-page-wave { display: none; }
+
       .gt63-print-shell { width: auto; margin: 0; }
       .gt63-print-cover,
       .gt63-print-final-page { height: 297mm; }

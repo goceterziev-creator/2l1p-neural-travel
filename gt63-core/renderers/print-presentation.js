@@ -306,19 +306,36 @@
     return Boolean(flight.airline || flight.route || flight.baggage || flight.price || outbound.length || inbound.length);
   }
 
+  function connectionCard(segment, next) {
+    if (!next || !segment.to || segment.to !== next.from) return "";
+    // Compare supplied local clocks only at the same airport on the same date.
+    const pattern = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/;
+    const arrival = String(segment.arrival || "").match(pattern);
+    const departure = String(next.departure || "").match(pattern);
+    if (!arrival || !departure || arrival[1] !== departure[1]) return "";
+    const date = new Date(`${arrival[1]}T00:00:00Z`);
+    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0,10) !== arrival[1]) return "";
+    const a = Number(arrival[2])*60 + Number(arrival[3]);
+    const b = Number(departure[2])*60 + Number(departure[3]);
+    if ([arrival,departure].some(value=>Number(value[2])>23 || Number(value[3])>59) || b <= a) return "";
+    const minutes = b-a;
+    return `<div class="gt63-print-connection"><span>Престой в ${escapeHtml(segment.to)}</span><strong>${Math.floor(minutes/60)} ч. ${minutes%60} мин.</strong><small>Между посочените местни часове</small></div>`;
+  }
+
   function technicalSegments(title, segments = []) {
     if (!segments.length) return "";
     return `
       <section class="gt63-print-technical-group">
         <h3>${escapeHtml(title)}</h3>
         <div class="gt63-print-segment-list">
-          ${segments.map((segment) => `
+          ${segments.map((segment, index) => `
             <article class="gt63-print-segment">
               <strong>${escapeHtml(localize([segment.airline, segment.flightNumber].filter(Boolean).join(" ") || "Полетен сегмент"))}</strong>
               <span>${escapeHtml(text(segment.from || segment.departureAirport, ""))} → ${escapeHtml(text(segment.to || segment.arrivalAirport, ""))}</span>
               <span>${escapeHtml(formatPrintDateTime(segment.departure || segment.date))}${segment.arrival ? ` → ${escapeHtml(formatPrintDateTime(segment.arrival))}` : ""}</span>
               ${segment.duration ? `<small>${escapeHtml(localize(segment.duration))}</small>` : ""}
             </article>
+            ${connectionCard(segment, segments[index + 1])}
           `).join("")}
         </div>
       </section>
@@ -702,6 +719,7 @@
 
     return `
       <article class="gt63-print-proposal" data-print-mode="${escapeHtml(mode)}" data-seasonal-theme="${seasonal.theme}" data-seasonal-region="${seasonal.region}">
+        ${mode === "selected" ? `<div class="gt63-print-flow-footer" aria-hidden="true">${luxuryPageWave()}</div>` : ""}
         ${coverPage(viewModel, input, mode)}
         ${mode === "comparison" ? printPage("gt63-print-content-page", comparisonContent) : selectedPages}
         ${printPage("gt63-print-final-page", ctaBlock(viewModel, input))}
