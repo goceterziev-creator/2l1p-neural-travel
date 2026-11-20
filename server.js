@@ -6616,6 +6616,12 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     .gt63-luxury-heading { margin-bottom: 4mm; }
     .gt63-luxury-eyebrow { display: flex; justify-content: space-between; align-items: baseline; gap: 5mm; }
     .gt63-luxury-brand { font-size: 12pt; color: var(--gt63-ink); white-space: nowrap; border-bottom: .5mm solid var(--gt63-accent); }
+    .gt63-luxury-eyebrow > .gt63-print-kicker { display: flex; align-items: center; gap: 3mm; min-width: 0; }
+    .gt63-luxury-eyebrow > .gt63-print-kicker::after { content: ""; display: block; width: 18mm; height: .5mm; flex-shrink: 0; background: linear-gradient(90deg, var(--gt63-accent), transparent); }
+    .gt63-print-intro .gt63-luxury-brand,
+    .gt63-print-flight .gt63-luxury-brand,
+    .gt63-print-included-services .gt63-luxury-brand { font-size: 10pt; }
+
     .gt63-luxury-heading h2 { font-size: 27pt; line-height: 1.08; margin: 1mm 0 2mm; color: var(--gt63-ink); }
     .gt63-luxury-icon { display: block; width: 7mm; height: 7mm; flex: 0 0 7mm; color: var(--gt63-accent); }
     .gt63-luxury-stars { display: flex; gap: 1mm; }

@@ -158,7 +158,9 @@
     return `
       <section class="gt63-print-section ${escapeHtml(className || "")}">
         <div class="gt63-print-section-head">
-          ${kicker ? `<p class="gt63-print-kicker">${escapeHtml(kicker)}</p>` : ""}
+          ${kicker ? (["gt63-print-flight", "gt63-print-included-services"].some(name => className.split(" ").includes(name))
+            ? `<div class="gt63-luxury-eyebrow"><p class="gt63-print-kicker">${escapeHtml(kicker)}</p><span class="gt63-luxury-brand">AYA TRAVEL · GT63</span></div>`
+            : `<p class="gt63-print-kicker">${escapeHtml(kicker)}</p>`) : ""}
           ${title ? `<h2>${escapeHtml(title)}</h2>` : ""}
         </div>
         ${body}
@@ -269,7 +271,7 @@
     ` : "";
     return `<div class="gt63-print-intro-page">
       <section class="gt63-print-intro">
-        <p class="gt63-print-kicker">Въведение към пътуването</p>
+        <div class="gt63-luxury-eyebrow"><p class="gt63-print-kicker">Въведение към пътуването</p><span class="gt63-luxury-brand">AYA TRAVEL · GT63</span></div>
         <h2>${escapeHtml(destination || "Вашето пътуване")}</h2>
         <p class="gt63-print-editorial-lead">Тази книга на пътуването събира избрания хотел, ритъма на пътуването и инвестицията в една ясна клиентска презентация.</p>
         ${facts}
