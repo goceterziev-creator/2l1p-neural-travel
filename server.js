@@ -7049,6 +7049,11 @@ function renderGt63PrintOfferHtml(offer = {}, options = {}) {
     .gt63-service-group[data-service-state="pending"] .gt63-print-service-card { border-left: 1mm solid var(--gt63-accent); background: #fffaf1; }
     .gt63-luxury-services .gt63-luxury-service-photo { margin-top: auto; padding-top: 3mm; border: 0; border-radius: 3mm; }
     .gt63-luxury-service-photo img { height: 48mm; aspect-ratio: auto; }
+    /* Services-page photo only: show the supplied image without cropping/stretching. */
+    .gt63-print-services-page .gt63-luxury-service-photo img {
+      display: block; width: auto; height: auto; max-width: 100%; max-height: 88mm;
+      object-fit: contain; margin-inline: auto;
+    }
     .gt63-print-investment-content-page { break-before: page; page-break-before: always; min-height: 281mm; padding-bottom: 18mm; }
     .gt63-luxury-investment-page .gt63-print-investment { padding-top: 1mm; }
     .gt63-luxury-investment-page h2 { font-size: 26pt; color: var(--gt63-ink); }
