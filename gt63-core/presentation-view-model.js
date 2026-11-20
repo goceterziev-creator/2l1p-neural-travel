@@ -77,9 +77,12 @@
   }
 
   function numericStars(hotel = {}) {
-    const raw = String(hotel.stars || hotel.category || hotel.rating || "").trim();
-    const match = raw.match(/[1-5](?:[.,]\d)?/);
-    return match ? match[0].replace(".", ",") : "";
+    // Only the dedicated star-category field is authoritative; review scores and
+    // free-text categories are not evidence of an official hotel classification.
+    const value = hotel.stars;
+    if (typeof value !== "string" && typeof value !== "number") return "";
+    const raw = String(value).trim();
+    return /^[1-5]$/.test(raw) ? raw : "";
   }
 
   function dateRangeNights(value = "") {
