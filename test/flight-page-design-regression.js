@@ -1,0 +1,13 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {renderPrintProposal}=require('../gt63-core/renderers/print-presentation');
+const fixture=()=>({destination:{name:'Абу Даби'},client:{travelDates:'21.11.2026 - 29.11.2026'},pricing:{currency:'EUR'},hotelOptions:[{id:'qa',name:'SYNTHETIC HOTEL',price:100}],flight:{airline:'Turkish Airlines',outboundSegments:[{from:'SOF',to:'IST',departure:'2026-11-21T16:00',arrival:'2026-11-21T18:30'},{from:'IST',to:'AUH',departure:'2026-11-21T19:55',arrival:'2026-11-22T01:30'}],inboundSegments:[{from:'AUH',to:'IST',departure:'2026-11-29T02:35',arrival:'2026-11-29T07:00'},{from:'IST',to:'SOF',departure:'2026-11-29T10:30',arrival:'2026-11-29T10:50'}]}});
+test('connections are supplied-clock intervals, source unchanged, single repeating ornament',()=>{const f=fixture(),before=JSON.stringify(f),html=renderPrintProposal(f,{selectedHotelId:'qa'});assert(html.includes('1 ч. 25 мин.'));assert(html.includes('3 ч. 30 мин.'));assert.equal((html.match(/class="gt63-print-flow-footer"/g)||[]).length,1);assert.equal(JSON.stringify(f),before);});
+for(const [label,mutate] of [['different airports',f=>f.flight.outboundSegments[1].from='SAW'],['missing clock',f=>f.flight.outboundSegments[0].arrival=''],['ambiguous raw',f=>f.flight.outboundSegments[0].arrival='21 ноем. 18:30'],['invalid calendar',f=>{f.flight.outboundSegments[0].arrival='2026-02-30T18:30';f.flight.outboundSegments[1].departure='2026-02-30T19:55';}],['different day',f=>f.flight.outboundSegments[1].departure='2026-11-22T19:55'],['reverse',f=>f.flight.outboundSegments[1].departure='2026-11-21T17:00'],['offset',f=>f.flight.outboundSegments[0].arrival+='Z']])test(label+' does not invent a connection duration',()=>{const f=fixture();mutate(f);const html=renderPrintProposal(f,{selectedHotelId:'qa'});assert(!html.includes('1 ч. 25 мин.'));assert(html.includes('3 ч. 30 мин.'));});
+test('intro, flight and services reuse the branded editorial header without duplicating titles',()=>{
+ const html=renderPrintProposal(fixture(),{selectedHotelId:'qa'});
+ for(const label of ['Въведение към пътуването','Полети','Вашият избран вариант']){
+  assert(html.includes(`<div class="gt63-luxury-eyebrow"><p class="gt63-print-kicker">${label}</p><span class="gt63-luxury-brand">AYA TRAVEL · GT63</span></div>`));
+ }
+ assert.equal((html.match(/>ЦЕНАТА ВКЛЮЧВА<\/h2>/g)||[]).length,1);
+});
