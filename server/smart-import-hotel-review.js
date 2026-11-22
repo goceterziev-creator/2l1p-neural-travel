@@ -60,8 +60,17 @@ function importedMealEvidence(hotel = {}, parsed = {}) {
   const label = vm.compactMealLabel(hotel.meal);
   const quotedLabel = vm.compactMealLabel(quote);
   const explicit = /включен|included|all\s*inclusive|half\s*board|full\s*board|полупансион|пълен пансион|room\s*only|без (?:включено )?(?:хранене|изхранване)/i.test(quote);
-  const supported = explicit && quotedLabel === label && label !== "Хранене за потвърждение";
-  const meal = supported ? hotel.meal : "";
+  const requested = vm.mealServiceConditions(hotel.meal);
+  const quoted = vm.mealServiceConditions(quote);
+  const mealNames = Object.keys(requested);
+  const matchingMeals = mealNames.length > 0 && mealNames.every(name =>
+    quoted[name] === "included" && ["included", "declared"].includes(requested[name]));
+  const supported = label !== "Хранене за потвърждение" && (mealNames.length
+    ? matchingMeals
+    : explicit && quotedLabel === label);
+  const qualified = Object.values(quoted).includes("paid") ||
+    (Object.values(quoted).includes("excluded") && Object.values(quoted).includes("included"));
+  const meal = qualified ? quote : supported ? hotel.meal : "";
   const description = vm.mealSafeDescription({ ...hotel, meal });
   return { ...hotel, meal, description };
 }

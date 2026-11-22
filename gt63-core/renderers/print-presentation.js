@@ -441,7 +441,7 @@
     const quoted = [], included = [], pending = [];
     if (hotel.name) quoted.push({ icon: "room", label: "Настаняване", value: hotel.name, detail: hotel.room || hotel.roomType || "Стая за потвърждение" });
     (hotel.occupancy?.confirmed === true ? quoted : pending).push({ icon: "guests", label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) });
-    (detailNeedsConfirmation(viewModel.selectedMealPlan) ? pending : quoted).push({ icon: "meal", label: "Изхранване", value: viewModel.selectedMealPlan });
+    (detailNeedsConfirmation(viewModel.selectedMealPlan) || Object.values(viewModelApi.mealServiceConditions(viewModel.selectedMealPlan)).includes("paid") ? pending : quoted).push({ icon: "meal", label: "Изхранване", value: viewModel.selectedMealPlan });
     if (hasMeaningfulFlight(input)) (baggageLabel(flight.baggage) === "Багажът подлежи на потвърждение" || detailNeedsConfirmation(flight.baggage) ? pending : quoted).push({ icon: "info", label: "Багаж", value: baggageLabel(flight.baggage) });
     if (transfer.included || transfer.price > 0 || transfer.type || transfer.status || transfer.route || transfer.description) {
       (transfer.included === true ? included : pending).push({ icon: "location", label: "Трансфер", value: transferSummary(input) });
