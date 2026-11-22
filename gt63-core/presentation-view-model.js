@@ -63,6 +63,9 @@
   function compactMealLabel(value) {
     const raw = text(value, "");
     if (!raw) return "Хранене за потвърждение";
+    // Qualifiers and exclusions take precedence over board-plan keywords.
+    if (/възмож|вероят|непотвърден|не е потвърден|за потвърждение|подлежи на потвърждение|по заявка|според видим|при запитване|срещу (?:допълнително )?заплащане|доплащане|may|might|possible|unconfirmed|not confirmed|subject to|on request|extra charge|additional charge|not included|without breakfast|no breakfast|не е включен|не са включен/i.test(raw)) return "Хранене за потвърждение";
+    if (/room\s*only|no meals?|без (?:включен[оаи] )?(?:хранене|изхранване|закуска)/i.test(raw)) return "Без включено хранене";
     if (/all\s*inclusive|всичко включено/i.test(raw)) return "All Inclusive";
     if (/half\s*board|полупансион/i.test(raw)) return "Полупансион";
     if (/full\s*board|пълен пансион/i.test(raw)) return "Пълен пансион";
@@ -74,6 +77,13 @@
 
   function resolvedMealPlan(hotel = {}) {
     return compactMealLabel(hotel.meal || hotel.board);
+  }
+
+  function mealSafeDescription(hotel = {}) {
+    const description = text(hotel.description, "");
+    if (!["Хранене за потвърждение", "Без включено хранене"].includes(resolvedMealPlan(hotel))) return description;
+    return description.replace(/(?:включен[аои]?\s+(?:безплатн[аои]?\s+)?(?:закуска(?:\s+и\s+вечеря)?|изхранване)|закуска(?:та)?\s+е\s+включена(?:\s+в цената)?|(?:breakfast|meals?)\s+included|included\s+breakfast)/gi,
+      (match, offset, source) => /(?:не е|не са|not)\s*$/i.test(source.slice(0, offset)) ? match : "Изхранването е за потвърждение");
   }
 
   function numericStars(hotel = {}) {
@@ -350,6 +360,7 @@
     unconfirmedMealNotice,
     buildPresentationViewModel,
     compactMealLabel,
+    mealSafeDescription,
     dateRangeNights,
     heroFacts,
     hotelIdentity,

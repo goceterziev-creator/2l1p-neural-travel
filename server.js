@@ -6187,9 +6187,6 @@ function enrichHotelImportFallbacks(hotel = {}, parsed = {}, destination = "") {
   if (!enriched.distance && /city center|centre|center|център/i.test(address)) {
     enriched.distance = address;
   }
-  if (!enriched.meal && /breakfast|закуска/i.test(`${parsed.meal || ""} ${amenities} ${parsed.description || ""}`)) {
-    enriched.meal = "Възможна закуска според видимата информация";
-  }
   if (!enriched.roomsLeft && /rooms? left|only\s+\d+|остава/i.test(`${parsed.roomsLeft || ""} ${parsed.description || ""}`)) {
     enriched.roomsLeft = String(parsed.roomsLeft || "").trim();
   }
@@ -6204,7 +6201,7 @@ function enrichHotelImportFallbacks(hotel = {}, parsed = {}, destination = "") {
     enriched.description = `${enriched.description} Видими удобства: ${amenities}.`;
   }
 
-  return enriched;
+  return require("./server/smart-import-hotel-review").importedMealEvidence(enriched, parsed);
 }
 
 function escapeGt63RegistryHtml(value) {
@@ -8021,7 +8018,7 @@ async function renderOfferHtml(offer, options = {}) {
   const hotelCards = orderedHotels.map((hotel, index) => {
     const images = hotelGalleries[index] || [];
 
-    const description = cleanClientHotelDescription(hotel.description, hotel) ||
+    const description = cleanClientHotelDescription(presentationViewModel.mealSafeDescription(hotel), hotel) ||
       `Подбран хотел в ${destinationName} с удобства за комфортен престой.`;
     const isSelected = hasSelectedHotel ? Boolean(hotel.selected) : index === 0;
     const clientSelected = forPdf ? isSelected : index === clientHotelIndex;
@@ -11703,6 +11700,7 @@ Return ONLY strict JSON:
   "distance": "",
   "room": "",
   "meal": "",
+  "mealSourceText": "",
   "price": 0,
   "priceText": "",
   "currency": "EUR",
@@ -11723,7 +11721,11 @@ Rules:
 - return all human-readable fields in Bulgarian: area, distance, room, meal, roomsLeft, description
 - keep hotel name as the original brand/name if visible
 - area should include visible city/address/area, not empty when an address is visible
-- amenities should include visible facilities such as Free WiFi, Parking, Breakfast, rating, pool, restaurant
+- mealSourceText must quote the exact visible text that explicitly includes a meal in this selected room/rate, or explicitly states room-only; otherwise use ""
+- meal must be empty unless mealSourceText proves the selected rate includes it; a restaurant, breakfast availability, an optional paid breakfast or another hotel is not evidence of inclusion
+- never infer breakfast from icons, general amenities or the hotel name; never add tentative meal guesses
+- keep meal claims out of description and amenities; use only meal and mealSourceText for meal information
+- amenities should include visible facilities such as Free WiFi, Parking, rating, pool, restaurant
 - description should be short, client-friendly Bulgarian, based only on visible info
 - translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
 - if not visible, use empty string or 0
@@ -12761,6 +12763,7 @@ Return ONLY strict JSON:
   "distance": "",
   "room": "",
   "meal": "",
+  "mealSourceText": "",
   "price": 0,
   "currency": "EUR",
   "roomsLeft": "",
@@ -12775,7 +12778,11 @@ Rules:
 - return all human-readable fields in Bulgarian: area, distance, room, meal, roomsLeft, description
 - keep hotel name as the original brand/name if visible
 - area should include visible city/address/area, not empty when an address is visible
-- amenities should include visible facilities such as Free WiFi, Parking, Breakfast, rating, pool, restaurant
+- mealSourceText must quote the exact visible text that explicitly includes a meal in this selected room/rate, or explicitly states room-only; otherwise use ""
+- meal must be empty unless mealSourceText proves the selected rate includes it; a restaurant, breakfast availability, an optional paid breakfast or another hotel is not evidence of inclusion
+- never infer breakfast from icons, general amenities or the hotel name; never add tentative meal guesses
+- keep meal claims out of description and amenities; use only meal and mealSourceText for meal information
+- amenities should include visible facilities such as Free WiFi, Parking, rating, pool, restaurant
 - description should be short, client-friendly Bulgarian, based only on visible info
 - translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
 - if not visible, use empty string or 0

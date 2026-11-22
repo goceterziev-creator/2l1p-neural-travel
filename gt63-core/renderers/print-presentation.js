@@ -390,7 +390,7 @@
           ${benefits}
         </div>
         <div class="gt63-luxury-information">
-          <p>${escapeHtml(localize(text(hotel.description,"Описание на хотела за потвърждение.")))}</p>
+          <p>${escapeHtml(localize(text(viewModelApi.mealSafeDescription(hotel),"Описание на хотела за потвърждение.")))}</p>
           <dl class="gt63-print-fact-grid gt63-luxury-facts">${items.map(item=>`<div class="gt63-print-fact${item.icon==="price" ? " is-price" : ""}">${luxuryIcon(item.icon)}<div><dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(localize(item.value))}</dd></div></div>`).join("")}</dl>
           ${url ? `<p class="gt63-print-link">Хотел: ${escapeHtml(url)}</p>` : ""}
         </div>
@@ -404,7 +404,7 @@
     const images = imageUrls(hotel, 3);
     const image = images[0] || "";
     const url = hotelUrl(hotel);
-    const description = localize(text(hotel.description, "Описание на хотела за потвърждение."));
+    const description = localize(text(viewModelApi.mealSafeDescription(hotel), "Описание на хотела за потвърждение."));
     const facts = factGrid([
       { label: "Категория", value: starsLabel(hotel) },
       { label: "Стая", value: hotel.room || hotel.roomType || "Стая за потвърждение" },
