@@ -130,6 +130,8 @@ test('paid meals are under confirmation conditions in print, not quoted inclusio
 
 
 const p2Meal = 'Breakfast is included for a fee of 15 EUR/person/day; dinner included';
+const childAgeMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11); dinner included';
+const prefixedChildAgeMeal = 'Breakfast for a fee of €15/adult/day, €20/child/day (ages 6–11); dinner included';
 const tieredBreakfast = 'Breakfast is available, for an additional fee of 15 EUR/adult/day, 20 EUR/child/day';
 const tieredBreakfastBg = 'Закуската се предлага, срещу допълнително заплащане: 15 EUR/възрастен/ден, 20 EUR/дете/ден';
 
@@ -137,7 +139,7 @@ test('tiered paid breakfast survives Smart Import extraction, Apply and offer sa
   const admin = fs.readFileSync(path.resolve(__dirname, '../public/admin.js'), 'utf8');
   const start = admin.indexOf('async function applyUniversalTravelIntakeResult()');
   const apply = admin.slice(start, admin.indexOf('\n}', start) + 2);
-  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal]) {
+  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal, childAgeMeal, prefixedChildAgeMeal]) {
     const raw = { name: 'QA Family Hotel', room: 'Family room', price: 300, currency: 'EUR', meal: quote, mealSourceText: quote };
     const restore = api.setMealVisionStub(async () => raw);
     let result;
@@ -187,7 +189,11 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
       ['production-p2', p2Meal, '15 EUR/person/day', null],
       ['parking-rate', 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/day parking; dinner included', '15 EUR/adult/day', null, '20 EUR/day parking'],
       ['spa-rate', 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/person/day spa access; dinner included', '15 EUR/adult/day', null, '20 EUR/person/day spa access'],
-      ['prefixed-rates', 'Breakfast for a fee of €15/adult/day, €20/child/day; dinner included', '€15/adult/day', '€20/child/day']
+      ['prefixed-rates', 'Breakfast for a fee of €15/adult/day, €20/child/day; dinner included', '€15/adult/day', '€20/child/day'],
+      ['child-age-rate', childAgeMeal, '15 EUR/adult/day', '20 EUR/child/day (ages 6–11)'],
+      ['prefixed-child-age-rate', prefixedChildAgeMeal, '€15/adult/day', '€20/child/day (ages 6–11)'],
+      ['child-parking-rate', 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (parking); dinner included', '15 EUR/adult/day', null, '20 EUR/child/day (parking)'],
+      ['child-spa-rate', 'Breakfast for a fee of 15 EUR/adult/day, €20/child/day (ages 6–11, spa access); dinner included', '15 EUR/adult/day', null, '€20/child/day']
     ]) {
       await t.test(name, async () => {
         const retainsRates = text => text.includes(adultFee) && (!childFee || text.includes(childFee));
@@ -195,7 +201,6 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
         data.hotels = JSON.parse(JSON.stringify(api.normalizeOffer(data).hotels));
         assert.equal(data.hotels[0].meal, meal);
         const legacy = await api.renderOfferHtml(data);
-        assert(retainsRates(legacy), name + ' legacy HTML');
         const print = api.renderGt63PrintOfferHtml(data, { selectedHotelId: 'desert' });
         const page = await browser.newPage();
         await page.setRequestInterception(true);
@@ -211,10 +216,11 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
           fs.writeFileSync(path.join(dir, name + '.pdf'), pdf);
           fs.writeFileSync(path.join(dir, name + '.txt'), extracted);
         }
+        assert(retainsRates(legacy), name + ' legacy HTML');
         assert(retainsRates(extracted), name + ' PDF must retain all rates');
         const paidCard = pending.find(retainsRates);
         assert(paidCard, name + ' pending card must retain all rates');
-        if (unrelatedFee) assert(!paidCard.includes(unrelatedFee), name + ' unrelated fee in meal card');
+        if (unrelatedFee) assert(pending.every(card => !card.includes(unrelatedFee)), name + ' unrelated fee in meal card');
         assert(!included.some(card => card.includes(adultFee) || (childFee && card.includes(childFee))), name);
         assert(extracted.includes(paidCard + ' За потвърждение преди резервация'), name);
         if (meal.includes('dinner included')) {

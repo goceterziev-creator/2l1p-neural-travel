@@ -68,7 +68,10 @@
     const amount = "\\d+(?:[.,]\\d+)?";
     const traveler = "(?:adults?|child(?:ren)?|persons?|възрастен|възрастни|дете|деца|човек)";
     const day = "(?:day|night|ден|нощ)";
-    const travelerRate = new RegExp(`^(?:${currency}\\s*${amount}|${amount}\\s*${currency})\\s*(?:/\\s*|per\\s+|на\\s+)${traveler}(?:(?:\\s*/\\s*|\\s+per\\s+|\\s+на\\s+)${day})?\\s*$`, "i");
+    const period = `(?:\\s*/\\s*|\\s+per\\s+|\\s+на\\s+)${day}`;
+    const childAge = "\\s*\\(ages?\\s+\\d{1,2}(?:\\s*[-–—]\\s*\\d{1,2})?\\)";
+    const rateUnit = `(?:${traveler}(?:${period})?|child(?:ren)?${period}${childAge})`;
+    const travelerRate = new RegExp(`^(?:${currency}\\s*${amount}|${amount}\\s*${currency})\\s*(?:/\\s*|per\\s+|на\\s+)${rateUnit}\\s*$`, "i");
     const splitCommas = new RegExp(`(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "i");
     const services = raw.split(";").map(service => service.split(splitCommas));
     const names = { breakfast: "(?:breakfast|закуска(?:та)?)", dinner: "(?:dinner|вечеря(?:та)?)" };
