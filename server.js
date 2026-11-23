@@ -11721,8 +11721,9 @@ Rules:
 - return all human-readable fields in Bulgarian: area, distance, room, meal, roomsLeft, description
 - keep hotel name as the original brand/name if visible
 - area should include visible city/address/area, not empty when an address is visible
-- mealSourceText must quote the exact visible text that explicitly includes a meal in this selected room/rate, or explicitly states room-only; otherwise use ""
-- meal must be empty unless mealSourceText proves the selected rate includes it; a restaurant, breakfast availability, an optional paid breakfast or another hotel is not evidence of inclusion
+- mealSourceText must quote the exact visible conditions for this selected room/rate: included meals, explicitly paid breakfast/dinner/other meals, exclusions, mixed meal conditions, or room-only; preserve every visible charge amount and currency verbatim; otherwise use ""
+- meal must preserve the evidenced meal conditions, including paid qualifiers, amounts, currencies and exclusions; a paid meal is not included in the base rate, even if the source also says "included"
+- a restaurant, general breakfast availability, amenities, hotel description or another hotel is not evidence of included meals; never infer a meal plan from them
 - never infer breakfast from icons, general amenities or the hotel name; never add tentative meal guesses
 - keep meal claims out of description and amenities; use only meal and mealSourceText for meal information
 - amenities should include visible facilities such as Free WiFi, Parking, rating, pool, restaurant
@@ -12778,8 +12779,9 @@ Rules:
 - return all human-readable fields in Bulgarian: area, distance, room, meal, roomsLeft, description
 - keep hotel name as the original brand/name if visible
 - area should include visible city/address/area, not empty when an address is visible
-- mealSourceText must quote the exact visible text that explicitly includes a meal in this selected room/rate, or explicitly states room-only; otherwise use ""
-- meal must be empty unless mealSourceText proves the selected rate includes it; a restaurant, breakfast availability, an optional paid breakfast or another hotel is not evidence of inclusion
+- mealSourceText must quote the exact visible conditions for this selected room/rate: included meals, explicitly paid breakfast/dinner/other meals, exclusions, mixed meal conditions, or room-only; preserve every visible charge amount and currency verbatim; otherwise use ""
+- meal must preserve the evidenced meal conditions, including paid qualifiers, amounts, currencies and exclusions; a paid meal is not included in the base rate, even if the source also says "included"
+- a restaurant, general breakfast availability, amenities, hotel description or another hotel is not evidence of included meals; never infer a meal plan from them
 - never infer breakfast from icons, general amenities or the hotel name; never add tentative meal guesses
 - keep meal claims out of description and amenities; use only meal and mealSourceText for meal information
 - amenities should include visible facilities such as Free WiFi, Parking, rating, pool, restaurant

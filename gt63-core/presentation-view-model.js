@@ -74,7 +74,7 @@
         const has = pattern => new RegExp(pattern, "i").test(clause);
         const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
         let state = "declared";
-        if (has(`${group}${link}(?:available\\s+)?(?:for\\s+(?:(?:a\\s+)?fee|(?:an?\\s+)?(?:extra|additional)\\s+charge)|at\\s+an?\\s+(?:extra|additional)\\s+charge|срещу\\s+(?:(?:допълнително|допълнителна)\\s+)?(?:такса|заплащане|доплащане)|с\\s+доплащане)`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
+        if (has(`${group}${link}(?:(?:available|included|включен[аои])\\s+)?(?:for\\s+(?:(?:a\\s+)?fee|(?:an?\\s+)?(?:extra|additional)\\s+charge)|at\\s+an?\\s+(?:extra|additional)\\s+charge|срещу\\s+(?:(?:допълнително|допълнителна)\\s+)?(?:такса|заплащане|доплащане)|с\\s+доплащане)`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
         else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
         else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
         else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
