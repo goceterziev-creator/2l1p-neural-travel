@@ -9,6 +9,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPresentationViewModel() {
   const occupancyQa = globalThis.AYAHotelOccupancy || (typeof require === "function" ? require("../public/hotel-occupancy") : null);
   const hotelOccupancyLabel = value => occupancyQa ? occupancyQa.label(value) : "Хотелска заетост за потвърждение";
+  const currencyCodes = new Set(Intl.supportedValuesOf?.("currency"));
   const VALID_PRINT_MODES = new Set(["selected", "comparison"]);
 
   function asArray(value) {
@@ -60,34 +61,170 @@
       .replace(/Designated smoking area/gi, "Зона за пушачи");
   }
 
+  // Only top-level separators delimit services or rates.
+  function mealClauses(raw, boundaries) {
+    const clauses = [];
+    let start = 0;
+    let depth = 0;
+    let qualifierStart;
+    let qualifiers = [];
+    for (const { 0: boundary, index } of raw.matchAll(boundaries)) {
+      if (boundary === "(") {
+        if (depth === 0) qualifierStart = index;
+        depth += 1;
+      } else if (boundary === ")") {
+        if (depth > 0 && --depth === 0) qualifiers.push([qualifierStart, index + 1]);
+      } else if (depth === 0) {
+        clauses.push({ start, end: index, value: raw.slice(start, index).trim(), qualifiers });
+        start = index + 1;
+        qualifiers = [];
+      }
+    }
+    clauses.push({ start, end: raw.length, value: raw.slice(start).trim(), qualifiers });
+    return clauses;
+  }
+
   // Bind each condition to its meal, never to another amenity in the quote.
   function mealServiceEvidence(value) {
     const raw = text(value, "");
-    const fee = "(?:for\\s+(?:(?:a\\s+)?fee|(?:an?\\s+)?(?:extra|additional)\\s+charge)|at\\s+an?\\s+(?:extra|additional)\\s+charge|срещу\\s+(?:(?:допълнително|допълнителна)\\s+)?(?:такса|заплащане|доплащане)|с\\s+доплащане)";
-    // Keep a fee qualifier with its preceding clause and preserve decimal commas.
-    const clauses = raw.split(new RegExp(`[;]|(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "i"));
+    const fee = "(?:for\\s+(?:an?\\s+)?(?:fee|(?:extra|additional)\\s+(?:fee|charge))|at\\s+an?\\s+(?:extra|additional)\\s+charge|срещу\\s+(?:(?:допълнително|допълнителна)\\s+)?(?:такса|заплащане|доплащане)|с\\s+доплащане)";
+    const currency = "(?:[A-Z]{3}\\b|[€$£])";
+    const amount = "\\d+(?:[.,]\\d+)?";
+    const traveler = "(?:adults?|child(?:ren)?|persons?|възрастен|възрастни|дете|деца|човек)";
+    const day = "(?:day|night|ден|нощ)";
+    const period = `(?:\\s*/\\s*|\\s+per\\s+|\\s+на\\s+)${day}`;
+    const price = `(?:${currency}\\s*${amount}|${amount}\\s*${currency})`;
+    const rate = `${price}\\s*(?:/\\s*|per\\s+|на\\s+)${traveler}(?:${period})?`;
+    const travelerRate = new RegExp(`^${rate}$`, "i");
+    const alternativeRate = new RegExp(`^${rate}\\s+on\\s+week(?:days|ends)$`, "i");
+    const childRateUnit = new RegExp(`child(?:ren)?${period}$`, "i");
+    const ageRange = /^ages?\s+\d{1,2}(?:\s*[-–—]\s*\d{1,2})?(?:\s+years?)?$/i;
+    const boundaries = new RegExp(`[();]|(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "gi");
+    const clauses = mealClauses(raw, boundaries);
+    const otherService = /\b(?:parking|spa|(?:airport|hotel) transfers?|wi-?fi)\b|паркинг|спа\s|трансфер/i;
+    const currencyToken = "(\\b[A-Z]{3}\\b|[€$£])";
+    const chargeAmount = new RegExp(`(?=${currencyToken}\\s*${amount}|${amount}\\s*${currencyToken})`, "gi");
+    function hasIndependentCharge(value) {
+      for (const [, prefix, suffix] of value.matchAll(chargeAmount)) {
+        const code = prefix || suffix;
+        if (code === code.toUpperCase() || currencyCodes.has(code.toUpperCase())) return true;
+      }
+      return false;
+    }
+    const chargeLanguage = new RegExp(fee, "i");
+
+    function withoutQualifiers(source, entry) {
+      let plain = source.slice(entry.start, entry.end);
+      for (const [start, end] of entry.qualifiers.slice().reverse()) {
+        plain = plain.slice(0, start - entry.start) + " " + plain.slice(end - entry.start);
+      }
+      return plain.trim();
+    }
+
+    function projectQualifiers(source, entry, context = null) {
+      let projected = "";
+      let cursor = entry.start;
+      let owner = "meal";
+      let serviceLabel;
+      for (const [start, end] of entry.qualifiers) {
+        const prefix = source.slice(cursor, start);
+        projected += prefix;
+        if (otherService.test(prefix)) {
+          owner = "other";
+          serviceLabel = undefined;
+        }
+        const qualifier = source.slice(start + 1, end - 1);
+        const parts = mealClauses(qualifier, boundaries);
+        const retained = parts.flatMap(part => {
+          const plain = withoutQualifiers(qualifier, part);
+          const marker = plain.replace(/:\s*$/, "");
+          if (context && !part.qualifiers.length && context.mealMarker.test(marker)) {
+            owner = "meal";
+            serviceLabel = undefined;
+            return [];
+          }
+          if (context && !part.qualifiers.length && alternativeRate.test(plain)) {
+            if (owner === "meal") return [part.value];
+            if (owner === "uncertain") context.unconfirmed.push({ value: part.value, start: start + 1 + part.start });
+            if (owner === "other" && serviceLabel) context.services.push({ label: serviceLabel, value: part.value });
+            return [];
+          }
+          if (!ageRange.test(plain) &&
+              (hasIndependentCharge(plain) || chargeLanguage.test(plain) || otherService.test(plain))) {
+            owner = "other";
+            serviceLabel = !part.qualifiers.length && otherService.exec(marker)?.[0] === marker ? marker : undefined;
+            return [];
+          }
+          // Free text cannot establish ownership of a later bare rate.
+          if (plain && !ageRange.test(plain) && !/^(?:advance booking|when sharing a room|inclusive)$/i.test(plain)) {
+            if (owner === "meal" || serviceLabel) owner = "uncertain";
+            serviceLabel = undefined;
+          }
+          const projectedPart = projectQualifiers(qualifier, part).trim();
+          return projectedPart ? [projectedPart] : [];
+        });
+        if (retained.length === parts.length && retained.every((part, index) => part === parts[index].value)) {
+          projected += source.slice(start, end);
+        } else if (retained.length) {
+          projected += "(" + retained.join("; ") + ")";
+        }
+        cursor = end;
+      }
+      return (projected + source.slice(cursor, entry.end)).trimEnd();
+    }
+
+    function continuationState(entry) {
+      if (!entry) return null;
+      const core = withoutQualifiers(raw, entry);
+      if (!travelerRate.test(core)) return null;
+      if (!entry.qualifiers.length) return "paid";
+      const [[start, end]] = entry.qualifiers;
+      if (entry.qualifiers.length !== 1 || raw.slice(end, entry.end).trim()) return null;
+      if (projectQualifiers(raw, entry).trim() !== entry.value) return null;
+      const qualifier = raw.slice(start + 1, end - 1);
+      const [age, ...conditions] = mealClauses(qualifier, boundaries);
+      const inclusive = age.qualifiers.every(([start, end]) => /^inclusive$/i.test(qualifier.slice(start + 1, end - 1).trim()));
+      if (childRateUnit.test(core) && ageRange.test(withoutQualifiers(qualifier, age)) && inclusive &&
+          conditions.every(condition => /^when\s+sharing\s+a\s+room$/i.test(condition.value))) return "paid";
+      return "uncertain";
+    }
     const names = { breakfast: "(?:breakfast|закуска(?:та)?)", dinner: "(?:dinner|вечеря(?:та)?)" };
     const result = {};
     for (const [name, noun] of Object.entries(names)) {
       const other = names[name === "breakfast" ? "dinner" : "breakfast"];
       const group = `(?:${noun}(?:\\s+(?:and|и|&)\\s+${other})?|${other}\\s+(?:and|и|&)\\s+${noun})`;
       const evidence = [];
-      for (const clause of clauses) {
+      const mealMarker = new RegExp(`^${noun}$`, "i");
+      for (const [index, entry] of clauses.entries()) {
+        const clause = entry.value;
         if (!new RegExp(noun, "i").test(clause)) continue;
         const has = pattern => new RegExp(pattern, "i").test(clause);
         const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
         let state = "declared";
-        if (has(`${group}${link}(?:(?:available|included|включен[аои]),?\\s+)?${fee}`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
+        if (has(`${group}${link}(?:(?:available|included|се\\s+предлага|включен[аои])(?:\\s*,\\s*|\\s+))?${fee}`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
         else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
         else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
         else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
-        evidence.push({ state, clause: clause.trim() });
+        let last = index;
+        const unconfirmed = [];
+        const services = [];
+        // A complete adjacent traveler rate continues the explicit fee, across either separator.
+        if (state === "paid") {
+          while (continuationState(clauses[last + 1]) === "paid") last += 1;
+          if (continuationState(clauses[last + 1]) === "uncertain") unconfirmed.push(clauses[last + 1]);
+        }
+        const clauseText = state === "paid" ? projectQualifiers(raw, entry, { mealMarker, unconfirmed, services }) : raw.slice(entry.start, entry.end);
+        const continuation = raw.slice(entry.end, clauses[last].end);
+        evidence.push({ state, clause: (clauseText + continuation).trim(), start: entry.start, unconfirmed, services });
       }
       if (evidence.length) {
         const state = evidence[0].state;
         result[name] = {
           state: evidence.every(item => item.state === state) ? state : "uncertain",
-          clauses: evidence.map(item => item.clause)
+          clauses: evidence.map(item => item.clause),
+          starts: evidence.map(item => item.start),
+          unconfirmed: evidence.flatMap(item => item.unconfirmed),
+          services: evidence.flatMap(item => item.services)
         };
       }
     }
@@ -98,12 +235,30 @@
     return Object.fromEntries(Object.entries(mealServiceEvidence(value)).map(([name, evidence]) => [name, evidence.state]));
   }
 
+  function paidMealText(value, meals = Object.values(mealServiceEvidence(value))) {
+    const raw = text(value, "");
+    if (!meals.some(meal => meal.state === "paid")) return raw;
+    const evidence = meals.flatMap(meal => meal.clauses.map((clause, index) => ({ clause, start: meal.starts[index] })));
+    for (const meal of meals) {
+      for (const rate of meal.unconfirmed) {
+        evidence.push({ clause: "Тарифа за потвърждение – " + rate.value, start: rate.start });
+      }
+    }
+    evidence.sort((a, b) => a.start - b.start);
+    const projected = [...new Set(evidence.map(item => item.clause))].join("; ");
+    const normalizeSeparators = source => source.replace(/\s*[,;]\s*/g, ",");
+    const normalized = normalizeSeparators(raw);
+    return normalizeSeparators(projected) === normalized ? raw : projected;
+  }
+
   function compactMealLabel(value) {
     const raw = text(value, "");
     if (!raw) return "Хранене за потвърждение";
-    const services = Object.values(mealServiceConditions(raw));
+    const meals = Object.values(mealServiceEvidence(raw));
+    const services = meals.map(meal => meal.state);
     // Keep the actual paid/mixed condition, including any visible charge amount.
-    if (services.includes("paid") || (services.includes("excluded") && services.includes("included"))) return localizeClientText(raw);
+    if (services.includes("paid")) return localizeClientText(paidMealText(raw, meals));
+    if (services.includes("excluded") && services.includes("included")) return localizeClientText(raw);
     if (services.includes("uncertain")) return services.includes("included") ? localizeClientText(raw) : "Хранене за потвърждение";
     // Qualifiers and exclusions take precedence over board-plan keywords.
     if (/възмож|вероят|непотвърден|не е потвърден|за потвърждение|подлежи на потвърждение|по заявка|според видим|при запитване|срещу (?:допълнително )?заплащане|доплащане|may|might|possible|unconfirmed|not confirmed|subject to|on request|extra charge|additional charge|not included|without breakfast|no breakfast|не е включен|не са включен/i.test(raw)) return "Хранене за потвърждение";
@@ -405,6 +560,7 @@
     compactMealLabel,
     mealServiceConditions,
     mealServiceEvidence,
+    paidMealText,
     mealSafeDescription,
     dateRangeNights,
     heroFacts,
