@@ -92,24 +92,56 @@
     const traveler = "(?:adults?|child(?:ren)?|persons?|възрастен|възрастни|дете|деца|човек)";
     const day = "(?:day|night|ден|нощ)";
     const period = `(?:\\s*/\\s*|\\s+per\\s+|\\s+на\\s+)${day}`;
-    const childAge = "\\s*\\(ages?\\s+\\d{1,2}(?:\\s*[-–—]\\s*\\d{1,2})?(?:\\s+years?)?(?:[;,]\\s*when\\s+sharing\\s+a\\s+room)?\\)";
-    const rateUnit = `(?:${traveler}(?:${period})?|child(?:ren)?${period}${childAge})`;
-    const travelerRate = new RegExp(`^(?:${currency}\\s*${amount}|${amount}\\s*${currency})\\s*(?:/\\s*|per\\s+|на\\s+)${rateUnit}\\s*$`, "i");
+    const travelerRate = new RegExp(`^(?:${currency}\\s*${amount}|${amount}\\s*${currency})\\s*(?:/\\s*|per\\s+|на\\s+)${traveler}(?:${period})?$`, "i");
+    const childRateUnit = new RegExp(`child(?:ren)?${period}$`, "i");
+    const ageRange = /^ages?\s+\d{1,2}(?:\s*[-–—]\s*\d{1,2})?(?:\s+years?)?$/i;
     const boundaries = new RegExp(`[();]|(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "gi");
     const clauses = mealClauses(raw, boundaries);
     const otherService = /\b(?:parking|spa|(?:airport|hotel) transfers?|wi-?fi)\b|паркинг|спа\s|трансфер/i;
-    function paidClauseText(clause) {
-      let projected = raw.slice(clause.start, clause.end);
-      // Work backwards so that removing one qualifier does not shift the earlier offsets.
-      for (const [start, end] of clause.qualifiers.slice().reverse()) {
-        const qualifier = raw.slice(start + 1, end - 1);
+    const independentCharge = new RegExp(`(?:${currency}\\s*${amount}|${amount}\\s*${currency})`);
+    const chargeLanguage = new RegExp(fee, "i");
+
+    function withoutQualifiers(source, entry) {
+      let plain = source.slice(entry.start, entry.end);
+      for (const [start, end] of entry.qualifiers.slice().reverse()) {
+        plain = plain.slice(0, start - entry.start) + " " + plain.slice(end - entry.start);
+      }
+      return plain.trim();
+    }
+
+    function projectQualifiers(source, entry) {
+      let projected = source.slice(entry.start, entry.end);
+      for (const [start, end] of entry.qualifiers.slice().reverse()) {
+        const qualifier = source.slice(start + 1, end - 1);
         const parts = mealClauses(qualifier, boundaries);
-        const retained = parts.filter(part => !otherService.test(part.value));
-        if (retained.length === parts.length) continue;
-        const replacement = retained.length ? "(" + retained.map(part => part.value).join("; ") + ")" : "";
-        projected = projected.slice(0, start - clause.start) + replacement + projected.slice(end - clause.start);
+        const retained = parts.flatMap(part => {
+          const plain = withoutQualifiers(qualifier, part);
+          // A separate price or charge is not a qualifier of the enclosing rate.
+          if (!ageRange.test(plain) && (independentCharge.test(plain) || chargeLanguage.test(plain) || otherService.test(plain))) return [];
+          const projectedPart = projectQualifiers(qualifier, part).trim();
+          return projectedPart ? [projectedPart] : [];
+        });
+        if (retained.length === parts.length && retained.every((part, index) => part === parts[index].value)) continue;
+        const replacement = retained.length ? "(" + retained.join("; ") + ")" : "";
+        projected = projected.slice(0, start - entry.start) + replacement + projected.slice(end - entry.start);
       }
       return projected.trimEnd();
+    }
+
+    function continuationState(entry) {
+      if (!entry) return null;
+      const core = withoutQualifiers(raw, entry);
+      if (!travelerRate.test(core)) return null;
+      if (!entry.qualifiers.length) return "paid";
+      const [[start, end]] = entry.qualifiers;
+      if (entry.qualifiers.length !== 1 || raw.slice(end, entry.end).trim()) return null;
+      if (projectQualifiers(raw, entry).trim() !== entry.value) return null;
+      const qualifier = raw.slice(start + 1, end - 1);
+      const [age, ...conditions] = mealClauses(qualifier, boundaries);
+      const inclusive = age.qualifiers.every(([start, end]) => /^inclusive$/i.test(qualifier.slice(start + 1, end - 1).trim()));
+      if (childRateUnit.test(core) && ageRange.test(withoutQualifiers(qualifier, age)) && inclusive &&
+          conditions.every(condition => /^when\s+sharing\s+a\s+room$/i.test(condition.value))) return "paid";
+      return "uncertain";
     }
     const names = { breakfast: "(?:breakfast|закуска(?:та)?)", dinner: "(?:dinner|вечеря(?:та)?)" };
     const result = {};
@@ -128,20 +160,23 @@
         else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
         else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
         let last = index;
+        let unconfirmed;
         // A complete adjacent traveler rate continues the explicit fee, across either separator.
         if (state === "paid") {
-          while (travelerRate.test(clauses[last + 1]?.value || "")) last += 1;
+          while (continuationState(clauses[last + 1]) === "paid") last += 1;
+          if (continuationState(clauses[last + 1]) === "uncertain") unconfirmed = clauses[last + 1];
         }
-        const clauseText = state === "paid" ? paidClauseText(entry) : raw.slice(entry.start, entry.end);
+        const clauseText = state === "paid" ? projectQualifiers(raw, entry) : raw.slice(entry.start, entry.end);
         const continuation = raw.slice(entry.end, clauses[last].end);
-        evidence.push({ state, clause: (clauseText + continuation).trim(), start: entry.start });
+        evidence.push({ state, clause: (clauseText + continuation).trim(), start: entry.start, unconfirmed });
       }
       if (evidence.length) {
         const state = evidence[0].state;
         result[name] = {
           state: evidence.every(item => item.state === state) ? state : "uncertain",
           clauses: evidence.map(item => item.clause),
-          starts: evidence.map(item => item.start)
+          starts: evidence.map(item => item.start),
+          unconfirmed: evidence.flatMap(item => item.unconfirmed ? [item.unconfirmed] : [])
         };
       }
     }
@@ -156,6 +191,11 @@
     const raw = text(value, "");
     if (!meals.some(meal => meal.state === "paid")) return raw;
     const evidence = meals.flatMap(meal => meal.clauses.map((clause, index) => ({ clause, start: meal.starts[index] })));
+    for (const meal of meals) {
+      for (const rate of meal.unconfirmed) {
+        evidence.push({ clause: "Тарифа за потвърждение – " + rate.value, start: rate.start });
+      }
+    }
     evidence.sort((a, b) => a.start - b.start);
     const projected = [...new Set(evidence.map(item => item.clause))].join("; ");
     const normalizeSeparators = source => source.replace(/\s*[,;]\s*/g, ",");

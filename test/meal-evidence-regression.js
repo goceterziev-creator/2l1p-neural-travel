@@ -137,6 +137,7 @@ const prefixedChildAgeYearMeal = 'Breakfast for a fee of €15/adult/day, €20/
 const semicolonMeal = 'Breakfast for a fee of 15 EUR/adult/day; 20 EUR/child/day (ages 6–11 years); dinner included';
 const sharedRoomMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11 years, when sharing a room); dinner included';
 const semicolonQualifierMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11 years; when sharing a room); dinner included';
+const nestedChildMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11 years (inclusive); when sharing a room); dinner included';
 const tieredBreakfast = 'Breakfast is available, for an additional fee of 15 EUR/adult/day, 20 EUR/child/day';
 const tieredBreakfastBg = 'Закуската се предлага, срещу допълнително заплащане: 15 EUR/възрастен/ден, 20 EUR/дете/ден';
 
@@ -144,7 +145,7 @@ test('tiered paid breakfast survives Smart Import extraction, Apply and offer sa
   const admin = fs.readFileSync(path.resolve(__dirname, '../public/admin.js'), 'utf8');
   const start = admin.indexOf('async function applyUniversalTravelIntakeResult()');
   const apply = admin.slice(start, admin.indexOf('\n}', start) + 2);
-  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal, childAgeMeal, prefixedChildAgeMeal, childAgeYearsMeal, prefixedChildAgeYearMeal, semicolonMeal, sharedRoomMeal, semicolonQualifierMeal]) {
+  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal, childAgeMeal, prefixedChildAgeMeal, childAgeYearsMeal, prefixedChildAgeYearMeal, semicolonMeal, sharedRoomMeal, semicolonQualifierMeal, nestedChildMeal]) {
     const raw = { name: 'QA Family Hotel', room: 'Family room', price: 300, currency: 'EUR', meal: quote, mealSourceText: quote };
     const restore = api.setMealVisionStub(async () => raw);
     let result;
@@ -210,10 +211,15 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
       ['parenthetical-parking', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; parking for a fee of 20 EUR/day); dinner included', '15 EUR/adult/day (advance booking)', null, 'parking for a fee of 20 EUR/day'],
       ['parenthetical-spa', 'Breakfast for a fee of 15 EUR/adult/day (advance booking, spa access for 20 EUR/day); dinner included', '15 EUR/adult/day (advance booking)', null, 'spa access for 20 EUR/day'],
       ['parenthetical-transfer', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; airport transfer for 35 EUR/person); dinner included', '15 EUR/adult/day (advance booking)', null, 'airport transfer for 35 EUR/person'],
+      ['nested-booking', 'Breakfast for a fee of 15 EUR/adult/day (advance booking (at least 24 hours ahead; parking for 20 EUR/day)); dinner included', '15 EUR/adult/day (advance booking (at least 24 hours ahead))', null, 'parking for 20 EUR/day'],
+      ['multiple-services', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; luggage storage for 10 EUR/day; spa access for 20 EUR/day); dinner included', '15 EUR/adult/day (advance booking)', null, /luggage storage|spa access/],
+      ['nested-child-age', nestedChildMeal, '15 EUR/adult/day', '20 EUR/child/day (ages 6–11 years (inclusive); when sharing a room)'],
+      ['nested-child-extra-fee', 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11 years (inclusive); storage for 10 EUR/day); dinner included', '15 EUR/adult/day', null, /20 EUR\/child\/day|storage for 10 EUR/],
       ['child-parking-rate', 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (parking); dinner included', '15 EUR/adult/day', null, '20 EUR/child/day (parking)'],
       ['child-spa-rate', 'Breakfast for a fee of 15 EUR/adult/day, €20/child/day (ages 6–11, spa access); dinner included', '15 EUR/adult/day', null, '€20/child/day']
     ]) {
       await t.test(name, async () => {
+        const hasUnrelatedFee = text => unrelatedFee instanceof RegExp ? unrelatedFee.test(text) : text.includes(unrelatedFee);
         const retainsRates = text => text.includes(adultFee) && (!childFee || text.includes(childFee));
         const data = offer(meal);
         data.hotels = JSON.parse(JSON.stringify(api.normalizeOffer(data).hotels));
@@ -234,7 +240,7 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
           fs.writeFileSync(path.join(dir, name + '.pdf'), pdf);
           fs.writeFileSync(path.join(dir, name + '.txt'), extracted);
         }
-        if (unrelatedFee) assert(pending.every(card => !card.includes(unrelatedFee)), name + ' unrelated fee in meal card');
+        if (unrelatedFee) assert(pending.every(card => !hasUnrelatedFee(card)), name + ' unrelated fee in meal card');
         const summary = vm.compactMealLabel(data.hotels[0].meal);
         assert(retainsRates(summary), name + ' meal summary');
         assert(retainsRates(legacy), name + ' legacy HTML');
@@ -251,7 +257,7 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
         const registry = require('../gt63-core/renderers/multi-hotel').renderMultiHotelProposal(adapt(data), { selectedHotelId: 'desert' });
         assert(retainsRates(registry), name + ' registry HTML');
         if (unrelatedFee) {
-          for (const surface of [summary, legacy, registry, extracted]) assert(!surface.includes(unrelatedFee), name);
+          for (const surface of [summary, legacy, registry, extracted]) assert(!hasUnrelatedFee(surface), name);
         }
         assert.equal(vm.mealServiceConditions(meal).breakfast, 'paid');
         await page.close();
