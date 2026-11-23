@@ -14,9 +14,9 @@
     return Number.isFinite(day.getTime()) && day.toISOString().slice(0, 10) === value;
   }
   function tokens(value) {
-    const pattern = new RegExp(`\\b\\d{4}-\\d{1,2}-\\d{1,2}(?=T|\\b)|\\b\\d{1,2}[./]\\d{1,2}(?:[./]\\d{2,4})?\\b|(?<![:\\d])\\b\\d{1,2}\\s+(?:${months})\\.?(?:\\s+\\d{4}\\b(?!:))?|\\b(?:${months})\\.?\\s+\\d{1,2}\\b(?:,?\\s+\\d{4}\\b(?!:))?`, "gi");
+    const pattern = new RegExp(`\\b\\d{4}-\\d{1,2}-\\d{1,2}(?=T|\\b)|\\b\\d{1,2}[./]\\d{1,2}(?:[./]\\d{2,4})?\\b|(?<![:\\d])\\b\\d{1,2}-(?:${months})(?![A-Za-zА-Яа-я])\\.?(?:\\s+\\d{4}\\b(?!:))?|(?<![:\\d])\\b\\d{1,2}\\s+(?:${months})\\.?(?:\\s+\\d{4}\\b(?!:))?|\\b(?:${months})\\.?\\s+\\d{1,2}\\b(?:,?\\s+\\d{4}\\b(?!:))?`, "gi");
     const parsedTokens = [...String(value || "").matchAll(pattern)].map(match => {
-      let raw = match[0];
+      let raw = match[0].replace(/^(\d{1,2})-(?=[A-Za-zА-Яа-я])/, "$1 ");
       const monthFirst = raw.match(new RegExp(`^(${months})\\.?\\s+(\\d{1,2})(?:,?\\s+(\\d{4}))?$`, "i"));
       if (monthFirst) raw = `${monthFirst[2]} ${monthFirst[1]} ${monthFirst[3] || ""}`;
       const parsed = dates.normalizeTravelDate(raw);
@@ -73,6 +73,10 @@
   }
   const identity = segment => [segment?.flightNumber || segment?.flightNo || "", segment?.from || segment?.departureAirport || "", segment?.to || segment?.arrivalAirport || ""].map(x => String(x).replace(/\s+/g, "").toUpperCase()).join("|");
   const dateKeys = value => tokens(value).map(x => x.key);
+  // Recognize newly supported supplier labels for review, but keep them
+  // blocked at the save boundary until the year is resolved.
+  const segmentDateKeys = value => tokens(value).map(({ raw, key }) =>
+    key?.startsWith("????") && /^\d{1,2}-[A-Za-zА-Яа-я]/.test(raw) ? null : key);
   const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
   function inspect(flight = {}) {
     if (!flight || typeof flight !== "object" || Array.isArray(flight)) return {ok:false,conflicts:[{path:"flight",message:"Invalid flight object",values:flight}],legs:{outbound:[],inbound:[]}};
@@ -86,7 +90,7 @@
       for (const [i,segment] of segments.entries()) {
         if (!segment || typeof segment !== "object") { fail(`${leg}[${i}]`,"Invalid segment",segment); continue; }
         for (const side of ["departure","arrival"]) {
-          const primary = segment[side], keys = dateKeys(primary);
+          const primary = segment[side], keys = segmentDateKeys(primary);
           if (!segment.from || !segment.to || keys.length !== 1 || !keys[0]) fail(`${leg}[${i}].${side}`,"Incomplete or ambiguous segment date",primary);
           expected.push(keys[0] || null);
           for (const alias of side === "departure" ? ["date","departureDate"] : ["arrivalDate"]) {
@@ -110,7 +114,7 @@
       for (const [index,segment] of list.entries()) {
         if (!segment || typeof segment !== "object") { fail(`${path}[${index}]`,"Invalid segment",segment); continue; }
         for (const side of ["departure","arrival"]) {
-          const keys = dateKeys(segment[side]);
+          const keys = segmentDateKeys(segment[side]);
           if (keys.length !== 1 || !keys[0]) fail(`${path}[${index}].${side}`,"Incomplete or ambiguous segment date",segment[side]);
           for (const alias of side === "departure" ? ["date","departureDate"] : ["arrivalDate"]) if (segment[alias] && !same(dateKeys(segment[alias]),keys)) fail(`${path}[${index}].${alias}`,"Contradictory segment date aliases",[segment[side],segment[alias]]);
         }
