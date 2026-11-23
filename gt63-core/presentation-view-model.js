@@ -60,6 +60,29 @@
       .replace(/Designated smoking area/gi, "Зона за пушачи");
   }
 
+  // Only top-level separators delimit services or rates.
+  function mealClauses(raw, boundaries) {
+    const clauses = [];
+    let start = 0;
+    let depth = 0;
+    let qualifierStart;
+    let qualifiers = [];
+    for (const { 0: boundary, index } of raw.matchAll(boundaries)) {
+      if (boundary === "(") {
+        if (depth === 0) qualifierStart = index;
+        depth += 1;
+      } else if (boundary === ")") {
+        if (depth > 0 && --depth === 0) qualifiers.push([qualifierStart, index + 1]);
+      } else if (depth === 0) {
+        clauses.push({ start, end: index, value: raw.slice(start, index).trim(), qualifiers });
+        start = index + 1;
+        qualifiers = [];
+      }
+    }
+    clauses.push({ start, end: raw.length, value: raw.slice(start).trim(), qualifiers });
+    return clauses;
+  }
+
   // Bind each condition to its meal, never to another amenity in the quote.
   function mealServiceEvidence(value) {
     const raw = text(value, "");
@@ -69,30 +92,33 @@
     const traveler = "(?:adults?|child(?:ren)?|persons?|възрастен|възрастни|дете|деца|човек)";
     const day = "(?:day|night|ден|нощ)";
     const period = `(?:\\s*/\\s*|\\s+per\\s+|\\s+на\\s+)${day}`;
-    const childAge = "\\s*\\(ages?\\s+\\d{1,2}(?:\\s*[-–—]\\s*\\d{1,2})?(?:\\s+years?)?(?:,\\s*when\\s+sharing\\s+a\\s+room)?\\)";
+    const childAge = "\\s*\\(ages?\\s+\\d{1,2}(?:\\s*[-–—]\\s*\\d{1,2})?(?:\\s+years?)?(?:[;,]\\s*when\\s+sharing\\s+a\\s+room)?\\)";
     const rateUnit = `(?:${traveler}(?:${period})?|child(?:ren)?${period}${childAge})`;
     const travelerRate = new RegExp(`^(?:${currency}\\s*${amount}|${amount}\\s*${currency})\\s*(?:/\\s*|per\\s+|на\\s+)${rateUnit}\\s*$`, "i");
-    // A separator inside a qualifier does not start a new tariff or service.
     const boundaries = new RegExp(`[();]|(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "gi");
-    const clauses = [];
-    let start = 0;
-    let depth = 0;
-    for (const { 0: boundary, index } of raw.matchAll(boundaries)) {
-      if (boundary === "(") depth += 1;
-      else if (boundary === ")") depth = Math.max(0, depth - 1);
-      else if (depth === 0) {
-        clauses.push({ start, end: index, value: raw.slice(start, index).trim() });
-        start = index + 1;
+    const clauses = mealClauses(raw, boundaries);
+    const otherService = /\b(?:parking|spa|(?:airport|hotel) transfers?|wi-?fi)\b|паркинг|спа\s|трансфер/i;
+    function paidClauseText(clause) {
+      let projected = raw.slice(clause.start, clause.end);
+      // Work backwards so that removing one qualifier does not shift the earlier offsets.
+      for (const [start, end] of clause.qualifiers.slice().reverse()) {
+        const qualifier = raw.slice(start + 1, end - 1);
+        const parts = mealClauses(qualifier, boundaries);
+        const retained = parts.filter(part => !otherService.test(part.value));
+        if (retained.length === parts.length) continue;
+        const replacement = retained.length ? "(" + retained.map(part => part.value).join("; ") + ")" : "";
+        projected = projected.slice(0, start - clause.start) + replacement + projected.slice(end - clause.start);
       }
+      return projected.trimEnd();
     }
-    clauses.push({ start, end: raw.length, value: raw.slice(start).trim() });
     const names = { breakfast: "(?:breakfast|закуска(?:та)?)", dinner: "(?:dinner|вечеря(?:та)?)" };
     const result = {};
     for (const [name, noun] of Object.entries(names)) {
       const other = names[name === "breakfast" ? "dinner" : "breakfast"];
       const group = `(?:${noun}(?:\\s+(?:and|и|&)\\s+${other})?|${other}\\s+(?:and|и|&)\\s+${noun})`;
       const evidence = [];
-      for (const [index, { start, value: clause }] of clauses.entries()) {
+      for (const [index, entry] of clauses.entries()) {
+        const clause = entry.value;
         if (!new RegExp(noun, "i").test(clause)) continue;
         const has = pattern => new RegExp(pattern, "i").test(clause);
         const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
@@ -106,13 +132,16 @@
         if (state === "paid") {
           while (travelerRate.test(clauses[last + 1]?.value || "")) last += 1;
         }
-        evidence.push({ state, clause: raw.slice(start, clauses[last].end).trim() });
+        const clauseText = state === "paid" ? paidClauseText(entry) : raw.slice(entry.start, entry.end);
+        const continuation = raw.slice(entry.end, clauses[last].end);
+        evidence.push({ state, clause: (clauseText + continuation).trim(), start: entry.start });
       }
       if (evidence.length) {
         const state = evidence[0].state;
         result[name] = {
           state: evidence.every(item => item.state === state) ? state : "uncertain",
-          clauses: evidence.map(item => item.clause)
+          clauses: evidence.map(item => item.clause),
+          starts: evidence.map(item => item.start)
         };
       }
     }
@@ -126,11 +155,11 @@
   function paidMealText(value, meals = Object.values(mealServiceEvidence(value))) {
     const raw = text(value, "");
     if (!meals.some(meal => meal.state === "paid")) return raw;
-    const clauses = [...new Set(meals.flatMap(meal => meal.clauses))];
+    const evidence = meals.flatMap(meal => meal.clauses.map((clause, index) => ({ clause, start: meal.starts[index] })));
+    evidence.sort((a, b) => a.start - b.start);
+    const projected = [...new Set(evidence.map(item => item.clause))].join("; ");
     const normalizeSeparators = source => source.replace(/\s*[,;]\s*/g, ",");
     const normalized = normalizeSeparators(raw);
-    clauses.sort((a, b) => normalized.indexOf(normalizeSeparators(a)) - normalized.indexOf(normalizeSeparators(b)));
-    const projected = clauses.join("; ");
     return normalizeSeparators(projected) === normalized ? raw : projected;
   }
 
