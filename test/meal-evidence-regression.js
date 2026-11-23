@@ -140,6 +140,7 @@ const semicolonQualifierMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/
 const nestedChildMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11 years (inclusive); when sharing a room); dinner included';
 const weekendMeal = 'Breakfast for a fee of 15 EUR/adult/day (20 EUR/adult/day on weekends); dinner included';
 const prefixedWeekendMeal = 'Breakfast for a fee of €15/adult/day (€20/adult/day on weekends); dinner included';
+const weekdayMeal = 'Breakfast for a fee of 15 EUR/adult/day (20 EUR/adult/day on weekdays); dinner included';
 const tieredBreakfast = 'Breakfast is available, for an additional fee of 15 EUR/adult/day, 20 EUR/child/day';
 const tieredBreakfastBg = 'Закуската се предлага, срещу допълнително заплащане: 15 EUR/възрастен/ден, 20 EUR/дете/ден';
 
@@ -147,7 +148,7 @@ test('tiered paid breakfast survives Smart Import extraction, Apply and offer sa
   const admin = fs.readFileSync(path.resolve(__dirname, '../public/admin.js'), 'utf8');
   const start = admin.indexOf('async function applyUniversalTravelIntakeResult()');
   const apply = admin.slice(start, admin.indexOf('\n}', start) + 2);
-  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal, childAgeMeal, prefixedChildAgeMeal, childAgeYearsMeal, prefixedChildAgeYearMeal, semicolonMeal, sharedRoomMeal, semicolonQualifierMeal, nestedChildMeal, weekendMeal, prefixedWeekendMeal]) {
+  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal, childAgeMeal, prefixedChildAgeMeal, childAgeYearsMeal, prefixedChildAgeYearMeal, semicolonMeal, sharedRoomMeal, semicolonQualifierMeal, nestedChildMeal, weekendMeal, prefixedWeekendMeal, weekdayMeal]) {
     const raw = { name: 'QA Family Hotel', room: 'Family room', price: 300, currency: 'EUR', meal: quote, mealSourceText: quote };
     const restore = api.setMealVisionStub(async () => raw);
     let result;
@@ -190,7 +191,7 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
     args: ['--no-sandbox', '--disable-dev-shm-usage']
   });
   try {
-    for (const [name, meal, adultFee, childFee, unrelatedFee] of [
+    for (const [name, meal, adultFee, childFee, unrelatedFee, unconfirmedRate] of [
       ['production-p1-en', tieredBreakfast, '15 EUR/adult/day', '20 EUR/child/day'],
       ['production-p1-bg', tieredBreakfastBg, '15 EUR/възрастен/ден', '20 EUR/дете/ден'],
       ['production-p1-mixed', tieredBreakfast + '; dinner included', '15 EUR/adult/day', '20 EUR/child/day'],
@@ -218,6 +219,11 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
       ['lowercase-service-fee', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; luggage storage for 10 eur/day; spa access for 20 EUR/day); dinner included', '15 EUR/adult/day (advance booking)', null, /luggage storage|spa access/],
       ['weekend-meal-rate', weekendMeal, '15 EUR/adult/day', '20 EUR/adult/day on weekends'],
       ['prefixed-weekend-meal-rate', prefixedWeekendMeal, '€15/adult/day', '€20/adult/day on weekends'],
+      ['weekday-meal-rate', weekdayMeal, '15 EUR/adult/day', '20 EUR/adult/day on weekdays'],
+      ['weekday-booking-rate', 'Breakfast for a fee of €15/adult/day (advance booking; €20/adult/day on weekdays); dinner included', '€15/adult/day', '€20/adult/day on weekdays'],
+      ['parking-weekend-rate', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; parking; 20 EUR/adult/day on weekends); dinner included', '15 EUR/adult/day (advance booking)', null, '20 EUR/adult/day on weekends'],
+      ['spa-weekday-rate', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; spa) (20 EUR/adult/day on weekdays); dinner included', '15 EUR/adult/day (advance booking)', null, '20 EUR/adult/day on weekdays'],
+      ['unconfirmed-alternative-rate', 'Breakfast for a fee of 15 EUR/adult/day (optional arrangements; 20 EUR/adult/day on weekends); dinner included', '15 EUR/adult/day', null, null, '20 EUR/adult/day on weekends'],
       ['weekend-service-fee', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; locker rental for 20 gbp/adult/day on weekends); dinner included', '15 EUR/adult/day (advance booking)', null, /locker rental/],
       ['nested-child-age', nestedChildMeal, '15 EUR/adult/day', '20 EUR/child/day (ages 6–11 years (inclusive); when sharing a room)'],
       ['nested-child-extra-fee', 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11 years (inclusive); storage for 10 EUR/day); dinner included', '15 EUR/adult/day', null, /20 EUR\/child\/day|storage for 10 EUR/],
@@ -262,6 +268,12 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
         const adapt = require('../gt63-core/legacy-offer-print-input').buildLegacyOfferPrintInput;
         const registry = require('../gt63-core/renderers/multi-hotel').renderMultiHotelProposal(adapt(data), { selectedHotelId: 'desert' });
         assert(retainsRates(registry), name + ' registry HTML');
+        if (unconfirmedRate) {
+          for (const surface of [summary, legacy, registry, extracted]) {
+            assert(surface.includes('Тарифа за потвърждение – ' + unconfirmedRate), name);
+          }
+          assert(pending.every(card => !card.includes(unconfirmedRate)), name);
+        }
         if (unrelatedFee) {
           for (const surface of [summary, legacy, registry, extracted]) assert(!hasUnrelatedFee(surface), name);
         }

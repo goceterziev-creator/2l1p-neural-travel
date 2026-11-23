@@ -96,7 +96,7 @@
     const price = `(?:${currency}\\s*${amount}|${amount}\\s*${currency})`;
     const rate = `${price}\\s*(?:/\\s*|per\\s+|на\\s+)${traveler}(?:${period})?`;
     const travelerRate = new RegExp(`^${rate}$`, "i");
-    const alternativeRate = new RegExp(`^${rate}\\s+on\\s+weekends$`, "i");
+    const alternativeRate = new RegExp(`^${rate}\\s+on\\s+week(?:days|ends)$`, "i");
     const childRateUnit = new RegExp(`child(?:ren)?${period}$`, "i");
     const ageRange = /^ages?\s+\d{1,2}(?:\s*[-–—]\s*\d{1,2})?(?:\s+years?)?$/i;
     const boundaries = new RegExp(`[();]|(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "gi");
@@ -121,25 +121,42 @@
       return plain.trim();
     }
 
-    function projectQualifiers(source, entry, allowAlternativeRate = false) {
-      let projected = source.slice(entry.start, entry.end);
-      for (const [start, end] of entry.qualifiers.slice().reverse()) {
+    function projectQualifiers(source, entry, unconfirmed = null) {
+      let projected = "";
+      let cursor = entry.start;
+      let owner = "meal";
+      for (const [start, end] of entry.qualifiers) {
+        const prefix = source.slice(cursor, start);
+        projected += prefix;
+        if (otherService.test(prefix)) owner = "other";
         const qualifier = source.slice(start + 1, end - 1);
         const parts = mealClauses(qualifier, boundaries);
         const retained = parts.flatMap(part => {
           const plain = withoutQualifiers(qualifier, part);
-          // Only a complete scheduled traveler rate directly under a paid meal can be an alternative.
-          const isAlternative = allowAlternativeRate && !part.qualifiers.length && alternativeRate.test(plain);
-          if (!isAlternative && !ageRange.test(plain) &&
-              (hasIndependentCharge(plain) || chargeLanguage.test(plain) || otherService.test(plain))) return [];
+          if (unconfirmed && !part.qualifiers.length && alternativeRate.test(plain)) {
+            if (owner === "meal") return [part.value];
+            if (owner === "uncertain") unconfirmed.push({ value: part.value, start: start + 1 + part.start });
+            return [];
+          }
+          if (!ageRange.test(plain) &&
+              (hasIndependentCharge(plain) || chargeLanguage.test(plain) || otherService.test(plain))) {
+            owner = "other";
+            return [];
+          }
+          // Free text cannot establish ownership of a later bare rate.
+          if (owner === "meal" && plain && !ageRange.test(plain) &&
+              !/^(?:advance booking|when sharing a room|inclusive)$/i.test(plain)) owner = "uncertain";
           const projectedPart = projectQualifiers(qualifier, part).trim();
           return projectedPart ? [projectedPart] : [];
         });
-        if (retained.length === parts.length && retained.every((part, index) => part === parts[index].value)) continue;
-        const replacement = retained.length ? "(" + retained.join("; ") + ")" : "";
-        projected = projected.slice(0, start - entry.start) + replacement + projected.slice(end - entry.start);
+        if (retained.length === parts.length && retained.every((part, index) => part === parts[index].value)) {
+          projected += source.slice(start, end);
+        } else if (retained.length) {
+          projected += "(" + retained.join("; ") + ")";
+        }
+        cursor = end;
       }
-      return projected.trimEnd();
+      return (projected + source.slice(cursor, entry.end)).trimEnd();
     }
 
     function continuationState(entry) {
@@ -174,13 +191,13 @@
         else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
         else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
         let last = index;
-        let unconfirmed;
+        const unconfirmed = [];
         // A complete adjacent traveler rate continues the explicit fee, across either separator.
         if (state === "paid") {
           while (continuationState(clauses[last + 1]) === "paid") last += 1;
-          if (continuationState(clauses[last + 1]) === "uncertain") unconfirmed = clauses[last + 1];
+          if (continuationState(clauses[last + 1]) === "uncertain") unconfirmed.push(clauses[last + 1]);
         }
-        const clauseText = state === "paid" ? projectQualifiers(raw, entry, true) : raw.slice(entry.start, entry.end);
+        const clauseText = state === "paid" ? projectQualifiers(raw, entry, unconfirmed) : raw.slice(entry.start, entry.end);
         const continuation = raw.slice(entry.end, clauses[last].end);
         evidence.push({ state, clause: (clauseText + continuation).trim(), start: entry.start, unconfirmed });
       }
@@ -190,7 +207,7 @@
           state: evidence.every(item => item.state === state) ? state : "uncertain",
           clauses: evidence.map(item => item.clause),
           starts: evidence.map(item => item.start),
-          unconfirmed: evidence.flatMap(item => item.unconfirmed ? [item.unconfirmed] : [])
+          unconfirmed: evidence.flatMap(item => item.unconfirmed)
         };
       }
     }
