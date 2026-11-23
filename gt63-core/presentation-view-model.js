@@ -60,9 +60,54 @@
       .replace(/Designated smoking area/gi, "Зона за пушачи");
   }
 
+  // Bind each condition to its meal, never to another amenity in the quote.
+  function mealServiceEvidence(value) {
+    const raw = text(value, "");
+    const fee = "(?:for\\s+(?:(?:a\\s+)?fee|(?:an?\\s+)?(?:extra|additional)\\s+charge)|at\\s+an?\\s+(?:extra|additional)\\s+charge|срещу\\s+(?:(?:допълнително|допълнителна)\\s+)?(?:такса|заплащане|доплащане)|с\\s+доплащане)";
+    // Keep a fee qualifier with its preceding clause and preserve decimal commas.
+    const clauses = raw.split(new RegExp(`[;]|(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "i"));
+    const names = { breakfast: "(?:breakfast|закуска(?:та)?)", dinner: "(?:dinner|вечеря(?:та)?)" };
+    const result = {};
+    for (const [name, noun] of Object.entries(names)) {
+      const other = names[name === "breakfast" ? "dinner" : "breakfast"];
+      const group = `(?:${noun}(?:\\s+(?:and|и|&)\\s+${other})?|${other}\\s+(?:and|и|&)\\s+${noun})`;
+      const evidence = [];
+      for (const clause of clauses) {
+        if (!new RegExp(noun, "i").test(clause)) continue;
+        const has = pattern => new RegExp(pattern, "i").test(clause);
+        const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
+        let state = "declared";
+        if (has(`${group}${link}(?:(?:available|included|включен[аои]),?\\s+)?${fee}`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
+        else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
+        else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
+        else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
+        evidence.push({ state, clause: clause.trim() });
+      }
+      if (evidence.length) {
+        const state = evidence[0].state;
+        result[name] = {
+          state: evidence.every(item => item.state === state) ? state : "uncertain",
+          clauses: evidence.map(item => item.clause)
+        };
+      }
+    }
+    return result;
+  }
+
+  function mealServiceConditions(value) {
+    return Object.fromEntries(Object.entries(mealServiceEvidence(value)).map(([name, evidence]) => [name, evidence.state]));
+  }
+
   function compactMealLabel(value) {
     const raw = text(value, "");
     if (!raw) return "Хранене за потвърждение";
+    const services = Object.values(mealServiceConditions(raw));
+    // Keep the actual paid/mixed condition, including any visible charge amount.
+    if (services.includes("paid") || (services.includes("excluded") && services.includes("included"))) return localizeClientText(raw);
+    if (services.includes("uncertain")) return services.includes("included") ? localizeClientText(raw) : "Хранене за потвърждение";
+    // Qualifiers and exclusions take precedence over board-plan keywords.
+    if (/възмож|вероят|непотвърден|не е потвърден|за потвърждение|подлежи на потвърждение|по заявка|според видим|при запитване|срещу (?:допълнително )?заплащане|доплащане|may|might|possible|unconfirmed|not confirmed|subject to|on request|extra charge|additional charge|not included|without breakfast|no breakfast|не е включен|не са включен/i.test(raw)) return "Хранене за потвърждение";
+    if (/room\s*only|no meals?|без (?:включен[оаи] )?(?:хранене|изхранване|закуска)/i.test(raw)) return "Без включено хранене";
     if (/all\s*inclusive|всичко включено/i.test(raw)) return "All Inclusive";
     if (/half\s*board|полупансион/i.test(raw)) return "Полупансион";
     if (/full\s*board|пълен пансион/i.test(raw)) return "Пълен пансион";
@@ -74,6 +119,14 @@
 
   function resolvedMealPlan(hotel = {}) {
     return compactMealLabel(hotel.meal || hotel.board);
+  }
+
+  function mealSafeDescription(hotel = {}) {
+    const description = text(hotel.description, "");
+    const breakfast = mealServiceConditions(hotel.meal || hotel.board).breakfast;
+    if (!["paid", "excluded", "uncertain"].includes(breakfast) && !["Хранене за потвърждение", "Без включено хранене"].includes(resolvedMealPlan(hotel))) return description;
+    return description.replace(/(?:включен[аои]?\s+(?:безплатн[аои]?\s+)?(?:закуска(?:\s+и\s+вечеря)?|изхранване)|закуска(?:та)?\s+е\s+включена(?:\s+в цената)?|(?:breakfast|meals?)\s+included|included\s+breakfast)/gi,
+      (match, offset, source) => /(?:не е|не са|not)\s*$/i.test(source.slice(0, offset)) ? match : "Изхранването е за потвърждение");
   }
 
   function numericStars(hotel = {}) {
@@ -350,6 +403,9 @@
     unconfirmedMealNotice,
     buildPresentationViewModel,
     compactMealLabel,
+    mealServiceConditions,
+    mealServiceEvidence,
+    mealSafeDescription,
     dateRangeNights,
     heroFacts,
     hotelIdentity,

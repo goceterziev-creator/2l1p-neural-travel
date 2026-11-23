@@ -192,7 +192,7 @@
       hotel.subtitle ||
       hotel.area ||
       hotel.location ||
-      hotel.description,
+      presentationViewModel.mealSafeDescription(hotel),
       "Детайли за настаняването за потвърждение"
     ));
   }
@@ -204,7 +204,7 @@
       ...(Array.isArray(hotel.travelHighlights) ? hotel.travelHighlights : []),
       hotel.roomsLeft,
       hotel.availability
-    ].filter(Boolean).map((item) => localizeClientText(item).trim()).filter(Boolean);
+    ].filter(Boolean).map((item) => localizeClientText(presentationViewModel.mealSafeDescription({ ...hotel, description: item })).trim()).filter(Boolean);
     return [...new Set(candidates)].slice(0, 8);
   }
 
@@ -512,7 +512,7 @@
       images,
       url: optionUrl,
       subtitle: hotelSubtitle(hotel),
-      description: localizeClientText(text(hotel.description, "Описание на хотела за потвърждение.")),
+      description: localizeClientText(text(presentationViewModel.mealSafeDescription(hotel), "Описание на хотела за потвърждение.")),
       room: localizeClientText(text(hotel.room || hotel.roomType, "Стая за потвърждение")),
       meal: payload.mealPlan,
       mealCompact: payload.mealPlan,

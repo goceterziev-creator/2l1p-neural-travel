@@ -390,7 +390,7 @@
           ${benefits}
         </div>
         <div class="gt63-luxury-information">
-          <p>${escapeHtml(localize(text(hotel.description,"Описание на хотела за потвърждение.")))}</p>
+          <p>${escapeHtml(localize(text(viewModelApi.mealSafeDescription(hotel),"Описание на хотела за потвърждение.")))}</p>
           <dl class="gt63-print-fact-grid gt63-luxury-facts">${items.map(item=>`<div class="gt63-print-fact${item.icon==="price" ? " is-price" : ""}">${luxuryIcon(item.icon)}<div><dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(localize(item.value))}</dd></div></div>`).join("")}</dl>
           ${url ? `<p class="gt63-print-link">Хотел: ${escapeHtml(url)}</p>` : ""}
         </div>
@@ -404,7 +404,7 @@
     const images = imageUrls(hotel, 3);
     const image = images[0] || "";
     const url = hotelUrl(hotel);
-    const description = localize(text(hotel.description, "Описание на хотела за потвърждение."));
+    const description = localize(text(viewModelApi.mealSafeDescription(hotel), "Описание на хотела за потвърждение."));
     const facts = factGrid([
       { label: "Категория", value: starsLabel(hotel) },
       { label: "Стая", value: hotel.room || hotel.roomType || "Стая за потвърждение" },
@@ -441,7 +441,15 @@
     const quoted = [], included = [], pending = [];
     if (hotel.name) quoted.push({ icon: "room", label: "Настаняване", value: hotel.name, detail: hotel.room || hotel.roomType || "Стая за потвърждение" });
     (hotel.occupancy?.confirmed === true ? quoted : pending).push({ icon: "guests", label: "Хотелска заетост", value: viewModelApi.hotelOccupancyLabel(hotel.occupancy) });
-    (detailNeedsConfirmation(viewModel.selectedMealPlan) ? pending : quoted).push({ icon: "meal", label: "Изхранване", value: viewModel.selectedMealPlan });
+    const meals = Object.values(viewModelApi.mealServiceEvidence(hotel.meal || hotel.board));
+    const paidMeal = meals.find(meal => meal.state === "paid");
+    const includedMeal = meals.find(meal => meal.state === "included");
+    if (paidMeal && includedMeal && !paidMeal.clauses.some(clause => includedMeal.clauses.includes(clause))) {
+      pending.push({ icon: "meal", label: "Изхранване", value: paidMeal.clauses.join("; ") });
+      included.push({ icon: "meal", label: "Изхранване", value: includedMeal.clauses.join("; ") });
+    } else {
+      (detailNeedsConfirmation(viewModel.selectedMealPlan) || paidMeal ? pending : quoted).push({ icon: "meal", label: "Изхранване", value: viewModel.selectedMealPlan });
+    }
     if (hasMeaningfulFlight(input)) (baggageLabel(flight.baggage) === "Багажът подлежи на потвърждение" || detailNeedsConfirmation(flight.baggage) ? pending : quoted).push({ icon: "info", label: "Багаж", value: baggageLabel(flight.baggage) });
     if (transfer.included || transfer.price > 0 || transfer.type || transfer.status || transfer.route || transfer.description) {
       (transfer.included === true ? included : pending).push({ icon: "location", label: "Трансфер", value: transferSummary(input) });

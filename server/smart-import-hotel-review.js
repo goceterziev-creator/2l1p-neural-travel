@@ -52,4 +52,26 @@ function hotelReviewWarnings(hotels, unresolved = []) {
   if(unresolved.length) warnings.push(`${unresolved.length} хотелски снимки не могат да бъдат свързани еднозначно. Проверете ги.`);
   return warnings;
 }
-module.exports={currencyFromText,moneyFromText,normalizeHotelMoney,groupHotelScreenshots,hotelReviewWarnings};
+// Only screenshot-transcribed inclusion text may substantiate an imported meal.
+// This is an extraction boundary, not a rule for manually entered offer data.
+function importedMealEvidence(hotel = {}, parsed = {}) {
+  const quote = typeof parsed.mealSourceText === "string" ? parsed.mealSourceText.trim() : "";
+  const vm = require("../gt63-core/presentation-view-model");
+  const label = vm.compactMealLabel(hotel.meal);
+  const quotedLabel = vm.compactMealLabel(quote);
+  const explicit = /включен|included|all\s*inclusive|half\s*board|full\s*board|полупансион|пълен пансион|room\s*only|без (?:включено )?(?:хранене|изхранване)/i.test(quote);
+  const requested = vm.mealServiceConditions(hotel.meal);
+  const quoted = vm.mealServiceConditions(quote);
+  const mealNames = Object.keys(requested);
+  const matchingMeals = mealNames.length > 0 && mealNames.every(name =>
+    quoted[name] === "included" && ["included", "declared"].includes(requested[name]));
+  const supported = label !== "Хранене за потвърждение" && (mealNames.length
+    ? matchingMeals
+    : explicit && quotedLabel === label);
+  const qualified = Object.values(quoted).includes("paid") ||
+    (Object.values(quoted).includes("excluded") && Object.values(quoted).includes("included"));
+  const meal = qualified ? quote : supported ? hotel.meal : "";
+  const description = vm.mealSafeDescription({ ...hotel, meal });
+  return { ...hotel, meal, description };
+}
+module.exports={importedMealEvidence,currencyFromText,moneyFromText,normalizeHotelMoney,groupHotelScreenshots,hotelReviewWarnings};
