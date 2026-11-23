@@ -4,7 +4,7 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'aya-meal-evidence-'));
 for(const [k,f] of Object.entries({DATA_DIR:'.',DB_FILE:'db.json',AIRPORT_CONFIG_FILE:'airports.json',OCR_PATTERN_CONFIG_FILE:'ocr.json'}))process.env[k]=path.join(temp,f);
 process.env.SERPAPI_KEY='';process.on('exit',()=>fs.rmSync(temp,{recursive:true,force:true}));
 const filename=path.resolve(__dirname,'../server.js'),h=new Module(filename,module);h.filename=filename;h.paths=Module._nodeModulePaths(path.dirname(filename));
-h._compile(fs.readFileSync(filename,'utf8')+'\nmodule.exports.mealTest={normalizeHotelTextToBulgarian,enrichHotelImportFallbacks,renderOfferHtml,renderGt63PrintOfferHtml,extractHotelHintWithSerpApi,setMealVisionStub(stub){const original=callVisionJson;callVisionJson=stub;return()=>{callVisionJson=original;};}};',filename);
+h._compile(fs.readFileSync(filename,'utf8')+'\nmodule.exports.mealTest={normalizeHotelTextToBulgarian,enrichHotelImportFallbacks,renderOfferHtml,renderGt63PrintOfferHtml,extractHotelHintWithSerpApi,buildSmartImportResponse,normalizeOffer,setMealVisionStub(stub){const original=callVisionJson;callVisionJson=stub;return()=>{callVisionJson=original;};}};',filename);
 const api=h.exports.mealTest,vm=require('../gt63-core/presentation-view-model');
 function imported(raw){return api.enrichHotelImportFallbacks(api.normalizeHotelTextToBulgarian(raw),raw,'Абу Даби');}
 const rawCases=[
@@ -127,3 +127,102 @@ for(const quote of ['Breakfast available; parking included','Breakfast available
 for(const value of ['Закуска срещу такса','Breakfast for a fee','Breakfast available for a fee','Breakfast available for an additional charge','Breakfast for a fee of 15 EUR','Закуска срещу такса 20 EUR','Без закуска, вечерята е включена','No breakfast, dinner included'])test('preserve separate material meal conditions: '+value,()=>{assert.equal(vm.compactMealLabel(value),value);assert.equal(require('../server/smart-import-hotel-review').importedMealEvidence({meal:'Breakfast included'},{mealSourceText:value}).meal,value);});
 for(const quote of ['Breakfast not included; parking included','Breakfast on request; WiFi included','Без закуска; паркингът е включен'])test('negative service evidence is not inclusion: '+quote,()=>assert.equal(require('../server/smart-import-hotel-review').importedMealEvidence({meal:'Breakfast included'},{mealSourceText:quote}).meal,''));
 test('paid meals are under confirmation conditions in print, not quoted inclusion',()=>{const html=api.renderGt63PrintOfferHtml(offer('Закуска срещу такса'),{selectedHotelId:'desert'});const section=html.slice(html.indexOf('Условия за потвърждение'));assert(section.includes('Закуска срещу такса'));});
+
+
+const p2Meal = 'Breakfast is included for a fee of 15 EUR/person/day; dinner included';
+const tieredBreakfast = 'Breakfast is available, for an additional fee of 15 EUR/adult/day, 20 EUR/child/day';
+const tieredBreakfastBg = 'Закуската се предлага, срещу допълнително заплащане: 15 EUR/възрастен/ден, 20 EUR/дете/ден';
+
+test('tiered paid breakfast survives Smart Import extraction, Apply and offer save normalization', async () => {
+  const admin = fs.readFileSync(path.resolve(__dirname, '../public/admin.js'), 'utf8');
+  const start = admin.indexOf('async function applyUniversalTravelIntakeResult()');
+  const apply = admin.slice(start, admin.indexOf('\n}', start) + 2);
+  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal]) {
+    const raw = { name: 'QA Family Hotel', room: 'Family room', price: 300, currency: 'EUR', meal: quote, mealSourceText: quote };
+    const restore = api.setMealVisionStub(async () => raw);
+    let result;
+    try {
+      result = await api.extractHotelHintWithSerpApi([{ buffer: Buffer.from('synthetic fixture'), mimetype: 'image/png' }], { archive: false });
+    } finally {
+      restore();
+    }
+    assert.equal(result.rawParsedHotels[0].mealSourceText, quote);
+    const data = api.buildSmartImportResponse({ offerHotel: result.hotel, offerHotelOptions: result.hotelOptions, hotelResult: result });
+    const fields = { universalHotelMeal: { value: data.offerHotel.meal }, hotelMeal: { value: '' } };
+    const applied = [];
+    const warnings = [];
+    const context = require('node:vm').createContext({
+      latestUniversalTravelIntake: data,
+      $: id => fields[id],
+      reviewFlightDateConsistencyUI: async flight => flight,
+      addHotel: hotel => applied.push(hotel),
+      mergeCurrentValidationWarnings: rows => warnings.push(...rows),
+      calculatePricing() {},
+      alert() {}
+    });
+    require('node:vm').runInContext(apply, context);
+    await context.applyUniversalTravelIntakeResult();
+    assert.equal(fields.hotelMeal.value, quote, 'Apply must populate Meal');
+    assert.equal(applied[0].meal, quote);
+    assert.equal(warnings.length, 0);
+    const saved = api.normalizeOffer({ destination: 'Абу Даби', hotels: applied, hotelMeal: fields.hotelMeal.value, hotelPrice: 300, currency: 'EUR' });
+    const reloaded = JSON.parse(JSON.stringify(saved));
+    assert.equal(reloaded.hotels[0].meal, quote);
+    assert.equal(reloaded.hotels[0].price, 300);
+    assert.equal(reloaded.hotels[0].selected, true);
+  }
+});
+
+test('manually saved tiered breakfast survives client HTML, Print and actual PDF', async () => {
+  const browser = await require('puppeteer').launch({
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+    headless: true,
+    args: ['--no-sandbox', '--disable-dev-shm-usage']
+  });
+  try {
+    for (const [name, meal, adultFee, childFee] of [
+      ['production-p1-en', tieredBreakfast, '15 EUR/adult/day', '20 EUR/child/day'],
+      ['production-p1-bg', tieredBreakfastBg, '15 EUR/възрастен/ден', '20 EUR/дете/ден'],
+      ['production-p1-mixed', tieredBreakfast + '; dinner included', '15 EUR/adult/day', '20 EUR/child/day'],
+      ['production-p2', p2Meal, '15 EUR/person/day', null]
+    ]) {
+      const retainsRates = text => text.includes(adultFee) && (!childFee || text.includes(childFee));
+      const data = offer(meal);
+      data.hotels = JSON.parse(JSON.stringify(api.normalizeOffer(data).hotels));
+      assert.equal(data.hotels[0].meal, meal);
+      const legacy = await api.renderOfferHtml(data);
+      assert(retainsRates(legacy), name + ' legacy HTML');
+      const print = api.renderGt63PrintOfferHtml(data, { selectedHotelId: 'desert' });
+      const page = await browser.newPage();
+      await page.setRequestInterception(true);
+      page.on('request', request => request.abort());
+      await page.setContent(print, { waitUntil: 'domcontentloaded' });
+      const pending = await page.$$eval('[data-service-state="pending"] article strong', cards => cards.map(card => card.textContent));
+      const included = await page.$$eval('[data-service-state="included"] article strong', cards => cards.map(card => card.textContent));
+      const pdf = Buffer.from(await page.pdf({ format: 'A4', preferCSSPageSize: true, printBackground: true }));
+      const extracted = execFileSync('pdftotext', ['-', '-'], { input: pdf, encoding: 'utf8' }).replace(/\s+/g, ' ');
+      const dir = process.env.AYA_MEAL_EVIDENCE_DIR;
+      if (dir) {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, name + '.pdf'), pdf);
+        fs.writeFileSync(path.join(dir, name + '.txt'), extracted);
+      }
+      assert(retainsRates(extracted), name + ' PDF must retain all rates');
+      const paidCard = pending.find(retainsRates);
+      assert(paidCard, name + ' pending card must retain all rates');
+      assert(!included.some(card => card.includes(adultFee) || (childFee && card.includes(childFee))), name);
+      assert(extracted.includes(paidCard + ' За потвърждение преди резервация'), name);
+      if (meal.includes('dinner included')) {
+        assert(included.includes('dinner included'), name);
+        assert(extracted.includes('dinner included Изрично посочено като включено'), name);
+      }
+      const adapt = require('../gt63-core/legacy-offer-print-input').buildLegacyOfferPrintInput;
+      const registry = require('../gt63-core/renderers/multi-hotel').renderMultiHotelProposal(adapt(data), { selectedHotelId: 'desert' });
+      assert(retainsRates(registry), name + ' registry HTML');
+      assert.equal(vm.mealServiceConditions(meal).breakfast, 'paid');
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+});
