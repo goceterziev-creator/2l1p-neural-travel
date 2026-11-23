@@ -69,36 +69,44 @@
     const traveler = "(?:adults?|child(?:ren)?|persons?|възрастен|възрастни|дете|деца|човек)";
     const day = "(?:day|night|ден|нощ)";
     const period = `(?:\\s*/\\s*|\\s+per\\s+|\\s+на\\s+)${day}`;
-    const childAge = "\\s*\\(ages?\\s+\\d{1,2}(?:\\s*[-–—]\\s*\\d{1,2})?(?:\\s+years?)?\\)";
+    const childAge = "\\s*\\(ages?\\s+\\d{1,2}(?:\\s*[-–—]\\s*\\d{1,2})?(?:\\s+years?)?(?:,\\s*when\\s+sharing\\s+a\\s+room)?\\)";
     const rateUnit = `(?:${traveler}(?:${period})?|child(?:ren)?${period}${childAge})`;
     const travelerRate = new RegExp(`^(?:${currency}\\s*${amount}|${amount}\\s*${currency})\\s*(?:/\\s*|per\\s+|на\\s+)${rateUnit}\\s*$`, "i");
-    const splitCommas = new RegExp(`(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "i");
-    const services = raw.split(";").map(service => service.split(splitCommas));
+    // A separator inside a qualifier does not start a new tariff or service.
+    const boundaries = new RegExp(`[();]|(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "gi");
+    const clauses = [];
+    let start = 0;
+    let depth = 0;
+    for (const { 0: boundary, index } of raw.matchAll(boundaries)) {
+      if (boundary === "(") depth += 1;
+      else if (boundary === ")") depth = Math.max(0, depth - 1);
+      else if (depth === 0) {
+        clauses.push({ start, end: index, value: raw.slice(start, index).trim() });
+        start = index + 1;
+      }
+    }
+    clauses.push({ start, end: raw.length, value: raw.slice(start).trim() });
     const names = { breakfast: "(?:breakfast|закуска(?:та)?)", dinner: "(?:dinner|вечеря(?:та)?)" };
     const result = {};
     for (const [name, noun] of Object.entries(names)) {
       const other = names[name === "breakfast" ? "dinner" : "breakfast"];
       const group = `(?:${noun}(?:\\s+(?:and|и|&)\\s+${other})?|${other}\\s+(?:and|и|&)\\s+${noun})`;
       const evidence = [];
-      for (const clauses of services) {
-        for (const [index, clause] of clauses.entries()) {
-          if (!new RegExp(noun, "i").test(clause)) continue;
-          const has = pattern => new RegExp(pattern, "i").test(clause);
-          const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
-          let state = "declared";
-          if (has(`${group}${link}(?:(?:available|included|се\\s+предлага|включен[аои])(?:\\s*,\\s*|\\s+))?${fee}`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
-          else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
-          else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
-          else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
-          let mealClause = clause.trim();
-          // Only a complete, adjacent traveler rate inherits the explicit meal fee.
-          if (state === "paid") {
-            for (let next = index + 1; travelerRate.test(clauses[next]?.trim() || ""); next += 1) {
-              mealClause += ", " + clauses[next].trim();
-            }
-          }
-          evidence.push({ state, clause: mealClause });
+      for (const [index, { start, value: clause }] of clauses.entries()) {
+        if (!new RegExp(noun, "i").test(clause)) continue;
+        const has = pattern => new RegExp(pattern, "i").test(clause);
+        const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
+        let state = "declared";
+        if (has(`${group}${link}(?:(?:available|included|се\\s+предлага|включен[аои])(?:\\s*,\\s*|\\s+))?${fee}`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
+        else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
+        else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
+        else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
+        let last = index;
+        // A complete adjacent traveler rate continues the explicit fee, across either separator.
+        if (state === "paid") {
+          while (travelerRate.test(clauses[last + 1]?.value || "")) last += 1;
         }
+        evidence.push({ state, clause: raw.slice(start, clauses[last].end).trim() });
       }
       if (evidence.length) {
         const state = evidence[0].state;

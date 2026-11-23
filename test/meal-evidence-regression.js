@@ -134,6 +134,8 @@ const childAgeMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day 
 const prefixedChildAgeMeal = 'Breakfast for a fee of €15/adult/day, €20/child/day (ages 6–11); dinner included';
 const childAgeYearsMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11 years); dinner included';
 const prefixedChildAgeYearMeal = 'Breakfast for a fee of €15/adult/day, €20/child/day (age 1 year); dinner included';
+const semicolonMeal = 'Breakfast for a fee of 15 EUR/adult/day; 20 EUR/child/day (ages 6–11 years); dinner included';
+const sharedRoomMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11 years, when sharing a room); dinner included';
 const tieredBreakfast = 'Breakfast is available, for an additional fee of 15 EUR/adult/day, 20 EUR/child/day';
 const tieredBreakfastBg = 'Закуската се предлага, срещу допълнително заплащане: 15 EUR/възрастен/ден, 20 EUR/дете/ден';
 
@@ -141,7 +143,7 @@ test('tiered paid breakfast survives Smart Import extraction, Apply and offer sa
   const admin = fs.readFileSync(path.resolve(__dirname, '../public/admin.js'), 'utf8');
   const start = admin.indexOf('async function applyUniversalTravelIntakeResult()');
   const apply = admin.slice(start, admin.indexOf('\n}', start) + 2);
-  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal, childAgeMeal, prefixedChildAgeMeal, childAgeYearsMeal, prefixedChildAgeYearMeal]) {
+  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal, childAgeMeal, prefixedChildAgeMeal, childAgeYearsMeal, prefixedChildAgeYearMeal, semicolonMeal, sharedRoomMeal]) {
     const raw = { name: 'QA Family Hotel', room: 'Family room', price: 300, currency: 'EUR', meal: quote, mealSourceText: quote };
     const restore = api.setMealVisionStub(async () => raw);
     let result;
@@ -198,6 +200,11 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
       ['prefixed-child-age-year-rate', prefixedChildAgeYearMeal, '€15/adult/day', '€20/child/day (age 1 year)'],
       ['child-age-years-spa-rate', 'Breakfast for a fee of 15 EUR/adult/day, €20/child/day (ages 6–11 years, spa access); dinner included', '15 EUR/adult/day', null, '€20/child/day'],
       ['child-age-years-parking-rate', 'Breakfast for a fee of 15 EUR/adult/day, €20/child/day (ages 6–11 years) parking; dinner included', '15 EUR/adult/day', null, '€20/child/day'],
+      ['semicolon-child-rate', semicolonMeal, '15 EUR/adult/day', '20 EUR/child/day (ages 6–11 years)'],
+      ['shared-room-child-rate', sharedRoomMeal, '15 EUR/adult/day', '20 EUR/child/day (ages 6–11 years, when sharing a room)'],
+      ['semicolon-parking-rate', 'Breakfast for a fee of 15 EUR/adult/day; 20 EUR/child/day (ages 6–11 years) parking; dinner included', '15 EUR/adult/day', null, '20 EUR/child/day'],
+      ['semicolon-unbound-rate', 'Breakfast for a fee of 15 EUR/adult/day; parking available; 20 EUR/child/day (ages 6–11 years); dinner included', '15 EUR/adult/day', null, '20 EUR/child/day'],
+      ['shared-room-spa-rate', 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (ages 6–11 years, when sharing a room, spa access); dinner included', '15 EUR/adult/day', null, '20 EUR/child/day'],
       ['child-parking-rate', 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/day (parking); dinner included', '15 EUR/adult/day', null, '20 EUR/child/day (parking)'],
       ['child-spa-rate', 'Breakfast for a fee of 15 EUR/adult/day, €20/child/day (ages 6–11, spa access); dinner included', '15 EUR/adult/day', null, '€20/child/day']
     ]) {
