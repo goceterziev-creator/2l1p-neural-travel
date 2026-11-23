@@ -69,7 +69,7 @@
     const traveler = "(?:adults?|child(?:ren)?|persons?|възрастен|възрастни|дете|деца|човек)";
     const day = "(?:day|night|ден|нощ)";
     const period = `(?:\\s*/\\s*|\\s+per\\s+|\\s+на\\s+)${day}`;
-    const childAge = "\\s*\\(ages?\\s+\\d{1,2}(?:\\s*[-–—]\\s*\\d{1,2})?\\)";
+    const childAge = "\\s*\\(ages?\\s+\\d{1,2}(?:\\s*[-–—]\\s*\\d{1,2})?(?:\\s+years?)?\\)";
     const rateUnit = `(?:${traveler}(?:${period})?|child(?:ren)?${period}${childAge})`;
     const travelerRate = new RegExp(`^(?:${currency}\\s*${amount}|${amount}\\s*${currency})\\s*(?:/\\s*|per\\s+|на\\s+)${rateUnit}\\s*$`, "i");
     const splitCommas = new RegExp(`(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "i");
