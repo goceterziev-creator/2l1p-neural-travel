@@ -61,28 +61,41 @@
   }
 
   // Bind each condition to its meal, never to another amenity in the quote.
-  function mealServiceConditions(value) {
+  function mealServiceEvidence(value) {
     const raw = text(value, "");
+    const fee = "(?:for\\s+(?:(?:a\\s+)?fee|(?:an?\\s+)?(?:extra|additional)\\s+charge)|at\\s+an?\\s+(?:extra|additional)\\s+charge|срещу\\s+(?:(?:допълнително|допълнителна)\\s+)?(?:такса|заплащане|доплащане)|с\\s+доплащане)";
+    // Keep a fee qualifier with its preceding clause and preserve decimal commas.
+    const clauses = raw.split(new RegExp(`[;]|(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "i"));
     const names = { breakfast: "(?:breakfast|закуска(?:та)?)", dinner: "(?:dinner|вечеря(?:та)?)" };
     const result = {};
     for (const [name, noun] of Object.entries(names)) {
       const other = names[name === "breakfast" ? "dinner" : "breakfast"];
       const group = `(?:${noun}(?:\\s+(?:and|и|&)\\s+${other})?|${other}\\s+(?:and|и|&)\\s+${noun})`;
-      const states = [];
-      for (const clause of raw.split(/[;,]/)) {
+      const evidence = [];
+      for (const clause of clauses) {
         if (!new RegExp(noun, "i").test(clause)) continue;
         const has = pattern => new RegExp(pattern, "i").test(clause);
         const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
         let state = "declared";
-        if (has(`${group}${link}(?:(?:available|included|включен[аои])\\s+)?(?:for\\s+(?:(?:a\\s+)?fee|(?:an?\\s+)?(?:extra|additional)\\s+charge)|at\\s+an?\\s+(?:extra|additional)\\s+charge|срещу\\s+(?:(?:допълнително|допълнителна)\\s+)?(?:такса|заплащане|доплащане)|с\\s+доплащане)`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
+        if (has(`${group}${link}(?:(?:available|included|включен[аои]),?\\s+)?${fee}`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
         else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
         else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
         else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
-        states.push(state);
+        evidence.push({ state, clause: clause.trim() });
       }
-      if (states.length) result[name] = states.every(state => state === states[0]) ? states[0] : "uncertain";
+      if (evidence.length) {
+        const state = evidence[0].state;
+        result[name] = {
+          state: evidence.every(item => item.state === state) ? state : "uncertain",
+          clauses: evidence.map(item => item.clause)
+        };
+      }
     }
     return result;
+  }
+
+  function mealServiceConditions(value) {
+    return Object.fromEntries(Object.entries(mealServiceEvidence(value)).map(([name, evidence]) => [name, evidence.state]));
   }
 
   function compactMealLabel(value) {
@@ -391,6 +404,7 @@
     buildPresentationViewModel,
     compactMealLabel,
     mealServiceConditions,
+    mealServiceEvidence,
     mealSafeDescription,
     dateRangeNights,
     heroFacts,
