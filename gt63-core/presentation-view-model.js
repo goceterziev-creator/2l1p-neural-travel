@@ -9,6 +9,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPresentationViewModel() {
   const occupancyQa = globalThis.AYAHotelOccupancy || (typeof require === "function" ? require("../public/hotel-occupancy") : null);
   const hotelOccupancyLabel = value => occupancyQa ? occupancyQa.label(value) : "Хотелска заетост за потвърждение";
+  const currencyCodes = new Set(Intl.supportedValuesOf?.("currency"));
   const VALID_PRINT_MODES = new Set(["selected", "comparison"]);
 
   function asArray(value) {
@@ -92,13 +93,24 @@
     const traveler = "(?:adults?|child(?:ren)?|persons?|възрастен|възрастни|дете|деца|човек)";
     const day = "(?:day|night|ден|нощ)";
     const period = `(?:\\s*/\\s*|\\s+per\\s+|\\s+на\\s+)${day}`;
-    const travelerRate = new RegExp(`^(?:${currency}\\s*${amount}|${amount}\\s*${currency})\\s*(?:/\\s*|per\\s+|на\\s+)${traveler}(?:${period})?$`, "i");
+    const price = `(?:${currency}\\s*${amount}|${amount}\\s*${currency})`;
+    const rate = `${price}\\s*(?:/\\s*|per\\s+|на\\s+)${traveler}(?:${period})?`;
+    const travelerRate = new RegExp(`^${rate}$`, "i");
+    const alternativeRate = new RegExp(`^${rate}\\s+on\\s+weekends$`, "i");
     const childRateUnit = new RegExp(`child(?:ren)?${period}$`, "i");
     const ageRange = /^ages?\s+\d{1,2}(?:\s*[-–—]\s*\d{1,2})?(?:\s+years?)?$/i;
     const boundaries = new RegExp(`[();]|(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "gi");
     const clauses = mealClauses(raw, boundaries);
     const otherService = /\b(?:parking|spa|(?:airport|hotel) transfers?|wi-?fi)\b|паркинг|спа\s|трансфер/i;
-    const independentCharge = new RegExp(`(?:${currency}\\s*${amount}|${amount}\\s*${currency})`);
+    const currencyToken = "(\\b[A-Z]{3}\\b|[€$£])";
+    const chargeAmount = new RegExp(`(?=${currencyToken}\\s*${amount}|${amount}\\s*${currencyToken})`, "gi");
+    function hasIndependentCharge(value) {
+      for (const [, prefix, suffix] of value.matchAll(chargeAmount)) {
+        const code = prefix || suffix;
+        if (code === code.toUpperCase() || currencyCodes.has(code.toUpperCase())) return true;
+      }
+      return false;
+    }
     const chargeLanguage = new RegExp(fee, "i");
 
     function withoutQualifiers(source, entry) {
@@ -109,15 +121,17 @@
       return plain.trim();
     }
 
-    function projectQualifiers(source, entry) {
+    function projectQualifiers(source, entry, allowAlternativeRate = false) {
       let projected = source.slice(entry.start, entry.end);
       for (const [start, end] of entry.qualifiers.slice().reverse()) {
         const qualifier = source.slice(start + 1, end - 1);
         const parts = mealClauses(qualifier, boundaries);
         const retained = parts.flatMap(part => {
           const plain = withoutQualifiers(qualifier, part);
-          // A separate price or charge is not a qualifier of the enclosing rate.
-          if (!ageRange.test(plain) && (independentCharge.test(plain) || chargeLanguage.test(plain) || otherService.test(plain))) return [];
+          // Only a complete scheduled traveler rate directly under a paid meal can be an alternative.
+          const isAlternative = allowAlternativeRate && !part.qualifiers.length && alternativeRate.test(plain);
+          if (!isAlternative && !ageRange.test(plain) &&
+              (hasIndependentCharge(plain) || chargeLanguage.test(plain) || otherService.test(plain))) return [];
           const projectedPart = projectQualifiers(qualifier, part).trim();
           return projectedPart ? [projectedPart] : [];
         });
@@ -166,7 +180,7 @@
           while (continuationState(clauses[last + 1]) === "paid") last += 1;
           if (continuationState(clauses[last + 1]) === "uncertain") unconfirmed = clauses[last + 1];
         }
-        const clauseText = state === "paid" ? projectQualifiers(raw, entry) : raw.slice(entry.start, entry.end);
+        const clauseText = state === "paid" ? projectQualifiers(raw, entry, true) : raw.slice(entry.start, entry.end);
         const continuation = raw.slice(entry.end, clauses[last].end);
         evidence.push({ state, clause: (clauseText + continuation).trim(), start: entry.start, unconfirmed });
       }
