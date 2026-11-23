@@ -121,31 +121,45 @@
       return plain.trim();
     }
 
-    function projectQualifiers(source, entry, unconfirmed = null) {
+    function projectQualifiers(source, entry, context = null) {
       let projected = "";
       let cursor = entry.start;
       let owner = "meal";
+      let serviceLabel;
       for (const [start, end] of entry.qualifiers) {
         const prefix = source.slice(cursor, start);
         projected += prefix;
-        if (otherService.test(prefix)) owner = "other";
+        if (otherService.test(prefix)) {
+          owner = "other";
+          serviceLabel = undefined;
+        }
         const qualifier = source.slice(start + 1, end - 1);
         const parts = mealClauses(qualifier, boundaries);
         const retained = parts.flatMap(part => {
           const plain = withoutQualifiers(qualifier, part);
-          if (unconfirmed && !part.qualifiers.length && alternativeRate.test(plain)) {
+          const marker = plain.replace(/:\s*$/, "");
+          if (context && !part.qualifiers.length && context.mealMarker.test(marker)) {
+            owner = "meal";
+            serviceLabel = undefined;
+            return [];
+          }
+          if (context && !part.qualifiers.length && alternativeRate.test(plain)) {
             if (owner === "meal") return [part.value];
-            if (owner === "uncertain") unconfirmed.push({ value: part.value, start: start + 1 + part.start });
+            if (owner === "uncertain") context.unconfirmed.push({ value: part.value, start: start + 1 + part.start });
+            if (owner === "other" && serviceLabel) context.services.push({ label: serviceLabel, value: part.value });
             return [];
           }
           if (!ageRange.test(plain) &&
               (hasIndependentCharge(plain) || chargeLanguage.test(plain) || otherService.test(plain))) {
             owner = "other";
+            serviceLabel = !part.qualifiers.length && otherService.exec(marker)?.[0] === marker ? marker : undefined;
             return [];
           }
           // Free text cannot establish ownership of a later bare rate.
-          if (owner === "meal" && plain && !ageRange.test(plain) &&
-              !/^(?:advance booking|when sharing a room|inclusive)$/i.test(plain)) owner = "uncertain";
+          if (plain && !ageRange.test(plain) && !/^(?:advance booking|when sharing a room|inclusive)$/i.test(plain)) {
+            if (owner === "meal" || serviceLabel) owner = "uncertain";
+            serviceLabel = undefined;
+          }
           const projectedPart = projectQualifiers(qualifier, part).trim();
           return projectedPart ? [projectedPart] : [];
         });
@@ -180,6 +194,7 @@
       const other = names[name === "breakfast" ? "dinner" : "breakfast"];
       const group = `(?:${noun}(?:\\s+(?:and|и|&)\\s+${other})?|${other}\\s+(?:and|и|&)\\s+${noun})`;
       const evidence = [];
+      const mealMarker = new RegExp(`^${noun}$`, "i");
       for (const [index, entry] of clauses.entries()) {
         const clause = entry.value;
         if (!new RegExp(noun, "i").test(clause)) continue;
@@ -192,14 +207,15 @@
         else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
         let last = index;
         const unconfirmed = [];
+        const services = [];
         // A complete adjacent traveler rate continues the explicit fee, across either separator.
         if (state === "paid") {
           while (continuationState(clauses[last + 1]) === "paid") last += 1;
           if (continuationState(clauses[last + 1]) === "uncertain") unconfirmed.push(clauses[last + 1]);
         }
-        const clauseText = state === "paid" ? projectQualifiers(raw, entry, unconfirmed) : raw.slice(entry.start, entry.end);
+        const clauseText = state === "paid" ? projectQualifiers(raw, entry, { mealMarker, unconfirmed, services }) : raw.slice(entry.start, entry.end);
         const continuation = raw.slice(entry.end, clauses[last].end);
-        evidence.push({ state, clause: (clauseText + continuation).trim(), start: entry.start, unconfirmed });
+        evidence.push({ state, clause: (clauseText + continuation).trim(), start: entry.start, unconfirmed, services });
       }
       if (evidence.length) {
         const state = evidence[0].state;
@@ -207,7 +223,8 @@
           state: evidence.every(item => item.state === state) ? state : "uncertain",
           clauses: evidence.map(item => item.clause),
           starts: evidence.map(item => item.start),
-          unconfirmed: evidence.flatMap(item => item.unconfirmed)
+          unconfirmed: evidence.flatMap(item => item.unconfirmed),
+          services: evidence.flatMap(item => item.services)
         };
       }
     }

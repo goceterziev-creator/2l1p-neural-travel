@@ -141,6 +141,8 @@ const nestedChildMeal = 'Breakfast for a fee of 15 EUR/adult/day, 20 EUR/child/d
 const weekendMeal = 'Breakfast for a fee of 15 EUR/adult/day (20 EUR/adult/day on weekends); dinner included';
 const prefixedWeekendMeal = 'Breakfast for a fee of €15/adult/day (€20/adult/day on weekends); dinner included';
 const weekdayMeal = 'Breakfast for a fee of 15 EUR/adult/day (20 EUR/adult/day on weekdays); dinner included';
+const resetBreakfastMeal = 'Breakfast for a fee of 15 EUR/adult/day (parking; 30 EUR/adult/day on weekends; breakfast; 25 EUR/adult/day on weekdays); dinner included';
+const alternatingMeal = 'Breakfast for a fee of 15 EUR/adult/day (breakfast; 18 EUR/adult/day on weekdays; spa; 30 EUR/adult/day on weekdays; breakfast; 25 EUR/adult/day on weekends; parking; 40 EUR/adult/day on weekends); dinner included';
 const tieredBreakfast = 'Breakfast is available, for an additional fee of 15 EUR/adult/day, 20 EUR/child/day';
 const tieredBreakfastBg = 'Закуската се предлага, срещу допълнително заплащане: 15 EUR/възрастен/ден, 20 EUR/дете/ден';
 
@@ -148,7 +150,7 @@ test('tiered paid breakfast survives Smart Import extraction, Apply and offer sa
   const admin = fs.readFileSync(path.resolve(__dirname, '../public/admin.js'), 'utf8');
   const start = admin.indexOf('async function applyUniversalTravelIntakeResult()');
   const apply = admin.slice(start, admin.indexOf('\n}', start) + 2);
-  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal, childAgeMeal, prefixedChildAgeMeal, childAgeYearsMeal, prefixedChildAgeYearMeal, semicolonMeal, sharedRoomMeal, semicolonQualifierMeal, nestedChildMeal, weekendMeal, prefixedWeekendMeal, weekdayMeal]) {
+  for (const quote of [tieredBreakfast, tieredBreakfastBg, p2Meal, childAgeMeal, prefixedChildAgeMeal, childAgeYearsMeal, prefixedChildAgeYearMeal, semicolonMeal, sharedRoomMeal, semicolonQualifierMeal, nestedChildMeal, weekendMeal, prefixedWeekendMeal, weekdayMeal, resetBreakfastMeal, alternatingMeal]) {
     const raw = { name: 'QA Family Hotel', room: 'Family room', price: 300, currency: 'EUR', meal: quote, mealSourceText: quote };
     const restore = api.setMealVisionStub(async () => raw);
     let result;
@@ -191,7 +193,7 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
     args: ['--no-sandbox', '--disable-dev-shm-usage']
   });
   try {
-    for (const [name, meal, adultFee, childFee, unrelatedFee, unconfirmedRate] of [
+    for (const [name, meal, adultFee, childFee, unrelatedFee, unconfirmedRate, expectedServices = []] of [
       ['production-p1-en', tieredBreakfast, '15 EUR/adult/day', '20 EUR/child/day'],
       ['production-p1-bg', tieredBreakfastBg, '15 EUR/възрастен/ден', '20 EUR/дете/ден'],
       ['production-p1-mixed', tieredBreakfast + '; dinner included', '15 EUR/adult/day', '20 EUR/child/day'],
@@ -221,8 +223,10 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
       ['prefixed-weekend-meal-rate', prefixedWeekendMeal, '€15/adult/day', '€20/adult/day on weekends'],
       ['weekday-meal-rate', weekdayMeal, '15 EUR/adult/day', '20 EUR/adult/day on weekdays'],
       ['weekday-booking-rate', 'Breakfast for a fee of €15/adult/day (advance booking; €20/adult/day on weekdays); dinner included', '€15/adult/day', '€20/adult/day on weekdays'],
-      ['parking-weekend-rate', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; parking; 20 EUR/adult/day on weekends); dinner included', '15 EUR/adult/day (advance booking)', null, '20 EUR/adult/day on weekends'],
-      ['spa-weekday-rate', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; spa) (20 EUR/adult/day on weekdays); dinner included', '15 EUR/adult/day (advance booking)', null, '20 EUR/adult/day on weekdays'],
+      ['reset-breakfast', resetBreakfastMeal, '15 EUR/adult/day', '25 EUR/adult/day on weekdays', '30 EUR/adult/day on weekends', null, [['parking', '30 EUR/adult/day on weekends']]],
+      ['alternating', alternatingMeal, '18 EUR/adult/day on weekdays', '25 EUR/adult/day on weekends', /30 EUR\/adult\/day on weekdays|40 EUR\/adult\/day on weekends/, null, [['spa', '30 EUR/adult/day on weekdays'], ['parking', '40 EUR/adult/day on weekends']]],
+      ['parking-weekend-rate', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; parking; 20 EUR/adult/day on weekends); dinner included', '15 EUR/adult/day (advance booking)', null, '20 EUR/adult/day on weekends', null, [['parking', '20 EUR/adult/day on weekends']]],
+      ['spa-weekday-rate', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; spa) (20 EUR/adult/day on weekdays); dinner included', '15 EUR/adult/day (advance booking)', null, '20 EUR/adult/day on weekdays', null, [['spa', '20 EUR/adult/day on weekdays']]],
       ['unconfirmed-alternative-rate', 'Breakfast for a fee of 15 EUR/adult/day (optional arrangements; 20 EUR/adult/day on weekends); dinner included', '15 EUR/adult/day', null, null, '20 EUR/adult/day on weekends'],
       ['weekend-service-fee', 'Breakfast for a fee of 15 EUR/adult/day (advance booking; locker rental for 20 gbp/adult/day on weekends); dinner included', '15 EUR/adult/day (advance booking)', null, /locker rental/],
       ['nested-child-age', nestedChildMeal, '15 EUR/adult/day', '20 EUR/child/day (ages 6–11 years (inclusive); when sharing a room)'],
@@ -242,7 +246,12 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
         await page.setRequestInterception(true);
         page.on('request', request => request.abort());
         await page.setContent(print, { waitUntil: 'domcontentloaded' });
-        const pending = await page.$$eval('[data-service-state="pending"] article strong', cards => cards.map(card => card.textContent));
+        const cards = await page.$$eval('[data-service-state="pending"] article', nodes => nodes.map(card => ({
+          label: card.querySelector('p').textContent,
+          rate: card.querySelector('strong').textContent,
+          text: card.textContent
+        })));
+        const pending = cards.filter(card => card.label === 'Изхранване').map(card => card.rate);
         const included = await page.$$eval('[data-service-state="included"] article strong', cards => cards.map(card => card.textContent));
         const pdf = Buffer.from(await page.pdf({ format: 'A4', preferCSSPageSize: true, printBackground: true }));
         const extracted = execFileSync('pdftotext', ['-', '-'], { input: pdf, encoding: 'utf8' }).replace(/\s+/g, ' ');
@@ -275,7 +284,14 @@ test('manually saved tiered breakfast survives client HTML, Print and actual PDF
           assert(pending.every(card => !card.includes(unconfirmedRate)), name);
         }
         if (unrelatedFee) {
-          for (const surface of [summary, legacy, registry, extracted]) assert(!hasUnrelatedFee(surface), name);
+          for (const surface of [summary, legacy, registry]) assert(!hasUnrelatedFee(surface), name);
+          if (!expectedServices.length) assert(!hasUnrelatedFee(extracted), name);
+        }
+        for (const [label, rate] of expectedServices) {
+          const card = cards.find(card => card.label === label && card.rate === rate);
+          assert(card, name + ' service label and rate must share one card');
+          assert(extracted.replace(/\s/g, '').toLowerCase().includes((label + rate).replace(/\s/g, '').toLowerCase()), name + ' associated PDF entry');
+          console.log('Service evidence', JSON.stringify({name, ...card}));
         }
         assert.equal(vm.mealServiceConditions(meal).breakfast, 'paid');
         await page.close();

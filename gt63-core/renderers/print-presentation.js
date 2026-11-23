@@ -450,17 +450,25 @@
     } else {
       (detailNeedsConfirmation(viewModel.selectedMealPlan) || paidMeal ? pending : quoted).push({ icon: "meal", label: "Изхранване", value: viewModel.selectedMealPlan });
     }
+    const separateServices = new Map();
+    for (const meal of meals) {
+      for (const service of meal.services) {
+        separateServices.set(JSON.stringify([service.label, service.value]), service);
+      }
+    }
     if (hasMeaningfulFlight(input)) (baggageLabel(flight.baggage) === "Багажът подлежи на потвърждение" || detailNeedsConfirmation(flight.baggage) ? pending : quoted).push({ icon: "info", label: "Багаж", value: baggageLabel(flight.baggage) });
     if (transfer.included || transfer.price > 0 || transfer.type || transfer.status || transfer.route || transfer.description) {
       (transfer.included === true ? included : pending).push({ icon: "location", label: "Трансфер", value: transferSummary(input) });
     }
-    const group = (items, state, heading) => items.length ? `<div class="gt63-service-group${items.length === 1 ? " is-single" : items.length === 3 ? " is-three" : ""}" data-service-state="${state}"><h3>${escapeHtml(heading)}</h3><div class="gt63-print-service-grid">${items.map(item => `<article class="gt63-print-service-card">${luxuryIcon(item.icon)}<div><p>${escapeHtml(item.label)}</p><strong>${escapeHtml(localize(item.value))}</strong>${item.detail ? `<small>${escapeHtml(localize(item.detail))}</small>` : ""}<span>${state === "included" ? "Изрично посочено като включено" : state === "pending" ? "За потвърждение преди резервация" : "Данни за избрания вариант"}</span></div></article>`).join("")}</div></div>` : "";
+    const group = (items, state, heading) => items.length ? `<div class="gt63-service-group${items.length === 1 ? " is-single" : items.length === 3 ? " is-three" : ""}" data-service-state="${state}">${heading ? `<h3>${escapeHtml(heading)}</h3>` : ""}<div class="gt63-print-service-grid">${items.map(item => `<article class="gt63-print-service-card">${luxuryIcon(item.icon)}<div><p>${escapeHtml(item.label)}</p><strong>${escapeHtml(localize(item.value))}</strong>${item.detail ? `<small>${escapeHtml(localize(item.detail))}</small>` : ""}<span>${state === "included" ? "Изрично посочено като включено" : state === "pending" ? "За потвърждение преди резервация" : "Данни за избрания вариант"}</span></div></article>`).join("")}</div></div>` : "";
     const images = imageUrls(hotel, 3), photo = images[1] || images[0];
     return editorialSection("gt63-print-included-services gt63-luxury-services", "Вашият избран вариант", "ЦЕНАТА ВКЛЮЧВА", `
       <p class="gt63-service-explanation">Компонентите са данни от предложението. Непотвърдените услуги не са обозначени като включени.</p>
       ${group(quoted, "quoted", "Компоненти на предложението")}
       ${group(included, "included", "Посочено като включено")}
       ${group(pending, "pending", "Условия за потвърждение")}
+      ${Array.from(separateServices.values(), (service, index) =>
+        group([{ icon: "info", ...service }], "pending", index === 0 ? "Други услуги" : "")).join("")}
       ${photo ? imageFrame(photo, `Снимка към ${hotel.name || "избрания хотел"}`, "Снимка към избрания хотел", "gt63-luxury-service-photo") : ""}
     `);
   }
