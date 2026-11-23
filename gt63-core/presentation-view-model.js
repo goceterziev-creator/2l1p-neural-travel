@@ -64,26 +64,38 @@
   function mealServiceEvidence(value) {
     const raw = text(value, "");
     const fee = "(?:for\\s+(?:an?\\s+)?(?:fee|(?:extra|additional)\\s+(?:fee|charge))|at\\s+an?\\s+(?:extra|additional)\\s+charge|срещу\\s+(?:(?:допълнително|допълнителна)\\s+)?(?:такса|заплащане|доплащане)|с\\s+доплащане)";
-    const rate = "\\d+(?:[.,]\\d+)?\\s*(?:[A-Z]{3}\\b|[€$£])\\s*(?:/|per\\s|на\\s)";
-    // Keep a fee qualifier and subsequent per-traveler rates with the meal.
-    const continuation = `\\s*(?:${fee}|${rate})`;
-    const clauses = raw.split(new RegExp(`[;]|(?<!\\d),(?!${continuation})|(?<=\\d),(?!\\d|${continuation})`, "i"));
+    const currency = "(?:[A-Z]{3}\\b|[€$£])";
+    const amount = "\\d+(?:[.,]\\d+)?";
+    const traveler = "(?:adults?|child(?:ren)?|persons?|възрастен|възрастни|дете|деца|човек)";
+    const day = "(?:day|night|ден|нощ)";
+    const travelerRate = new RegExp(`^(?:${currency}\\s*${amount}|${amount}\\s*${currency})\\s*(?:/\\s*|per\\s+|на\\s+)${traveler}(?:(?:\\s*/\\s*|\\s+per\\s+|\\s+на\\s+)${day})?\\s*$`, "i");
+    const splitCommas = new RegExp(`(?<!\\d),(?!\\s*${fee})|(?<=\\d),(?!\\d|\\s*${fee})`, "i");
+    const services = raw.split(";").map(service => service.split(splitCommas));
     const names = { breakfast: "(?:breakfast|закуска(?:та)?)", dinner: "(?:dinner|вечеря(?:та)?)" };
     const result = {};
     for (const [name, noun] of Object.entries(names)) {
       const other = names[name === "breakfast" ? "dinner" : "breakfast"];
       const group = `(?:${noun}(?:\\s+(?:and|и|&)\\s+${other})?|${other}\\s+(?:and|и|&)\\s+${noun})`;
       const evidence = [];
-      for (const clause of clauses) {
-        if (!new RegExp(noun, "i").test(clause)) continue;
-        const has = pattern => new RegExp(pattern, "i").test(clause);
-        const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
-        let state = "declared";
-        if (has(`${group}${link}(?:(?:available|included|се\\s+предлага|включен[аои])(?:\\s*,\\s*|\\s+))?${fee}`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
-        else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
-        else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
-        else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
-        evidence.push({ state, clause: clause.trim() });
+      for (const clauses of services) {
+        for (const [index, clause] of clauses.entries()) {
+          if (!new RegExp(noun, "i").test(clause)) continue;
+          const has = pattern => new RegExp(pattern, "i").test(clause);
+          const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
+          let state = "declared";
+          if (has(`${group}${link}(?:(?:available|included|се\\s+предлага|включен[аои])(?:\\s*,\\s*|\\s+))?${fee}`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
+          else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
+          else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
+          else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
+          let mealClause = clause.trim();
+          // Only a complete, adjacent traveler rate inherits the explicit meal fee.
+          if (state === "paid") {
+            for (let next = index + 1; travelerRate.test(clauses[next]?.trim() || ""); next += 1) {
+              mealClause += ", " + clauses[next].trim();
+            }
+          }
+          evidence.push({ state, clause: mealClause });
+        }
       }
       if (evidence.length) {
         const state = evidence[0].state;
@@ -100,12 +112,25 @@
     return Object.fromEntries(Object.entries(mealServiceEvidence(value)).map(([name, evidence]) => [name, evidence.state]));
   }
 
+  function paidMealText(value, meals = Object.values(mealServiceEvidence(value))) {
+    const raw = text(value, "");
+    if (!meals.some(meal => meal.state === "paid")) return raw;
+    const clauses = [...new Set(meals.flatMap(meal => meal.clauses))];
+    const normalizeSeparators = source => source.replace(/\s*[,;]\s*/g, ",");
+    const normalized = normalizeSeparators(raw);
+    clauses.sort((a, b) => normalized.indexOf(normalizeSeparators(a)) - normalized.indexOf(normalizeSeparators(b)));
+    const projected = clauses.join("; ");
+    return normalizeSeparators(projected) === normalized ? raw : projected;
+  }
+
   function compactMealLabel(value) {
     const raw = text(value, "");
     if (!raw) return "Хранене за потвърждение";
-    const services = Object.values(mealServiceConditions(raw));
+    const meals = Object.values(mealServiceEvidence(raw));
+    const services = meals.map(meal => meal.state);
     // Keep the actual paid/mixed condition, including any visible charge amount.
-    if (services.includes("paid") || (services.includes("excluded") && services.includes("included"))) return localizeClientText(raw);
+    if (services.includes("paid")) return localizeClientText(paidMealText(raw, meals));
+    if (services.includes("excluded") && services.includes("included")) return localizeClientText(raw);
     if (services.includes("uncertain")) return services.includes("included") ? localizeClientText(raw) : "Хранене за потвърждение";
     // Qualifiers and exclusions take precedence over board-plan keywords.
     if (/възмож|вероят|непотвърден|не е потвърден|за потвърждение|подлежи на потвърждение|по заявка|според видим|при запитване|срещу (?:допълнително )?заплащане|доплащане|may|might|possible|unconfirmed|not confirmed|subject to|on request|extra charge|additional charge|not included|without breakfast|no breakfast|не е включен|не са включен/i.test(raw)) return "Хранене за потвърждение";
@@ -407,6 +432,7 @@
     compactMealLabel,
     mealServiceConditions,
     mealServiceEvidence,
+    paidMealText,
     mealSafeDescription,
     dateRangeNights,
     heroFacts,

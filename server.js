@@ -8055,7 +8055,7 @@ async function renderOfferHtml(offer, options = {}) {
 
         <div class="detail-grid">
           <div><strong>Стая</strong><br>${escapeHtml(detailValue(hotel.room))}</div>
-          <div><strong>Изхранване</strong><br>${escapeHtml(detailValue(hotel.meal))}</div>
+          <div><strong>Изхранване</strong><br>${escapeHtml(detailValue(presentationViewModel.paidMealText(hotel.meal)))}</div>
           <div><strong>Хотелска заетост</strong><br>${escapeHtml(hotelOccupancyQa.label(hotel.occupancy))}</div>
           <div><strong>Локация</strong><br>${escapeHtml(detailValue(cleanBrochureLocation(hotel.area, destinationName)))}</div>
           <div><strong>Наличност</strong><br>${escapeHtml(detailValue(hotel.roomsLeft))}</div>
