@@ -71,9 +71,16 @@ function groupSmartHotelScreenshots(records) {
   const options = [];
   // A locality alone is not property identity. Keep incomplete addresses in review.
   const streetAddress = item => /\d/.test(String(item.address || "")) ? key(item.address) : "";
-  const unresolved = records.filter(item => item.pageKind !== "property" && !key(item.name));
-  const properties = records.filter(item => item.pageKind === "property");
-  const rates = records.filter(item => item.pageKind !== "property" && key(item.name));
+  const isProperty = item => item.pageKind === "property" ||
+    ((!item.pageKind || item.pageKind === "unknown") &&
+      key(item.description) && (key(item.stars) || (Array.isArray(item.amenities) && item.amenities.length > 0)) &&
+      !item.price && !key(item.room) && !key(item.ratePlan) && !key(item.stayDates) &&
+      !item.nights && typeof item.nonRefundable !== "boolean" &&
+      !Object.values(item.occupancy || {}).some(value => value === true || Number.isInteger(value)) &&
+      !item.priceEvidence?.label);
+  const properties = records.filter(isProperty);
+  const unresolved = records.filter(item => !isProperty(item) && !key(item.name));
+  const rates = records.filter(item => !isProperty(item) && key(item.name));
   for (const record of rates) {
     const signature = item => JSON.stringify([
       key(item.name), key(item.address), key(item.room), key(item.ratePlan), item.price,
@@ -149,7 +156,11 @@ function importedMealEvidence(hotel = {}, parsed = {}) {
     : explicit && quotedLabel === label);
   const qualified = Object.values(quoted).includes("paid") ||
     (Object.values(quoted).includes("excluded") && Object.values(quoted).includes("included"));
-  const meal = qualified ? quote : supported ? hotel.meal : "";
+  const hasAdjacentService = supported && mealNames.length > 0 &&
+    /[,;]|\s+(?:and|и|plus|плюс|\+)\s+/iu.test(hotel.meal) &&
+    hotel.meal.split(/[,;]|\s+(?:and|и|plus|плюс|\+)\s+/iu)
+      .some(part => part.trim() && !Object.keys(vm.mealServiceConditions(part)).length);
+  const meal = qualified || hasAdjacentService ? quote : supported ? hotel.meal : "";
   const description = vm.mealSafeDescription({ ...hotel, meal });
   return { ...hotel, meal, description };
 }

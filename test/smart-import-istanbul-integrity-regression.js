@@ -32,6 +32,31 @@ assert(ambiguous.hotels.every(option => option.transferOnRequest === undefined))
 assert.deepEqual(ambiguous.propertyReview[0].candidateSourceIds, ["SRC-2", "SRC-6"]);
 assert.equal(smartHotelRecord({ ...fixture["hotel-checkout.jpg"], priceLabel: "Сума" }, "SRC-2").price, 0);
 
+// Production-derived replay of a property response with missing pageKind and a mislabelled credit.
+const propertyReplay = smartHotelRecord({
+  ...fixture["hotel-property.jpg"], pageKind: undefined, description: "Описание и удобства на хотела.",
+  priceRole: "stay_total", priceLabel: "", priceText: "225,07 лв"
+}, "SRC-4");
+const checkoutReplay = { ...checkout, sourceId: "SRC-3" };
+const groupedReplay = groupSmartHotelScreenshots([checkoutReplay, propertyReplay]);
+assert.equal(groupedReplay.hotels.length, 1);
+assert.equal(groupedReplay.hotels[0].price, 190.98);
+assert.deepEqual(groupedReplay.hotels[0].propertySourceIds, ["SRC-4"]);
+assert.equal(groupSmartHotelScreenshots([checkoutReplay, separateRate, propertyReplay]).hotels.length, 2);
+for (const address of ["", "Beta 2"]) {
+  const result = groupSmartHotelScreenshots([checkoutReplay, { ...propertyReplay, address }]);
+  assert.deepEqual(result.hotels[0].propertySourceIds, []);
+  assert.equal(result.propertyReview[0].sourceId, "SRC-4");
+}
+for (const evidence of [{ pageKind: "checkout" }, { room: "Double" }, { occupancy: { adults: 2 } },
+  { priceEvidence: { label: "Общо" } }]) {
+  const result = groupSmartHotelScreenshots([checkoutReplay, { ...propertyReplay, ...evidence }]);
+  assert.deepEqual(result.hotels.map(item => item.sourceId), ["SRC-3", "SRC-4"]);
+}
+assert.equal(smartHotelRecord({ occupancy: { adults: 2, rooms: 1 } }, "SRC-3").occupancy.children, null);
+assert.equal(checkout.occupancy.children, 0);
+assert.notEqual(smartHotelRecord({ amenities: ["Летищен трансфер"] }, "SRC-3").transferOnRequest, true);
+
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "aya-istanbul-integrity-"));
 const port = 42000 + Math.floor(Math.random() * 8000);
 const base = "http://127.0.0.1:" + port;
@@ -68,6 +93,11 @@ harness.paths = Module._nodeModulePaths(path.dirname(filename));
 // Synthetic extraction only. Exercise real grouping, normalization, Apply and persistence.
 harness._compile(fs.readFileSync(filename, "utf8") + `
   const fixtures = { ...require("./test/fixtures/smart-import/istanbul-integrity.json") };
+  fixtures["hotel-checkout-replay.jpg"] = { ...fixtures["hotel-checkout.jpg"],
+    meal: "Закуска и SPA услуги", transferOnRequest: true };
+  fixtures["hotel-property-replay.jpg"] = { ...fixtures["hotel-property.jpg"], pageKind: undefined,
+    description: "Описание и удобства на хотела.", transferOnRequest: undefined,
+    priceRole: "stay_total", priceLabel: "", priceText: "225,07 лв" };
   fixtures["skyscanner-unknown.jpg"] = { ...fixtures["skyscanner.jpg"], totalPrice: undefined,
     priceObservations: [fixtures["skyscanner.jpg"].priceObservations[0]] };
   fixtures["hotel-child.jpg"] = { ...fixtures["hotel-checkout.jpg"], occupancy: {adults:2, children:1, rooms:1, childAges:[7]} };
@@ -89,7 +119,12 @@ harness._compile(fs.readFileSync(filename, "utf8") + `
 
     return { canonical, flight: geminiCanonicalToFlight(canonical) };
   };
-  callVisionJson = async ({imageBuffer}) => structuredClone(fixtures[imageBuffer.toString()]);
+  callVisionJson = async ({imageBuffer, prompt}) => {
+    const name = imageBuffer.toString();
+    if (name === "hotel-checkout-replay.jpg" && (!prompt.includes("even when unchecked") ||
+        !prompt.includes("generic airport shuttle amenity is insufficient"))) throw Error("Missing transfer extraction contract");
+    return structuredClone(fixtures[name]);
+  };
   archiveUniversalSourceEvidenceSafe = ({sources}) => ({sources});
   module.exports.istanbulQa = { app, buildLegacyOfferPrintInput, renderGt63RegistryOfferHtml };
 `, filename);
@@ -111,7 +146,7 @@ async function run() {
     await page.setCookie({ name: "aya_session", value: session, url: base });
     await page.goto(base + "/admin", { waitUntil: "networkidle0" });
     page.on("dialog", dialog => dialog.accept());
-    await page.evaluate(names => {
+    await page.evaluate(({ names, skyscanner }) => {
       const OriginalDate = Date;
       window.Date = class extends OriginalDate {
         constructor(...args) { super(...(args.length ? args : ["2026-11-24T12:00:00Z"])); }
@@ -120,15 +155,16 @@ async function run() {
       window.open = () => null;
       document.getElementById("destination").value = "Истанбул";
       document.getElementById("travelDates").value = "25.11.2026 - 27.11.2026";
-      document.getElementById("guests").value = "2 възрастни";
+      document.getElementById("guests").value = skyscanner ? "2 пътници" : "2 възрастни";
       const transfer = new DataTransfer();
       for (const name of names) transfer.items.add(new File([name], name, { type: "image/jpeg" }));
       document.getElementById("smartImportImage").files = transfer.files;
-    }, Object.keys(fixture));
+    }, { names: Object.keys(fixture).map(name => name.startsWith("hotel") ? name.replace(".jpg", "-replay.jpg") : name), skyscanner });
     await page.evaluate(() => uploadSmartImport());
     const review = await page.$eval("#smartImportReview", node => node.textContent);
-    for (const text of ["225,07 EUR", "credit", "Booking Flights", "Skyscanner"]) assert(review.includes(text), text);
+    for (const text of ["225,07 лв", "Booking Flights", "Skyscanner"]) assert(review.includes(text), text);
     assert.equal(await page.$eval("#reviewHotelPrice0", node => Number(node.value)), 190.98);
+    assert.equal(await page.$("#reviewHotelPrice1"), null);
     await page.select("#reviewFlightCandidate", "1");
     assert.equal(await page.$eval("#universalFlightPrice", node => Number(node.value)), 288);
     const skyDebug = await page.$eval("#smartImportReview details pre", node => JSON.parse(node.textContent).flight);
@@ -172,6 +208,8 @@ async function run() {
     assert.equal(Number(offer.finalPrice.toFixed(2)), advertisedTotal);
     assert.equal(offer.hotels[0].occupancy.confirmed, true);
     assert.equal(offer.hotels[0].nights, 2);
+    assert.equal(offer.hotels[0].meal, "Закуската е включена в цената");
+    assert.equal(offer.hotels[0].transferOnRequest, true);
     assert.equal(offer.hotels[0].nonRefundable, true);
     const proof = offer.hotels[0].importedPrice;
     assert.equal(proof.kind, "checkout");

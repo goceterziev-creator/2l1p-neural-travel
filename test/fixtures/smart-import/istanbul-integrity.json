@@ -28,7 +28,7 @@
     "provider": "Booking Flights",
     "passengers": 2,
     "priceObservations": [
-      {"label":"Общо за всички пътници","text":"294,00 EUR","amount":294,"currency":"EUR","priceUnit":"party-total","routeScope":"round-trip","componentRole":"fare-total","passengerScope":{"count":2,"adults":2,"children":0,"infants":0}}
+      {"label":"Обща цена за всички пасажери","text":"294,00 EUR","amount":294,"currency":"EUR","priceUnit":"party-total","routeScope":"round-trip","componentRole":"fare-total","passengerScope":{"count":2,"adults":2,"children":0,"infants":0}}
     ],
     "price": 294,
     "currency": "EUR",
@@ -41,7 +41,7 @@
     "passengers": 2,
     "priceObservations": [
       {"label":"11 оферти от","text":"144 €","amount":144,"currency":"EUR","priceUnit":"unknown","routeScope":"unknown","componentRole":"unknown"},
-      {"label":"Общо","text":"288 €","amount":288,"currency":"EUR","priceUnit":"party-total","routeScope":"round-trip","componentRole":"fare-total","passengerScope":{"count":2,"adults":2,"children":0,"infants":0}}
+      {"label":"Общо","text":"288 €","amount":288,"currency":"EUR","priceUnit":"party-total","routeScope":"round-trip","componentRole":"fare-total","passengerScope":{"count":2,"adults":null,"children":null,"infants":null}}
     ],
     "price": {"amount":144,"currency":"EUR"},
     "totalPrice": {"amount":288,"currency":"EUR"},

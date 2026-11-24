@@ -120,7 +120,7 @@ function reviewFlightPrice(flight, observations, sourceIds, advertisedPassengerC
   const scope = route?.[1].length ? "round-trip" : "one-way";
   const candidates = observations.filter(item => sourceIds.includes(item.sourceId) &&
     item.priceUnit === "party-total" && item.routeScope === scope && item.componentRole === "fare-total" &&
-    /^(?:общо(?: за всички пътници)?|обща цена(?: за всички пътници)?|крайна цена|(?:grand )?total(?: price)?(?: for all (?:passengers|travelers|travellers))?)[:.]?$/iu.test(item.label));
+    /^(?:общо(?: за всички (?:пътници|пасажери))?|обща цена(?: за всички (?:пътници|пасажери))?|крайна цена|(?:grand )?total(?: price)?(?: for all (?:passengers|travelers|travellers))?)[:.]?$/iu.test(item.label));
   if (!route || !candidates.length) return { warning: "FLIGHT_PRICE_SCOPE_UNKNOWN" };
   // Match a single transcribed monetary amount, not a combined tax/fee line.
   const valid = item => item.passengerScope.count !== null &&
