@@ -2921,6 +2921,13 @@
           <h3>Hotel Details</h3>
 
 <div id="hotelCards"></div>
+<details id="offerUpdateDiagnostic" hidden>
+  <summary>Диагностика на Update — категория на хотел</summary>
+  <p>Само за следващия Update на отворената оферта. Диагностиката остава в тази страница.</p>
+  <button type="button" id="armOfferUpdateDiagnostic" onclick="armOfferUpdateDiagnostic()">Активирай за следващия Update</button>
+  <button type="button" id="copyOfferUpdateDiagnostic" hidden onclick="copyOfferUpdateDiagnostic()">Копирай JSON</button>
+  <pre class="debug-pre" id="offerUpdateDiagnosticJson" aria-live="polite" style="white-space:pre-wrap; overflow-wrap:anywhere; max-height:24rem; overflow:auto"></pre>
+</details>
 
 <button type="button" id="addHotelBtn">
   + Add Hotel

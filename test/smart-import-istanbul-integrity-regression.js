@@ -339,6 +339,188 @@ async function run() {
     assert.equal(offer.flights.length, 1);
     console.log("PASS local Admin save/readback 200/200", baseTotal, advertisedTotal);
 
+    if (process.argv.includes("--offer-update-diagnostic")) {
+      await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+      const url = base + "/api/offers/" + id;
+      const requests = [];
+      page.on("request", request => {
+        if (request.url() === url) requests.push(request.method());
+      });
+      const field = "#hotelCards [data-classification-input]";
+      const open = async () => {
+        await page.evaluate(offerId => editOffer(offerId), id);
+        assert.equal(await page.$eval("#offerUpdateDiagnosticJson", node => node.textContent), "");
+      };
+      const arm = async () => {
+        await page.click("#offerUpdateDiagnostic summary");
+        await page.click("#armOfferUpdateDiagnostic");
+      };
+      const readDiagnostic = () => page.$eval("#offerUpdateDiagnosticJson", node => JSON.parse(node.textContent));
+      const waitForDiagnostic = () => page.waitForFunction(() => {
+        const text = document.getElementById("offerUpdateDiagnosticJson").textContent;
+        return text && JSON.parse(text).readback;
+      });
+      await open();
+      requests.length = 0;
+      await page.evaluate(() => saveOffer());
+      assert.deepEqual(requests, ["PUT"]);
+
+      await open();
+      await page.evaluate(() => {
+        const role = currentUser.role;
+        currentUser.role = "agent";
+        armOfferUpdateDiagnostic();
+        if (offerUpdateDiagnostic) throw Error("Non-admin armed the diagnostic");
+        currentUser.role = role;
+      });
+      await arm();
+      await page.focus(field);
+      await page.keyboard.press("Tab");
+      await page.focus(field);
+      await page.$eval(field, node => node.select());
+      await page.keyboard.type("5");
+      await page.keyboard.press("Tab");
+      const sanitized = await page.evaluate(() => diagnosticClassification({
+        hotelStars: "DO-NOT-EXPOSE-SECRET", hotels: [{ classificationProvenance: {
+          kind: "operator-correction", sourceIds: ["SRC-1", "DO-NOT-EXPOSE-SECRET"],
+          actorId: "admin@example.test"
+        } }]
+      }));
+      assert.deepEqual(sanitized.legacyHotelStars, { state: "REDACTED" });
+      assert.deepEqual(sanitized.hotels[0].stars, { state: "MISSING" });
+      assert.deepEqual(sanitized.hotels[0].provenance.sourceIds, ["SRC-1"]);
+      assert(!JSON.stringify(sanitized).includes("DO-NOT-EXPOSE") && !JSON.stringify(sanitized).includes("example.test"));
+      requests.length = 0;
+      await page.evaluate(() => saveOffer());
+      await waitForDiagnostic();
+      assert.deepEqual(requests, ["PUT", "GET"]);
+      const report = await readDiagnostic();
+      assert.deepEqual(new Set(report.events.map(event => event.type)), new Set(["blur", "input", "change"]));
+      assert(report.events.every(event => Object.keys(event).sort().join(",") === "hotelIndex,timestamp,type,value"));
+      assert.equal(report.beforeCollectForm.hotels[0].stars.value, "5");
+      assert.equal(report.beforeSerialization.hotels[0].provenance.kind, "operator-correction");
+      assert.deepEqual(report.serializedPut.legacyHotelStars, { state: "VALUE", value: "5" });
+      assert.deepEqual(report.serializedPut.hotels[0].provenance.value, { state: "VALUE", value: "5" });
+      assert.equal(report.update.returned.hotels[0].stars.value, "5");
+      assert.equal(report.serverIntermediateNormalization, "UNOBSERVED");
+      assert.equal(report.readback.state, "SAME_VERSION");
+      assert.equal(report.update.http, 200);
+      assert.equal(report.readback.http, 200);
+      assert.equal(report.transaction.offerId, id);
+      assert.match(report.transaction.expectedVersion, /^[a-f0-9]{64}$/);
+      assert.equal(report.transaction.putOfferVersion, report.transaction.getOfferVersion);
+      assert.notEqual(report.transaction.expectedVersion, report.transaction.putOfferVersion);
+      assert.equal(report.assessment.status, "PASS");
+      assert.equal(report.assessment.firstObservedDivergence, null);
+      assert.equal(report.readback.returned.hotels[0].stars.value, "5");
+      assert(!JSON.stringify(report).includes("DO-NOT-EXPOSE"));
+      await page.evaluate(() => {
+        const copy = copyText;
+        copyText = text => { window.qaDiagnosticClipboard = text; };
+        copyOfferUpdateDiagnostic();
+        copyText = copy;
+      });
+      assert.deepEqual(JSON.parse(await page.evaluate(() => window.qaDiagnosticClipboard)), report);
+
+      await open();
+      await page.evaluate(() => addHotel({ name: "QA second hotel", stars: "3", price: 1 }));
+      await arm();
+      await page.focus(field);
+      await page.$eval(field, node => node.select());
+      await page.keyboard.press("Backspace");
+      await page.keyboard.press("Tab");
+      const second = field + '[data-classification-input="1"]';
+      await page.focus(second);
+      await page.$eval(second, node => node.select());
+      await page.keyboard.type("4");
+      await page.keyboard.press("Tab");
+      const clearRequest = page.waitForRequest(request => request.url() === url && request.method() === "PUT");
+      requests.length = 0;
+      await page.evaluate(() => saveOffer());
+      await waitForDiagnostic();
+      assert.deepEqual(requests, ["PUT", "GET"]);
+      assert.equal(JSON.parse((await clearRequest).postData()).hotels[0].stars, "");
+      const cleared = await readDiagnostic();
+      assert.equal(cleared.update.http, 200);
+      assert.equal(cleared.readback.state, "SAME_VERSION");
+      for (const snapshot of [cleared.serializedPut, cleared.update.returned, cleared.readback.returned]) {
+        assert.deepEqual(snapshot.hotels[0].stars, { state: "UNKNOWN", value: "" });
+        assert.deepEqual(snapshot.hotels[1].stars, { state: "VALUE", value: "4" });
+      }
+      assert(cleared.events.some(event => event.hotelIndex === 0 && event.type === "input" && event.value.value === ""));
+      assert(cleared.events.some(event => event.hotelIndex === 0 && event.type === "change" && event.value.value === ""));
+      assert(cleared.events.some(event => event.hotelIndex === 1 && event.type === "change" && event.value.value === "4"));
+      assert.equal(cleared.assessment.status, "PASS");
+
+      const divergent = await page.evaluate(report => {
+        report.serializedPut.hotels[1].stars.value = "3";
+        return assessOfferUpdateDiagnostic(report);
+      }, cleared);
+      assert.deepEqual(divergent.firstObservedDivergence, { stage: "SERIALIZED_PUT", hotelIndex: 1, status: "FAIL" });
+
+      const beforeForeign = fs.readFileSync(process.env.DB_FILE);
+      const foreignCookie = "aya_session=" + sessionFor("QA2");
+      assert.equal((await fetch(url, { headers: { cookie: foreignCookie } })).status, 403);
+      assert.equal((await fetch(url, { method: "PUT", headers: { cookie: foreignCookie, "content-type": "application/json" },
+        body: JSON.stringify({ expectedVersion: cleared.transaction.getOfferVersion }) })).status, 403);
+      assert.deepEqual(fs.readFileSync(process.env.DB_FILE), beforeForeign);
+      await open();
+      await arm();
+      await page.evaluate(() => cancelEdit());
+      assert.equal(await page.$eval("#offerUpdateDiagnosticJson", node => node.textContent), "");
+      assert.equal(await page.$eval("#offerUpdateDiagnostic", node => node.hidden), true);
+
+      await open();
+      await arm();
+      await page.focus(second);
+      await page.$eval(second, node => node.select());
+      await page.keyboard.type("5");
+      await page.keyboard.press("Tab");
+      await page.evaluate(() => {
+        const original = window.fetch;
+        window.fetch = async (...args) => {
+          const response = await original(...args);
+          if (String(args[0]) === "/api/offers/" + editingDiagnosticOffer() && args[1]?.cache === "no-store") {
+            return new Response(JSON.stringify({ ...(await response.json()), offerVersion: "f".repeat(64) }), { status: 200 });
+          }
+          return response;
+        };
+        function editingDiagnosticOffer() { return offerUpdateDiagnostic?.offerId; }
+      });
+      await page.evaluate(() => saveOffer());
+      await waitForDiagnostic();
+      const drift = await readDiagnostic();
+      assert.deepEqual(drift.serializedPut.hotels[0].stars, { state: "UNKNOWN", value: "" });
+      assert.deepEqual(drift.serializedPut.hotels[0].provenance.actorId, undefined);
+      assert.equal(drift.readback.state, "UNKNOWN");
+      assert.equal(drift.readback.versionDrift, true);
+      assert.equal(drift.transaction.getOfferVersion, "f".repeat(64));
+      assert.equal(drift.assessment.status, "UNKNOWN");
+      assert.deepEqual(drift.assessment.checks.map(check => check.status), ["PASS", "PASS", "PASS", "UNKNOWN"]);
+      assert.equal(await page.evaluate(report => assessOfferUpdateDiagnostic({ ...report, hotelOrderChanged: true }).status,
+        cleared), "UNKNOWN");
+
+      await open();
+      await arm();
+      await page.evaluate(() => { editingOfferVersion = "stale"; });
+      requests.length = 0;
+      await page.evaluate(() => saveOffer());
+      assert.deepEqual(requests, ["PUT"]);
+      assert.deepEqual((await readDiagnostic()).update, { state: "REJECTED_OR_UNAVAILABLE", http: 409, code: "OFFER_VERSION_CONFLICT" });
+      assert.equal((await readDiagnostic()).readback.state, "NOT_EXECUTED");
+
+      await open();
+      await arm();
+      await page.evaluate(() => { diagnosticClassification = () => { throw Error("Synthetic capture failure"); }; });
+      const savedAfterFailure = page.waitForResponse(response => response.url() === url && response.request().method() === "PUT");
+      requests.length = 0;
+      await page.evaluate(() => saveOffer());
+      assert.equal((await savedAfterFailure).status(), 200);
+      assert.deepEqual(requests, ["PUT"]);
+      console.log("PASS Android-sized Update diagnostic, trusted control events, redaction, PUT/GET, version drift, rejection and non-blocking capture failure");
+      return;
+    }
+
     const saveStarValue = async value => {
       await page.evaluate(offerId => editOffer(offerId), id);
       const selector = "#hotelCards .hotel-card input[placeholder=\"Unknown\"]";

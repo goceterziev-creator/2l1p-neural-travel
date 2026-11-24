@@ -153,8 +153,9 @@ function persistNavigationState() {
   });
 }
 
-async function fetchJson(url, options = {}) {
+async function fetchJson(url, options = {}, observeStatus) {
   const res = await fetch(url, options);
+  try { observeStatus?.(res.status); } catch { /* Optional observation. */ }
 
   let data = null;
   const contentType = res.headers.get("content-type") || "";
@@ -2589,8 +2590,171 @@ function setValue(id, value = "") {
   if (el) el.value = value ?? "";
 }
 
-function setEditMode(offerId = null, offerVersion = null) {
+let offerUpdateDiagnostic = null;
+
+function canUseOfferUpdateDiagnostic() {
+  return roleLabel() === "ADMIN" && hasCapability("offers.update") && hasCapability("offers.view");
+}
+
+function diagnosticStars(object, key) {
+  if (!object || !Object.hasOwn(object, key)) return { state: "MISSING" };
+  const value = object[key];
+  if (value === null || value === "") return { state: "UNKNOWN", value };
+  if (["string", "number"].includes(typeof value) && /^[0-5](?:[.,][0-9])?\s*\u2605?$/u.test(String(value).trim())) {
+    return { state: "VALUE", value };
+  }
+  return { state: "REDACTED" };
+}
+
+function diagnosticClassification(offer) {
+  return {
+    legacyHotelStars: diagnosticStars(offer, "hotelStars"),
+    hotels: (Array.isArray(offer.hotels) ? offer.hotels : []).slice(0, 20).map((hotel, index) => {
+      const provenance = hotel?.classificationProvenance;
+      return {
+        index, selected: hotel?.selected === true,
+        stars: diagnosticStars(hotel, "stars"),
+        provenance: !provenance ? { state: "MISSING" } : {
+          kind: ["source", "operator-correction"].includes(provenance.kind) ? provenance.kind : "REDACTED",
+          sourceStars: diagnosticStars(provenance, "sourceStars"),
+          value: diagnosticStars(provenance, "value"),
+          sourceIds: Array.isArray(provenance.sourceIds) ? provenance.sourceIds.filter(id => typeof id === "string" && /^SRC-[1-8]$/.test(id)).slice(0, 8) : [],
+          ...(typeof provenance.actorId === "string" && /^(?:USR|USER|U)-[a-z0-9-]{1,60}$/i.test(provenance.actorId) ? { actorId: provenance.actorId } : {}),
+          ...(typeof provenance.correctedAt === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(provenance.correctedAt) ? { correctedAt: provenance.correctedAt } : {})
+        }
+      };
+    })
+  };
+}
+
+function diagnosticOfferVersion(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value) ? value : null;
+}
+
+function diagnosticHttpOutcome(http, data) {
+  const code = data?.details?.code || data?.error;
+  const safeCodes = ["OFFER_VERSION_CONFLICT", "AYA_FLIGHT_DATA_CONFLICT", "AYA_FLIGHT_DATE_BLOCKED",
+    "CHECKOUT_REFERENCE_INVALID", "CHECKOUT_HOTEL_RATE_MISMATCH", "CHECKOUT_COMMERCIAL_SCOPE_MISMATCH",
+    "CHECKOUT_COMMERCIAL_SCOPE_UNAVAILABLE", "CHECKOUT_AMOUNT_OR_FX_MISMATCH", "FLIGHT_OPERATOR_PRICE_INVALID",
+    "FLIGHT_PRICE_REFERENCE_INVALID", "FLIGHT_PRICE_ROUTE_MISMATCH", "FLIGHT_PRICE_ITINERARY_MISMATCH",
+    "FLIGHT_PRICE_PASSENGERS_MISMATCH", "FLIGHT_PRICE_AMOUNT_OR_FX_MISMATCH", "FLIGHT_PRICE_MULTIPLE_CANDIDATES",
+    "FLIGHT_PRICE_PROVENANCE_REQUIRED", "SMART_IMPORT_CLASSIFICATION_SOURCE_MISMATCH", "SMART_IMPORT_INTAKE_INVALID",
+    "SMART_IMPORT_INTAKE_UNKNOWN", "SMART_IMPORT_INTAKE_AGENCY_MISMATCH", "SMART_IMPORT_INTAKE_UNRELATED",
+    "SMART_IMPORT_INTAKE_STALE"];
+  return {
+    ...(Number.isInteger(http) && http >= 100 && http <= 599 && { http }),
+    ...(safeCodes.includes(code) && { code })
+  };
+}
+
+function assessOfferUpdateDiagnostic(report) {
+  if (report.hotelOrderChanged) return { status: "UNKNOWN", firstObservedDivergence: null, checks: [] };
+  const intents = new Map();
+  for (const event of report.events) {
+    if (event.type !== "blur") intents.set(event.hotelIndex, event.value);
+  }
+  const stages = [
+    ["CANONICAL", report.beforeCollectForm],
+    ["SERIALIZED_PUT", report.serializedPut],
+    ["PUT_RESPONSE", report.update?.returned],
+    ["SAME_VERSION_GET", report.readback?.state === "SAME_VERSION" ? report.readback.returned : null]
+  ];
+  const comparable = entry => ["VALUE", "UNKNOWN", "MISSING"].includes(entry?.state);
+  const checks = stages.flatMap(([stage, snapshot], index) =>
+    [...intents].sort(([a], [b]) => a - b).map(([hotelIndex, intent]) => {
+      const before = index === 0 ? intent : stages[index - 1][1]?.hotels?.[hotelIndex]?.stars;
+      const after = snapshot?.hotels?.[hotelIndex]?.stars;
+      const status = !comparable(before) || !comparable(after) ? "UNKNOWN"
+        : before.state === after.state && String(before.value ?? "").trim() === String(after.value ?? "").trim()
+          ? "PASS" : "FAIL";
+      return { stage, hotelIndex, status };
+    }));
+  const firstObservedDivergence = checks.find(check => check.status === "FAIL") || null;
+  return { status: firstObservedDivergence ? "FAIL" : !checks.length || checks.some(check => check.status === "UNKNOWN")
+    ? "UNKNOWN" : "PASS", firstObservedDivergence, checks };
+}
+
+function renderOfferUpdateDiagnostic() {
+  const panel = $("offerUpdateDiagnostic");
+  if (!panel) return;
+  const enabled = canUseOfferUpdateDiagnostic();
+  const diagnostic = enabled ? offerUpdateDiagnostic : null;
+  panel.hidden = !enabled || (!editingOfferId && !diagnostic);
+  $("armOfferUpdateDiagnostic").hidden = !editingOfferId || diagnostic?.state === "ARMED" || diagnostic?.state === "CAPTURING";
+  $("copyOfferUpdateDiagnostic").hidden = !diagnostic || ["ARMED", "CAPTURING"].includes(diagnostic.state);
+  $("offerUpdateDiagnosticJson").textContent = diagnostic ? JSON.stringify(diagnostic.report, null, 2) : "";
+  if (!diagnostic) panel.open = false;
+}
+
+function armOfferUpdateDiagnostic() {
+  if (!editingOfferId || !canUseOfferUpdateDiagnostic()) return;
+  offerUpdateDiagnostic = { offerId: editingOfferId, state: "ARMED",
+    report: { events: [], serverIntermediateNormalization: "UNOBSERVED",
+      transaction: { offerId: /^OFF-\d{13}-[a-z0-9]{5}$/i.test(editingOfferId) ? editingOfferId : null,
+        expectedVersion: null, putOfferVersion: null, getOfferVersion: null } } };
+  renderOfferUpdateDiagnostic();
+}
+
+function copyOfferUpdateDiagnostic() {
+  if (!canUseOfferUpdateDiagnostic() || !offerUpdateDiagnostic ||
+      ["ARMED", "CAPTURING"].includes(offerUpdateDiagnostic.state)) return;
+  copyText(JSON.stringify(offerUpdateDiagnostic.report, null, 2), "Diagnostic JSON");
+}
+
+for (const type of ["input", "change", "blur"]) {
+  document.addEventListener(type, event => {
+    try {
+      const diagnostic = offerUpdateDiagnostic;
+      if (!event.isTrusted || !diagnostic || diagnostic.state !== "ARMED" ||
+          diagnostic.offerId !== editingOfferId || !canUseOfferUpdateDiagnostic() ||
+          !event.target.matches?.("#hotelCards [data-classification-input]")) return;
+      const hotelIndex = Number(event.target.dataset.classificationInput);
+      if (!Number.isInteger(hotelIndex) || hotelIndex < 0 || hotelIndex >= Math.min(hotels.length, 20)) return;
+      const events = diagnostic.report.events;
+      if (events.length >= 30) events.shift();
+      events.push({ type, hotelIndex, value: diagnosticStars({ value: event.target.value }, "value"),
+        timestamp: new Date().toISOString() });
+    } catch { /* Observation is optional. */ }
+  }, true);
+}
+
+async function readOfferUpdateDiagnostic(diagnostic, result, http) {
+  try {
+    if (!canUseOfferUpdateDiagnostic() || offerUpdateDiagnostic !== diagnostic) return;
+    diagnostic.report.transaction.putOfferVersion = diagnosticOfferVersion(result.offerVersion);
+    diagnostic.report.update = { state: "RETURNED", ...diagnosticHttpOutcome(http, result),
+      returned: diagnosticClassification(result.offer) };
+    const response = await fetch(`/api/offers/${encodeURIComponent(diagnostic.offerId)}`,
+      { cache: "no-store", credentials: "same-origin", redirect: "error", signal: AbortSignal.timeout(5000) });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      diagnostic.report.readback = { state: "UNKNOWN", ...diagnosticHttpOutcome(response.status, data) };
+    } else {
+      const data = await response.json();
+      const putVersion = diagnostic.report.transaction.putOfferVersion;
+      const getVersion = diagnosticOfferVersion(data.offerVersion);
+      diagnostic.report.transaction.getOfferVersion = getVersion;
+      const sameVersion = Boolean(putVersion && getVersion === putVersion);
+      diagnostic.report.readback = {
+        state: sameVersion ? "SAME_VERSION" : "UNKNOWN",
+        ...diagnosticHttpOutcome(response.status, data),
+        versionDrift: putVersion && getVersion ? !sameVersion : null,
+        ...(data.offer ? { returned: diagnosticClassification(data.offer) } : {})
+      };
+    }
+  } catch {
+    diagnostic.report.readback = { state: "UNKNOWN" };
+  } finally {
+    diagnostic.report.assessment = assessOfferUpdateDiagnostic(diagnostic.report);
+    diagnostic.state = "COMPLETE";
+    if (offerUpdateDiagnostic === diagnostic) renderOfferUpdateDiagnostic();
+  }
+}
+
+function setEditMode(offerId = null, offerVersion = null, completedDiagnostic = null) {
+  offerUpdateDiagnostic = completedDiagnostic;
   editingOfferId = offerId;
+  try { renderOfferUpdateDiagnostic(); } catch { /* Saving and editing remain available. */ }
   editingOfferVersion = offerId ? offerVersion : null;
   const isEditing = Boolean(offerId);
   if (!isEditing) window.currentValidationWarnings = [];
@@ -3733,6 +3897,15 @@ async function saveOffer() {
   }
   flights = reviewedFlights;
   syncPrimaryFlightDateFields();
+  let diagnostic = null;
+  try {
+    if (offerUpdateDiagnostic?.state === "ARMED" && offerUpdateDiagnostic.offerId === editingOfferId &&
+        canUseOfferUpdateDiagnostic()) {
+      diagnostic = offerUpdateDiagnostic;
+      const mirror = $("hotelStars");
+      diagnostic.report.beforeCollectForm = diagnosticClassification({ hotels, ...(mirror && { hotelStars: mirror.value }) });
+    }
+  } catch { diagnostic = null; }
   const payload = collectForm();
 
   payload.flights = flights.map(normalizeFlightFields);
@@ -3815,18 +3988,41 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
     alert("Destination is required.");
     return;
   }
+  let updateReturned = false;
+  let updateHttp;
   try {
     const wasEditing = Boolean(editingOfferId);
     const editId = editingOfferId;
 
+    if (diagnostic !== offerUpdateDiagnostic || diagnostic?.offerId !== editId ||
+        diagnostic?.state !== "ARMED" || !wasEditing) diagnostic = null;
+    if (diagnostic) {
+      try {
+        const mirror = $("hotelStars");
+        diagnostic.report.beforeSerialization = diagnosticClassification({ hotels, ...(mirror && { hotelStars: mirror.value }) });
+      } catch { diagnostic.report.beforeSerialization = { state: "UNKNOWN" }; }
+    }
+    const body = JSON.stringify(wasEditing ? { ...payload, expectedVersion: editingOfferVersion } : payload);
+    if (diagnostic) {
+      diagnostic.state = "CAPTURING";
+      try {
+        const serialized = JSON.parse(body);
+        diagnostic.report.transaction.expectedVersion = diagnosticOfferVersion(serialized.expectedVersion);
+        diagnostic.report.serializedPut = diagnosticClassification(serialized);
+      }
+      catch { diagnostic.report.serializedPut = { state: "UNKNOWN" }; }
+    }
     const result = await fetchJson(wasEditing ? `/api/offers/${editId}` : "/api/offers", {
       method: wasEditing ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(wasEditing ? { ...payload, expectedVersion: editingOfferVersion } : payload)
-    });
+      body
+    }, diagnostic ? http => { updateHttp = http; } : undefined);
 
+    updateReturned = Boolean(result?.offer);
     alert(wasEditing ? `Offer updated: ${result.offer.id}` : `Offer saved: ${result.offer.id}`);
-    setEditMode(null);
+    const completedDiagnostic = offerUpdateDiagnostic === diagnostic ? diagnostic : null;
+    setEditMode(null, null, completedDiagnostic);
+    if (completedDiagnostic) void readOfferUpdateDiagnostic(completedDiagnostic, result, updateHttp).catch(() => {});
     if (!wasEditing) setCreateSurfaceOpen(false);
 
     await loadStats();
@@ -3836,6 +4032,16 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
       window.open(`/api/offers/view/${result.offer.id}`, "_blank");
     }
   } catch (error) {
+    if (!updateReturned && diagnostic && offerUpdateDiagnostic === diagnostic) {
+      try {
+        diagnostic.report.update = { state: "REJECTED_OR_UNAVAILABLE",
+          ...diagnosticHttpOutcome(updateHttp ?? error.status, error.response) };
+        diagnostic.report.readback = { state: "NOT_EXECUTED" };
+        diagnostic.report.assessment = assessOfferUpdateDiagnostic(diagnostic.report);
+        diagnostic.state = "COMPLETE";
+        renderOfferUpdateDiagnostic();
+      } catch { /* The original save error still reaches the operator. */ }
+    }
     if (/^FLIGHT_(?:PRICE|OPERATOR_PRICE)_/.test(error.details?.code || "")) {
       alert(`Полетен вариант ${error.details.flightIndex + 1}: ${error.details.code}. Проверете маршрута, пътниците и цената или изберете „Използвай операторска полетна цена“.`);
       return;
@@ -4187,7 +4393,7 @@ function renderHotelCards() {
         <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;hotels[${i}].occupancy={...hotels[${i}].occupancy,confirmed:false};renderHotelCards();updateAutoPrice();" />
       </label>
       <label>Stars
-        <input placeholder="Unknown" value="${escapeHtml(h.stars || "")}" onchange="setHotelStars(${i}, this.value)" />
+        <input data-classification-input="${i}" placeholder="Unknown" value="${escapeHtml(h.stars || "")}" onchange="setHotelStars(${i}, this.value)" />
       </label>
       <label>Area
         <input placeholder="Not specified" value="${escapeHtml(h.area || "")}" onchange="hotels[${i}].area=this.value;updateAutoPrice();" />
@@ -4278,6 +4484,7 @@ function renderHotelCards() {
 }
 
 function addHotel(hotel = {}) {
+  if (offerUpdateDiagnostic?.state === "ARMED") offerUpdateDiagnostic.report.hotelOrderChanged = true;
   hotels.push({
     id: hotel.id || "",
     occupancy: globalThis.AYAHotelOccupancy.normalize({ ...hotel.occupancy, confirmed: false }),
@@ -4317,6 +4524,7 @@ function addHotel(hotel = {}) {
 }
 
 function removeHotel(index) {
+  if (offerUpdateDiagnostic?.state === "ARMED") offerUpdateDiagnostic.report.hotelOrderChanged = true;
   hotels.splice(index, 1);
 
   if (hotels.length && !hotels.some(h => h.selected)) {
@@ -4342,6 +4550,8 @@ function setHotelStars(index, value) {
 }
 
 function clearForm() {
+  offerUpdateDiagnostic = null;
+  try { renderOfferUpdateDiagnostic(); } catch { /* Form clearing remains available. */ }
   appliedSmartImportIntakeId = "";
   if (editingOfferId) setEditMode(null);
 
