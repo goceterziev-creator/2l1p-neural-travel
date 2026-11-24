@@ -36,7 +36,8 @@ const presentationViewModel = require("./gt63-core/presentation-view-model");
 const { buildLegacyOfferPrintInput } = require("./gt63-core/legacy-offer-print-input");
 const { prepareHotelPrintImages, verifiedHotelImagePath } = require("./gt63-core/hotel-print-images");
 
-const { normalizeHotelMoney, groupHotelScreenshots, hotelReviewWarnings } = require("./server/smart-import-hotel-review");
+const smartImportPriceBinding = require("./server/smart-import-price-binding");
+const { normalizeHotelMoney, groupHotelScreenshots, hotelReviewWarnings, smartHotelRecord, groupSmartHotelScreenshots, hotelBookingConditions } = require("./server/smart-import-hotel-review");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -1984,6 +1985,18 @@ function withBulgarianFlightDisplay(flight = {}) {
   return normalized;
 }
 
+function storedFlightImportSelection(selection) {
+  if (!selection || typeof selection !== "object") return {};
+  const summary = item => ({
+    provider: ["Booking Flights", "Skyscanner", "Kayak"].includes(item.provider) ? item.provider : "",
+    sourceIds: safeArray(item.sourceIds).filter(id => typeof id === "string" && /^SRC-[1-8]$/.test(id)),
+    amount: Math.max(0, toNumber(item.amount, 0)),
+    currency: /^[A-Z]{3}$/.test(item.currency || "") ? item.currency : ""
+  });
+  return { importSelection: { ...summary(selection), alternatives: safeArray(selection.alternatives)
+    .filter(item => item && typeof item === "object").slice(0, 7).map(summary) } };
+}
+
 function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
   const outboundSegments = normalizeStoredFlightSegments(f.outboundSegments);
   const inboundSegments = normalizeStoredFlightSegments(f.inboundSegments);
@@ -1992,6 +2005,7 @@ function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
   );
 
   return withBulgarianFlightDisplay({
+    ...storedFlightImportSelection(f.importSelection),
     ...(f.dateResolution?.version === 2 ? { dateResolution: cloneJsonSafe(f.dateResolution) } : {}),
     airline: f.airline || "",
     route: f.route || "",
@@ -2114,6 +2128,7 @@ const hotels = inputHotels.length
   ? inputHotels.map((h, index) => ({
       id: h.id || "",
       occupancy: hotelOccupancyQa.normalize(h.occupancy),
+      ...hotelBookingConditions(h),
       name: h.name || "",
       stars: h.stars || "",
       area: h.area || "",
@@ -2122,6 +2137,14 @@ const hotels = inputHotels.length
       meal: h.meal || "",
       price: toNumber(h.price, 0),
       currency: h.currency || body.currency || "EUR",
+      ...(h.importedPrice?.kind === "checkout" && h.importedPrice.version === 2 ? {
+        importedPrice: { kind: "checkout", version: h.importedPrice.version, referenceId: h.importedPrice.referenceId, intakeId: h.importedPrice.intakeId,
+          sourceId: h.importedPrice.sourceId, sourceIds: [h.importedPrice.sourceId] }
+      } : h.importedPrice?.kind === "operator" ? { importedPrice: { kind: "operator", sourceIds: [] } } : {}),
+      ...(h.address ? { address: h.address } : {}),
+      ...(h.ratePlan ? { ratePlan: h.ratePlan } : {}),
+      ...(h.stayDates ? { stayDates: h.stayDates } : {}),
+      ...(Array.isArray(h.propertySourceIds) ? { propertySourceIds: h.propertySourceIds.filter(id => /^SRC-[1-8]$/.test(id)) } : {}),
       sourcePrice: h.sourcePrice,
       sourceCurrency: h.sourceCurrency,
       exchangeRate: h.exchangeRate,
@@ -6254,7 +6277,7 @@ function projectOfferNotices(offer) {
 
 function clientBaggageProjection(offer) {
   const copy = {...offer};
-  for (const key of ["flights","flightOptions"]) if (Array.isArray(copy[key])) copy[key] = copy[key].map(flight=>({...flight,baggage:presentationViewModel.baggageLabel(flight.baggage)}));
+  for (const key of ["flights","flightOptions"]) if (Array.isArray(copy[key])) copy[key] = copy[key].map(({ importSelection, ...flight })=>({...flight,baggage:presentationViewModel.baggageLabel(flight.baggage)}));
   if (copy.proposalInput?.flight) copy.proposalInput = {...copy.proposalInput,flight:{...copy.proposalInput.flight,baggage:presentationViewModel.baggageLabel(copy.proposalInput.flight.baggage)}};
   return copy;
 }
@@ -8055,6 +8078,8 @@ async function renderOfferHtml(offer, options = {}) {
 
         <div class="detail-grid">
           <div><strong>Стая</strong><br>${escapeHtml(detailValue(hotel.room))}</div>
+          ${presentationViewModel.hotelBookingFacts(hotel).map(([label, value]) =>
+            `<div><strong>${escapeHtml(label)}</strong><br>${escapeHtml(value)}</div>`).join("")}
           <div><strong>Изхранване</strong><br>${escapeHtml(detailValue(presentationViewModel.paidMealText(hotel.meal)))}</div>
           <div><strong>Хотелска заетост</strong><br>${escapeHtml(hotelOccupancyQa.label(hotel.occupancy))}</div>
           <div><strong>Локация</strong><br>${escapeHtml(detailValue(cleanBrochureLocation(hotel.area, destinationName)))}</div>
@@ -9288,12 +9313,20 @@ app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
   res.json({ success: true, offerVersion: offerRecordVersion(offer), offer: { ...withBulgarianOfferFlightDisplay(offer), validationWarnings: flightSafetyWarnings(offer), flightDateSafety: flightDateSafety(offer), hotelOccupancyStatus: hotelOccupancyQa.summary(offer), noticeReview: offerNotices.adminState(offer) } });
 });
 
+function bindSmartImportOfferPrices(body, db, req, previous) {
+  return smartImportPriceBinding.bindOfferPrices({
+    body, agencyId: previous ? entityAgencyId(previous) : getCurrentAgencyId(req),
+    intakes: db.smartImportPriceEvidenceV1, previous,
+    invalid: (hotelIndex, code, fields) => routeError(`Невалидно checkout доказателство за хотелски вариант ${hotelIndex + 1}: ${code}`, 422, { hotelIndex, code, fields })
+  });
+}
+
 app.post("/api/offers", requireCapability("offers.create"), async (req, res) => {
   try {
     let response;
     await mutateDb((db) => {
       assertFlightDataConsistency(req.body);
-      const offer = normalizeOffer(req.body);
+      const offer = normalizeOffer(bindSmartImportOfferPrices(req.body, db, req));
       assertClientStatusSafety(offer);
       offer.agencyId = getCurrentAgencyId(req);
       offer.createdBy = req.user.id;
@@ -9340,7 +9373,7 @@ app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) 
         throw routeError("Offer changed or version missing. Reopen the offer before saving; your edits have not been saved.", 409, { code: "OFFER_VERSION_CONFLICT" });
       }
       assertFlightDataConsistency(req.body);
-      const normalized = normalizeOffer(req.body);
+      const normalized = normalizeOffer(bindSmartImportOfferPrices(req.body, db, req, previous));
       const previousWarnings = uniqueWarnings(previous.validationWarnings).join("\n");
       const nextWarnings = uniqueWarnings(normalized.validationWarnings).join("\n");
       const updated = {
@@ -11683,10 +11716,10 @@ async function buildSmartImportHotelOption(hotel = {}, parsed = {}, destination 
   return option;
 }
 
-async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true, hotelLink = "", hotelLinks = [] } = {}) {
+async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true, hotelLink = "", hotelLinks = [], smartSources = null } = {}) {
   const parsedHotels = [];
   const rawParsedHotels = [];
-  for (const file of imageFiles) {
+  for (const [index, file] of imageFiles.entries()) {
     let parsed = await callVisionJson({
       imageBuffer: file.buffer,
       mimeType: file.mimetype || "image/png",
@@ -11730,10 +11763,12 @@ Rules:
 - description should be short, client-friendly Bulgarian, based only on visible info
 - translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
 - if not visible, use empty string or 0
+${smartSources ? `For Smart Import also return pageKind (property, checkout, or unknown), priceRole (stay_total, per_person, tax, discount, credit, cancellation_fee, add_on, or unknown), and priceLabel (verbatim label on the same row as priceText). A Genius balance is a credit, including on a property page. For a visible non-total amount preserve its role, label and exact amount in these evidence fields; never label it stay_total.
+Return ratePlan and stayDates only when visible, occupancy as {adults, children, rooms, childAges} with null for unknown, nights as an integer or null, nonRefundable true for an explicit non-refundable rate, false for an explicitly refundable rate, or null when unstated; transferOnRequest true for explicit availability on request, false for explicit unavailability, or null when unstated. Never assume zero children or infer occupancy from a room name. Keep transfer and cancellation claims out of description and amenities.` : ""}
 `
     });
-    parsed = normalizeHotelMoney(parsed);
-    if (parsed.name && !(parsed.price > 0)) {
+    parsed = smartSources ? smartHotelRecord(parsed, smartSources[index]?.sourceId) : normalizeHotelMoney(parsed);
+    if (!smartSources && parsed.name && !(parsed.price > 0)) {
       try {
       const metadata = await sharp(file.buffer).metadata();
       const pricePanel = await sharp(file.buffer).extract({ left: 0, top: 0, width: Math.ceil(metadata.width * 0.42), height: metadata.height }).resize({ width: 1000 }).jpeg().toBuffer();
@@ -11751,16 +11786,21 @@ Rules:
 
   const linkTools = require("./server/hotel-import-link");
   const linked = linkTools.attachHotelImportLinks(rawParsedHotels, [...safeArray(hotelLinks),hotelLink].filter(Boolean));
-  const grouped = groupHotelScreenshots(linked.records);
+  const grouped = smartSources ? groupSmartHotelScreenshots(linked.records) : groupHotelScreenshots(linked.records);
   const hotelOptions = await Promise.all(grouped.hotels.map((parsed, index) => buildSmartImportHotelOption(
-    normalizeHotelTextToBulgarian(parsed), parsed, destination || "", index
+    { ...normalizeHotelTextToBulgarian(parsed), ...(smartSources ? {
+      price: parsed.price, currency: parsed.currency, occupancy: parsed.occupancy,
+      priceEvidence: parsed.priceEvidenceRecords, checkoutSourceId: parsed.sourceId,
+      address: parsed.address, ratePlan: parsed.ratePlan, stayDates: parsed.stayDates,
+      propertySourceIds: parsed.propertySourceIds, transferOnRequest: parsed.transferOnRequest, ...hotelBookingConditions(parsed)
+    } : {}) }, parsed, destination || "", index
   )));
-  const hotel = hotelOptions[0] || await buildSmartImportHotelOption(
+  const hotel = hotelOptions[0] || (smartSources ? {} : await buildSmartImportHotelOption(
     mergeImportedHotelRecords(parsedHotels),
     rawParsedHotels[0] || parsedHotels[0] || {},
     destination || "",
     0
-  );
+  ));
 
   const metadata = normalizeHotelProfileMetadata(hotel, rawParsedHotels[0] || {});
   const operatorWarnings = [...hotelReviewWarnings(hotelOptions, grouped.unresolved), ...linked.warnings];
@@ -11789,7 +11829,8 @@ Rules:
     missingFields: metadata.missingFields,
     operatorWarnings,
     rawParsedHotels,
-    hotelLinks: linked.links
+    hotelLinks: linked.links,
+    propertyReview: grouped.propertyReview || []
   };
 }
 
@@ -11804,8 +11845,10 @@ Return ONLY strict JSON:
 {
   "sourceType": "flight",
   "confidence": 0,
-  "reason": ""
+  "reason": "",
+  "flightProvider": ""
 }
+For flightProvider transcribe only a clearly visible provider brand: Booking Flights, Skyscanner, Kayak, or empty.
 Allowed sourceType values: flight, hotel, mixed, unknown.
 Rules:
 - classify only; do not extract full travel data
@@ -11822,6 +11865,7 @@ Rules:
     return {
       sourceId: `SRC-${index + 1}`,
       sourceType,
+      flightProvider: ["Booking Flights", "Skyscanner", "Kayak"].includes(result.flightProvider) ? result.flightProvider : "",
       confidence: Number(result.confidence || 0) || 0,
       reason: String(result.reason || "").trim()
     };
@@ -11846,7 +11890,8 @@ function buildSmartImportResponse({
   evidence = {},
   flightResult = null,
   hotelResult = null,
-  flightSourceUrl = ""
+  flightSourceUrl = "",
+  flightCandidates = []
 } = {}) {
   const flightSourceReview = require("./server/flight-import-link").reviewFlightSourceUrl(flightSourceUrl, offerFlight, {extractRouteFromUrl, extractDatesFromUrl});
   return {
@@ -11855,6 +11900,7 @@ function buildSmartImportResponse({
     mode: "GT63_SMART_IMPORT",
     ...(flightSourceReview ? {flightSourceReview} : {}),
     intakeId,
+    ...(flightCandidates.length > 1 ? { flightCandidates } : {}),
     sources: safeArray(sources),
     classifications: safeArray(classifications),
     offerFlight: offerFlight && typeof offerFlight === "object" ? offerFlight : {},
@@ -11864,6 +11910,7 @@ function buildSmartImportResponse({
     evidence: evidence && typeof evidence === "object" ? evidence : {},
     universalIntakeDeprecated: true,
     hotelLinks: safeArray(hotelResult?.hotelLinks),
+    ...(hotelResult?.propertyReview?.length ? { propertyReview: hotelResult.propertyReview } : {}),
     flight: flightResult?.canonical || null,
     hotel: hotelResult ? {
       metadata: hotelResult.metadata || {},
@@ -11970,14 +12017,43 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
 
     let offerFlight = {};
     let flightResult = null;
+    const flightCandidates = [];
     const warnings = [];
     if (flightFiles.length) {
-      try {
-        flightResult = await extractFlightWithAiVision(flightFiles, { destination });
-        offerFlight = flightResult.flight || {};
-      } catch (error) {
-        warnings.push(`Flight extraction failed: ${error.message}`);
+      const groups = new Map();
+      imageFiles.forEach((file, index) => {
+        const source = nextSources[index];
+        if (!flightFiles.includes(file)) return;
+        const provider = source.flightProvider || "";
+        const key = provider || `unknown-${index}`;
+        if (!groups.has(key)) groups.set(key, { provider, files: [], sourceIds: [] });
+        const group = groups.get(key);
+        group.files.push(file);
+        group.sourceIds.push(source.sourceId);
+      });
+      const results = [];
+      for (const group of groups.values()) {
+        try {
+          const result = await extractFlightWithAiVision(group.files, { destination });
+          results.push({ provider: group.provider, sourceIds: group.sourceIds, result });
+        } catch (error) {
+          warnings.push(`Flight extraction failed (${group.provider || group.sourceIds.join(", ")}): ${error.message}`);
+        }
       }
+      // Prefer complete, priced itineraries, then prefer evidence with flight numbers and baggage.
+      const completeness = ({ result }) => {
+        const flight = result.flight || {};
+        const segments = [...safeArray(flight.outboundSegments), ...safeArray(flight.inboundSegments)];
+        return 8 * Number(Boolean(flight.route && flight.price > 0)) +
+          2 * Number(segments.length > 0 && segments.every(segment => segment.flightNumber)) +
+          Number(Boolean(flight.baggage && flight.baggage !== "Не е посочено"));
+      };
+      results.sort((a, b) => completeness(b) - completeness(a));
+      for (const { provider, sourceIds, result } of results) {
+        flightCandidates.push({ provider, sourceIds, flight: result.flight || {} });
+      }
+      flightResult = results[0]?.result || null;
+      offerFlight = flightResult?.flight || {};
     }
 
     let offerHotel = {};
@@ -11987,7 +12063,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       try {
         let hotelLinks=[];
         try {hotelLinks=JSON.parse(req.body?.hotelLinks || "[]");} catch {warnings.push("Линковете не са разчетени. Импортът продължава със скрийншотите.");}
-        hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false, hotelLink:req.body?.hotelLink || "", hotelLinks });
+        hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false, hotelLink:req.body?.hotelLink || "", hotelLinks, smartSources: nextSources.filter(source => ["hotel", "mixed"].includes(source.sourceType)) });
         offerHotel = hotelResult.hotel || {};
         offerHotelOptions = safeArray(hotelResult.hotelOptions);
         warnings.push(...safeArray(hotelResult.operatorWarnings));
@@ -12003,12 +12079,42 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       warnings.push("Mixed screenshots were routed to both engines and require review.");
     }
 
+    const agencyId = getCurrentAgencyId(req);
+    let quote;
+    if (offerHotelOptions.some(hotel => hotel.checkoutSourceId && hotel.price > 0 && hotel.currency !== "EUR")) {
+      try { quote = await getOfferExchangeRates(); } catch {
+        warnings.push("Няма удостоверим курс за checkout. Въведете изрично операторска цена в EUR.");
+      }
+    }
+    const checkoutRecords = [];
+    for (const hotel of offerHotelOptions) {
+      if (!(hotel.price > 0) || !Array.isArray(hotel.priceEvidence)) continue;
+      const record = smartImportPriceBinding.checkoutRecord({
+        intakeId, agencyId, hotel, quote,
+        source: nextSources.find(item => item.sourceId === hotel.checkoutSourceId),
+        parsed: hotelResult?.rawParsedHotels?.find(item => item.sourceId === hotel.checkoutSourceId)
+      });
+      if (record) {
+        checkoutRecords.push(record);
+        hotel.checkoutBinding = { version: record.version, referenceId: record.referenceId, intakeId, sourceId: record.sourceId, rate: record.rate, eurPrice: record.eurPrice };
+      } else {
+        hotel.price = 0;
+        hotel.currency = "";
+      }
+    }
+    if (checkoutRecords.length) await mutateDb(db => {
+      db.smartImportPriceEvidenceV1 ||= {};
+      db.smartImportPriceEvidenceV1[intakeId] = { agencyId, records: checkoutRecords };
+      return db;
+    });
+
     const responsePayload = buildSmartImportResponse({
       intakeId,
       flightSourceUrl: req.body?.flightSourceUrl || "",
       sources: nextSources,
       classifications,
       offerFlight,
+      flightCandidates,
       offerHotel,
       offerHotelOptions,
       warnings,

@@ -64,6 +64,7 @@ async function addFlight(flight = {}) {
     baggage: cleanFlight.baggage || "",
     notes: cleanFlight.notes || "",
     price: Number(cleanFlight.price || 0),
+    ...(cleanFlight.importSelection ? { importSelection: cleanFlight.importSelection } : {}),
     outboundSegments: Array.isArray(cleanFlight.outboundSegments) ? cleanFlight.outboundSegments : [],
     inboundSegments: Array.isArray(cleanFlight.inboundSegments) ? cleanFlight.inboundSegments : [],
     stopoverAirports: Array.isArray(cleanFlight.stopoverAirports) ? cleanFlight.stopoverAirports : [],
@@ -2977,7 +2978,8 @@ function renderUniversalTravelReview(data = {}, files = []) {
   const box = $(reviewTarget);
   if (!box) return;
 
-  const flight = data.offerFlight || {};
+  const candidates = data.flightCandidates || [];
+  const flight = candidates[data.selectedFlightIndex || 0]?.flight || data.offerFlight || {};
   const hotel = data.offerHotel || {};
   const hotelAuthority = hotel.sourceAuthority || {};
   const hotelOptions = data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : []);
@@ -3060,7 +3062,20 @@ function renderUniversalTravelReview(data = {}, files = []) {
         </section>
       </div>
 
-      ${hotelOptions.length ? `<section><h3>Всички хотелски варианти</h3>${hotelOptions.map((h,i)=>`<label>${escapeHtml(h.name || "Без име")} — ${escapeHtml(h.currency || "неизвестна валута")}<input id="reviewHotelPrice${i}" type="number" step="0.01" value="${Number(h.price || 0)}" /></label>`).join("")}</section>` : ""}
+      ${candidates.length > 1 ? `<label>Полетен вариант за калкулация
+        <select id="reviewFlightCandidate">${candidates.map((candidate, index) =>
+          `<option value="${index}" ${index === (data.selectedFlightIndex || 0) ? "selected" : ""}>${escapeHtml(candidate.provider || candidate.sourceIds.join(", "))} · ${escapeHtml(formatPrice(candidate.flight.price, candidate.flight.currency))}</option>`
+        ).join("")}</select></label>` : ""}
+      ${hotelOptions.length ? `<section><h3>Всички хотелски варианти</h3>${hotelOptions.map((h,i)=>`<label>${escapeHtml([h.name, h.address, h.room, h.ratePlan, h.checkoutSourceId].filter(Boolean).join(" · "))} — ${escapeHtml(h.currency || "въведете проверена цена в EUR")}<input id="reviewHotelPrice${i}" type="number" step="0.01" value="${Number(h.price || 0) || ""}" />${Array.isArray(h.priceEvidence) ? `<span><input id="reviewHotelOperator${i}" type="checkbox" /> Операторска цена</span>` : ""}${h.checkoutBinding && h.currency !== "EUR" ? `<small>Курс при импорта: ${escapeHtml(String(h.checkoutBinding.rate))} · ${escapeHtml(formatPrice(h.checkoutBinding.eurPrice, "EUR"))}</small>` : ""}${(h.priceEvidence || []).map(e => `<small>${escapeHtml([e.sourceId, e.label, e.text, e.role].filter(Boolean).join(" · "))}</small>`).join("")}</label>`).join("")}</section>` : ""}
+      ${(data.propertyReview || []).map((property, index) => `<label>${escapeHtml([property.sourceId, property.name,
+        property.address || "без адрес", property.conflict ? "Противоречащи условия" : "Нееднозначна връзка",
+        property.transferOnRequest === true ? "трансфер при заявка" : property.transferOnRequest === false ? "трансфер не се предлага" : ""].filter(Boolean).join(" · "))}
+        <select id="reviewProperty${index}">
+          <option value="">Изберете свързване или изключване</option>
+          <option value="exclude">Изключи този документ</option>
+          ${hotelOptions.map((option, optionIndex) => property.candidateSourceIds.includes(option.checkoutSourceId)
+            ? `<option value="${optionIndex}">${escapeHtml([option.checkoutSourceId, option.name, option.address, option.room, option.ratePlan].filter(Boolean).join(" · "))}</option>` : "").join("")}
+        </select></label>`).join("")}
       ${sourceCurrencies.length ? `<section class="warning"><h3>Превалутиране към EUR</h3><div id="reviewExchangeRateStatus">Зареждане на дневните курсове…</div><p>Проверете или променете курса: колко единици от изходната валута са 1 EUR. Сумите се запазват в оригиналната валута и се превалутират само с този курс.</p>${sourceCurrencies.map((c,i)=>`<label>1 EUR = ${escapeHtml(c)}<input id="reviewExchangeRate${i}" type="number" step="any" min="0" placeholder="Курс" /></label>`).join("")}</section>` : ""}
       <div class="actions" style="margin-top: 12px;">
         <button type="button" onclick="applyUniversalTravelIntakeResult()">Use Result</button>
@@ -3087,6 +3102,16 @@ function renderUniversalTravelReview(data = {}, files = []) {
   `;
   if (hasFlight) setAdminBaggageInput("universalFlightBaggage", flight.baggage || "");
   if (sourceCurrencies.length) loadReviewExchangeRates(data, sourceCurrencies);
+  $("reviewFlightCandidate")?.addEventListener("change", event => {
+    const hotelFields = ["universalHotelName", "universalHotelArea", "universalHotelRoom",
+      "universalHotelMeal", "universalHotelDescription", ...hotelOptions.map((_, index) => "reviewHotelPrice" + index),
+      ...(data.propertyReview || []).map((_, index) => "reviewProperty" + index)];
+    const edits = hotelFields.map(id => [id, $(id)?.value]);
+    const operatorPrices = hotelOptions.map((_, i) => $("reviewHotelOperator" + i)?.checked);
+    renderUniversalTravelReview({ ...data, selectedFlightIndex: Number(event.target.value) }, files);
+    for (const [id, value] of edits) if (value !== undefined && $(id)) $(id).value = value;
+    operatorPrices.forEach((checked, i) => { if ($("reviewHotelOperator" + i)) $("reviewHotelOperator" + i).checked = checked; });
+  });
 }
 
 async function loadReviewExchangeRates(data, currencies) {
@@ -3227,7 +3252,10 @@ async function uploadUniversalTravelIntake() {
 
 async function applyUniversalTravelIntakeResult() {
   const data = latestUniversalTravelIntake || {};
-  let flight = { ...(data.offerFlight || {}) };
+  const candidates = data.flightCandidates || [];
+  const selectedIndex = data.selectedFlightIndex || 0;
+  const selectedCandidate = candidates[selectedIndex];
+  let flight = { ...(selectedCandidate?.flight || data.offerFlight || {}) };
   const hotel = { ...(data.offerHotel || {}) };
 
   if ($("universalFlightAirline")) flight.airline = $("universalFlightAirline").value.trim();
@@ -3238,6 +3266,15 @@ async function applyUniversalTravelIntakeResult() {
   if ($("universalFlightPrice")) flight.price = Number($("universalFlightPrice").value || 0);
   flight = await reviewFlightDateConsistencyUI(flight);
   if (!flight) return;
+  if (selectedCandidate) {
+    const candidateSummary = item => ({
+      provider: item.provider, sourceIds: item.sourceIds, amount: item.flight.price, currency: item.flight.currency
+    });
+    flight.importSelection = {
+      ...candidateSummary(selectedCandidate),
+      alternatives: candidates.filter((_, index) => index !== selectedIndex).map(candidateSummary)
+    };
+  }
 
   if ($("universalHotelName")) hotel.name = $("universalHotelName").value.trim();
   if ($("universalHotelArea")) hotel.area = $("universalHotelArea").value.trim();
@@ -3246,16 +3283,50 @@ async function applyUniversalTravelIntakeResult() {
   if ($("universalHotelPrice")) hotel.price = Number($("universalHotelPrice").value || 0);
   if ($("universalHotelDescription")) hotel.description = $("universalHotelDescription").value.trim();
 
-  const reviewedHotels = (data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : [])).map((h,i)=>({ ...h, price: Number($("reviewHotelPrice"+i)?.value ?? h.price) }));
+  const reviewedHotels = (data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : [])).map((h, i) => {
+    const price = Number($("reviewHotelPrice" + i)?.value ?? h.price);
+    const currency = h.currency || (price > 0 ? "EUR" : "");
+    let importedPrice;
+    if (data.mode === "GT63_SMART_IMPORT" && Array.isArray(h.priceEvidence) && price > 0) {
+      if ($("reviewHotelOperator" + i)?.checked || (!h.checkoutBinding && price !== h.price)) importedPrice = { kind: "operator" };
+      else if (h.checkoutBinding) importedPrice = { kind: "checkout", version: h.checkoutBinding.version,
+        referenceId: h.checkoutBinding.referenceId, intakeId: h.checkoutBinding.intakeId, sourceId: h.checkoutBinding.sourceId };
+    }
+    return { ...h, price, currency, importedPrice };
+  });
   if (reviewedHotels.length) reviewedHotels[0] = { ...reviewedHotels[0], name: hotel.name, area: hotel.area, room: hotel.room, meal: hotel.meal, description: hotel.description };
+  for (const [index, property] of (data.propertyReview || []).entries()) {
+    const choice = $("reviewProperty" + index)?.value;
+    if (choice === "exclude") continue;
+    const option = choice ? reviewedHotels[Number(choice)] : null;
+    if (!option || !property.candidateSourceIds.includes(option.checkoutSourceId)) {
+      alert("Свържете или изключете всеки нееднозначен хотелски документ.");
+      return;
+    }
+    if (typeof property.transferOnRequest === "boolean" && typeof option.transferOnRequest === "boolean" &&
+        option.transferOnRequest !== property.transferOnRequest) {
+      alert("Противоречащи условия за трансфер. Изключете несъвместимия документ.");
+      return;
+    }
+    option.transferOnRequest ??= property.transferOnRequest;
+    option.stars ||= property.stars;
+    option.description ||= property.description;
+    option.propertySourceIds = [...(option.propertySourceIds || []), property.sourceId];
+  }
   const currencies = [...new Set([flight.currency, ...reviewedHotels.map(h=>h.currency)].filter(c=>c && c !== "EUR"))];
   const rates = Object.fromEntries(currencies.map((c,i)=>[c,Number($("reviewExchangeRate"+i)?.value || 0)]));
-  if (currencies.some(c=>!(rates[c]>0))) { alert("Въведете положителен курс за всяка изходна валута. Не могат да се събират различни валути."); return; }
+  const requiresRate = [flight, ...reviewedHotels].some(item => item.currency && item.currency !== "EUR" &&
+    item.importedPrice?.kind !== "checkout" && !(rates[item.currency]>0));
+  if (requiresRate) { alert("Въведете положителен курс за всяка изходна валута. Не могат да се събират различни валути."); return; }
+  if (data.mode === "GT63_SMART_IMPORT" && reviewedHotels.some(h => Array.isArray(h.priceEvidence) && h.price > 0 && !h.importedPrice)) {
+    alert("Изберете операторска цена или прегледайте checkout доказателството.");
+    return;
+  }
   if (reviewedHotels.some(h=>!h.name || !(h.price>0) || !h.currency)) { alert("Проверете име, крайна цена и валута за всеки хотел."); return; }
   function inEuro(item) {
     const sourceCurrency = item.currency || "EUR";
     const sourcePrice = item.price;
-    const exchangeRate = sourceCurrency === "EUR" ? 1 : rates[sourceCurrency];
+    const exchangeRate = item.importedPrice?.kind === "checkout" ? item.checkoutBinding.rate : sourceCurrency === "EUR" ? 1 : rates[sourceCurrency];
     const rateInput=$("reviewExchangeRate"+currencies.indexOf(sourceCurrency));
     const automatic = rateInput?.dataset?.quoteRate === String(exchangeRate);
     return {...item, sourcePrice, sourceCurrency, exchangeRate, exchangeRateDate:automatic ? rateInput.dataset.quoteDate : new Date().toISOString(), exchangeRateSource:automatic ? "ExchangeRate-API" : "operator", currency:"EUR", price: Math.round(sourcePrice / exchangeRate * 100) / 100};
@@ -3263,7 +3334,7 @@ async function applyUniversalTravelIntakeResult() {
   const convertedHotels = reviewedHotels.map(inEuro);
   Object.assign(flight, inEuro(flight));
   if (flight.route || flight.airline || Number(flight.price || 0) > 0) {
-    await addFlight(flight);
+    if (await addFlight(flight) === false) return;
     if ($("flightAirline")) $("flightAirline").value = flight.airline || "";
     if ($("flightRoute")) $("flightRoute").value = flight.route || "";
     if ($("flightDeparture")) $("flightDeparture").value = flight.departure || "";
@@ -3657,6 +3728,11 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
       window.open(`/api/offers/view/${result.offer.id}`, "_blank");
     }
   } catch (error) {
+    if (/^CHECKOUT_/.test(error.details?.code || "")) {
+      const fields = error.details.fields?.join(", ");
+      alert(`Хотелски вариант ${error.details.hotelIndex + 1}: checkout доказателството не съвпада${fields ? " (" + fields + ")" : ""}. Възстановете доказаните данни, импортирайте нов checkout или изберете „Използвай операторска цена“.`);
+      return;
+    }
     alert(`Save failed: ${error.message}`);
   }
 }
@@ -4025,12 +4101,28 @@ function renderHotelCards() {
           onchange="confirmHotelOccupancy(${i}, this.checked)" /> Потвърждавам хотелските гости и броя стаи по хотелския източник</label>
         <small>${escapeHtml(globalThis.AYAHotelOccupancy.label(h.occupancy))}</small>
       </fieldset>
+      <fieldset>
+        <legend>Условия на хотелската тарифа</legend>
+        <label>Нощувки <input type="number" min="1" step="1" value="${escapeHtml(String(h.nights ?? ""))}"
+          onchange="hotels[${i}].nights=this.value ? Number(this.value) : undefined" /></label>
+        <label>Възвръщаемост
+          <select onchange="hotels[${i}].nonRefundable=this.value === '' ? undefined : this.value === 'true'">
+            <option value="" ${typeof h.nonRefundable !== "boolean" ? "selected" : ""}>Не е посочена</option>
+            <option value="true" ${h.nonRefundable === true ? "selected" : ""}>Невъзвръщаема</option>
+            <option value="false" ${h.nonRefundable === false ? "selected" : ""}>Възвръщаема</option>
+          </select>
+        </label>
+        <label><input type="checkbox" ${h.transferOnRequest === true ? "checked" : ""}
+          onchange="hotels[${i}].transferOnRequest=this.checked" /> Летищен трансфер при заявка, извън включените услуги</label>
+      </fieldset>
       <label>Rooms Left
         <input placeholder="Not specified" value="${escapeHtml(h.roomsLeft || "")}" onchange="hotels[${i}].roomsLeft=this.value;updateAutoPrice();" />
       </label>
       <label>Hotel Price
         <input type="number" step="0.01" placeholder="0.00" value="${Number(h.price || 0)}" onchange="hotels[${i}].price=Number(this.value||0);updateAutoPrice();" />
       </label>
+      ${h.importedPrice?.kind === "checkout" ? `<button type="button" onclick="hotels[${i}].importedPrice={kind:'operator'};renderHotelCards();">Използвай операторска цена</button>` : ""}
+      ${h.importedPrice?.kind === "operator" ? `<small>Операторска цена</small>` : ""}
 
       <label>
         <input
@@ -4070,6 +4162,9 @@ function addHotel(hotel = {}) {
   hotels.push({
     id: hotel.id || "",
     occupancy: globalThis.AYAHotelOccupancy.normalize({ ...hotel.occupancy, confirmed: false }),
+    ...(hotel.nights ? { nights: hotel.nights } : {}),
+    ...(typeof hotel.nonRefundable === "boolean" ? { nonRefundable: hotel.nonRefundable } : {}),
+    ...(hotel.transferOnRequest === true ? { transferOnRequest: true } : {}),
     name: hotel.name || "",
     stars: hotel.stars || "",
     area: hotel.area || "",
@@ -4078,6 +4173,11 @@ function addHotel(hotel = {}) {
     meal: hotel.meal || "",
     price: Number(hotel.price || 0),
     currency: hotel.currency || "EUR",
+    importedPrice: hotel.importedPrice,
+    address: hotel.address,
+    ratePlan: hotel.ratePlan,
+    stayDates: hotel.stayDates,
+    propertySourceIds: hotel.propertySourceIds,
     sourcePrice: hotel.sourcePrice,
     sourceCurrency: hotel.sourceCurrency,
     exchangeRate: hotel.exchangeRate,

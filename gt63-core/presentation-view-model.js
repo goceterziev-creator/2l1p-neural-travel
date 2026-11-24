@@ -284,6 +284,15 @@
       (match, offset, source) => /(?:не е|не са|not)\s*$/i.test(source.slice(0, offset)) ? match : "Изхранването е за потвърждение");
   }
 
+  function hotelBookingFacts(hotel = {}) {
+    const nights = hotel.nights;
+    return [
+      ...(Number.isSafeInteger(nights) && nights > 0 ? [["Престой", `${nights} ${nights === 1 ? "нощувка" : "нощувки"}`]] : []),
+      ...(hotel.nonRefundable === true ? [["Условия на тарифата", "Невъзвръщаема тарифа"]] : []),
+      ...(hotel.transferOnRequest === true ? [["Летищен трансфер", "При заявка, извън включените услуги"]] : [])
+    ];
+  }
+
   function numericStars(hotel = {}) {
     // Only the dedicated star-category field is authoritative; review scores and
     // free-text categories are not evidence of an official hotel classification.
@@ -551,6 +560,7 @@
   }
 
   return {
+    hotelBookingFacts,
     amount,
     baggageLabel,
     presentationNotices,

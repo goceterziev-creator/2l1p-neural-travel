@@ -42,6 +42,85 @@ function groupHotelScreenshots(records) {
     return base;
   }), unresolved };
 }
+// The visible label and amount must come from the same checkout price row.
+function smartHotelRecord(parsed, sourceId) {
+  const priceText = String(parsed.priceText || "").trim();
+  const label = String(parsed.priceLabel || "").trim();
+  const currency = currencyFromText(priceText);
+  const verifiedTotal = parsed.priceRole === "stay_total" &&
+    /^(?:общо|крайна цена|цена за престоя|total|grand total|total (?:stay price|price|for the stay))[:.]?$/iu.test(label) &&
+    /^(?:(?:[A-Z]{3}|[€£])\s*\d[\d.,\s]*|\d[\d.,\s]*\s*(?:[A-Z]{3}|[€£]))$/iu.test(priceText) &&
+    Boolean(currency) && moneyFromText(priceText) > 0;
+  return { ...parsed, sourceId, price: verifiedTotal && parsed.pageKind === "checkout" ? moneyFromText(priceText) : 0,
+    currency: verifiedTotal && parsed.pageKind === "checkout" ? currency : "",
+    priceEvidence: { sourceId, label, text: priceText, currency, role: String(parsed.priceRole || "unknown") },
+    occupancy: require("../public/hotel-occupancy").normalize({ ...parsed.occupancy, confirmed: false }),
+    ...hotelBookingConditions(parsed) };
+}
+
+function hotelBookingConditions(hotel = {}) {
+  const nights = typeof hotel.nights === "boolean" ? NaN : Number(hotel.nights);
+  return {
+    ...(Number.isSafeInteger(nights) && nights > 0 ? { nights } : {}),
+    ...(typeof hotel.nonRefundable === "boolean" ? { nonRefundable: hotel.nonRefundable } : {}),
+    ...(hotel.transferOnRequest === true ? { transferOnRequest: true } : {})
+  };
+}
+
+function groupSmartHotelScreenshots(records) {
+  const options = [];
+  // A locality alone is not property identity. Keep incomplete addresses in review.
+  const streetAddress = item => /\d/.test(String(item.address || "")) ? key(item.address) : "";
+  const unresolved = records.filter(item => item.pageKind !== "property" && !key(item.name));
+  const properties = records.filter(item => item.pageKind === "property");
+  const rates = records.filter(item => item.pageKind !== "property" && key(item.name));
+  for (const record of rates) {
+    const signature = item => JSON.stringify([
+      key(item.name), key(item.address), key(item.room), key(item.ratePlan), item.price,
+      item.currency, item.priceEvidence?.text, item.stayDates, item.nights,
+      item.nonRefundable, item.meal, item.occupancy, item.transferOnRequest
+    ]);
+    const evidence = record.priceEvidence?.text ? [record.priceEvidence] : [];
+    const existing = options.find(item => signature(item) === signature(record) &&
+      streetAddress(item) && streetAddress(record));
+    if (existing) existing.priceEvidenceRecords.push(...evidence);
+    else options.push({ ...record, priceEvidenceRecords: evidence, propertySourceIds: [] });
+  }
+
+  const propertyReview = properties.map(property => {
+    const candidates = options.filter(option => key(property.name) && key(option.name) === key(property.name) &&
+      (!streetAddress(property) || !streetAddress(option) || streetAddress(option) === streetAddress(property)));
+    const exact = candidates.filter(option => streetAddress(property) && streetAddress(option) === streetAddress(property));
+    return { property, candidates, exact, auto: exact.length > 0 && exact.length === candidates.length };
+  });
+  for (const option of options) {
+    const matches = propertyReview.filter(item => item.auto && item.exact.includes(option));
+    const transfer = new Set([option, ...matches.map(item => item.property)]
+      .map(item => item.transferOnRequest).filter(value => typeof value === "boolean"));
+    if (transfer.size > 1) {
+      for (const match of matches) match.conflict = true;
+    }
+  }
+  for (const item of propertyReview) {
+    if (!item.auto || item.conflict) continue;
+    const { property } = item;
+    for (const option of item.exact) {
+      for (const field of ["stars", "area", "location", "description"]) option[field] ||= property[field];
+      option.transferOnRequest ??= property.transferOnRequest;
+      if (property.sourceId) option.propertySourceIds.push(property.sourceId);
+      if (property.priceEvidence?.text) option.priceEvidenceRecords.push(property.priceEvidence);
+    }
+  }
+  return {
+    hotels: options, unresolved,
+    propertyReview: propertyReview.filter(item => !item.auto || item.conflict).map(({ property, candidates, conflict }) => ({
+      sourceId: property.sourceId, name: property.name, address: property.address,
+      candidateSourceIds: candidates.map(item => item.sourceId), conflict: Boolean(conflict),
+      stars: property.stars, description: property.description, transferOnRequest: property.transferOnRequest
+    }))
+  };
+}
+
 function hotelReviewWarnings(hotels, unresolved = []) {
   const warnings=[];
   for(const h of hotels) {
@@ -74,4 +153,4 @@ function importedMealEvidence(hotel = {}, parsed = {}) {
   const description = vm.mealSafeDescription({ ...hotel, meal });
   return { ...hotel, meal, description };
 }
-module.exports={importedMealEvidence,currencyFromText,moneyFromText,normalizeHotelMoney,groupHotelScreenshots,hotelReviewWarnings};
+module.exports={smartHotelRecord,groupSmartHotelScreenshots,hotelBookingConditions,importedMealEvidence,currencyFromText,moneyFromText,normalizeHotelMoney,groupHotelScreenshots,hotelReviewWarnings};

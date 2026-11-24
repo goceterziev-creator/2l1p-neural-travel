@@ -1,0 +1,42 @@
+{
+  "hotel-property.jpg": {
+    "name": "Beethoven Premium Hotel",
+    "stars": "4",
+    "address": "Istanbul, Gençtürk Caddesi 47",
+    "pageKind": "property",
+    "priceLabel": "Genius credits",
+    "priceRole": "credit",
+    "priceText": "225,07 EUR",
+    "price": 225.07,
+    "transferOnRequest": true
+  },
+  "hotel-checkout.jpg": {
+    "name": "Beethoven Premium Hotel",
+    "address": "Istanbul, Gençtürk Caddesi 47",
+    "pageKind": "checkout",
+    "room": "Двойна делукс стая",
+    "meal": "Включена закуска",
+    "mealSourceText": "Закуската е включена в цената",
+    "priceLabel": "Общо",
+    "priceRole": "stay_total",
+    "priceText": "190,98 EUR",
+    "occupancy": { "adults": 2, "children": 0, "rooms": 1 },
+    "nights": 2,
+    "nonRefundable": true
+  },
+  "booking-flights.jpg": {
+    "provider": "Booking Flights",
+    "price": 294,
+    "currency": "EUR",
+    "baggage": "2 лични вещи",
+    "outbound": { "segments": [{ "from": "SOF", "to": "SAW", "airline": "Pegasus", "flightNumber": "PC272", "departure": "25-ноем. 12:55", "arrival": "25-ноем. 15:10" }] },
+    "inbound": { "segments": [{ "from": "SAW", "to": "SOF", "airline": "Pegasus", "flightNumber": "PC273", "departure": "27-ноем. 18:05", "arrival": "27-ноем. 18:25" }] }
+  },
+  "skyscanner.jpg": {
+    "provider": "Skyscanner",
+    "price": 288,
+    "currency": "EUR",
+    "outbound": { "segments": [{ "from": "SOF", "to": "SAW", "airline": "Pegasus", "departure": "25-ноем. 12:55", "arrival": "25-ноем. 15:10" }] },
+    "inbound": { "segments": [{ "from": "SAW", "to": "SOF", "airline": "Pegasus", "departure": "27-ноем. 18:05", "arrival": "27-ноем. 18:25" }] }
+  }
+}
