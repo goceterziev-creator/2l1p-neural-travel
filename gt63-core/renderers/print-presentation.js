@@ -450,6 +450,10 @@
     } else {
       (detailNeedsConfirmation(viewModel.selectedMealPlan) || paidMeal ? pending : quoted).push({ icon: "meal", label: "Изхранване", value: viewModel.selectedMealPlan });
     }
+    for (const [label, value] of viewModelApi.hotelBookingFacts(hotel)) {
+      const target = label === "Престой" ? quoted : pending;
+      target.push({ icon: "info", label, value });
+    }
     const separateServices = new Map();
     for (const meal of meals) {
       for (const service of meal.services) {

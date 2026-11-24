@@ -517,6 +517,7 @@
       meal: payload.mealPlan,
       mealCompact: payload.mealPlan,
       occupancy: presentationViewModel.hotelOccupancyLabel(hotel.occupancy),
+      bookingFacts: presentationViewModel.hotelBookingFacts(hotel).map(pair => pair.join(": ")).join(" · "),
       area: localizeClientText(text(hotel.area || hotel.location || hotel.city, "Локация за потвърждение")),
       stars: numericStars(hotel),
       transfer: transferSummary(input, hotel),
@@ -606,6 +607,7 @@
               data-option-transfer="${escapeHtml(payload.transfer)}"
               data-option-description="${dataAttr(payload.description)}"
               data-option-room="${dataAttr(payload.room)}"
+              data-option-booking-facts="${dataAttr(payload.bookingFacts)}"
               data-option-occupancy="${dataAttr(payload.occupancy)}"
               data-option-meal="${dataAttr(payload.meal)}"
               data-option-meal-compact="${dataAttr(payload.mealCompact)}"
@@ -683,6 +685,7 @@
             </div>
           ` : ""}
           <div class="v11-detail-grid">
+            <p class="js-selected-booking-facts" ${payload.bookingFacts ? "" : "hidden"}>${escapeHtml(payload.bookingFacts)}</p>
             <div><span>Хотелска заетост</span><strong class="js-selected-detail-occupancy">${escapeHtml(payload.occupancy)}</strong></div>
             <div><span>Стая</span><strong class="js-selected-detail-room">${escapeHtml(payload.room)}</strong></div>
             <div><span>Изхранване</span><strong class="js-selected-detail-meal">${escapeHtml(payload.meal)}</strong></div>
@@ -731,6 +734,7 @@
           var detailName = root.querySelector(".js-selected-detail-name");
           var detailDescription = root.querySelector(".js-selected-detail-description");
           var detailRoom = root.querySelector(".js-selected-detail-room");
+          var bookingFacts = root.querySelector(".js-selected-booking-facts");
           var detailOccupancy = root.querySelector(".js-selected-detail-occupancy");
           var detailMeal = root.querySelector(".js-selected-detail-meal");
           var detailArea = root.querySelector(".js-selected-detail-area");
@@ -841,6 +845,10 @@
               if (selectedPrice) selectedPrice.textContent = button.dataset.optionPrice || "-";
               if (selectedSubtitle) selectedSubtitle.textContent = button.dataset.optionSubtitle || "";
               if (heroFactStars) heroFactStars.textContent = button.dataset.optionStars ? button.dataset.optionStars + " звезди" : "Категорията не е посочена";
+              if (bookingFacts) {
+                bookingFacts.textContent = button.dataset.optionBookingFacts || "";
+                bookingFacts.hidden = !bookingFacts.textContent;
+              }
               if (detailOccupancy) detailOccupancy.textContent = button.dataset.optionOccupancy || "Хотелска заетост за потвърждение";
               if (heroFactRoom) heroFactRoom.textContent = button.dataset.optionRoom || "Стая за потвърждение";
               if (heroFactMeal) heroFactMeal.textContent = button.dataset.optionMealCompact || "Хранене за потвърждение";

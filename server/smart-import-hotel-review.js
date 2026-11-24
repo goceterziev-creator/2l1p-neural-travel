@@ -42,6 +42,75 @@ function groupHotelScreenshots(records) {
     return base;
   }), unresolved };
 }
+// The visible label and amount must come from the same checkout price row.
+function smartHotelRecord(parsed, sourceId) {
+  const priceText = String(parsed.priceText || "").trim();
+  const label = String(parsed.priceLabel || "").trim();
+  const currency = currencyFromText(priceText);
+  const verifiedTotal = parsed.priceRole === "stay_total" &&
+    /^(?:общо|крайна цена|цена за престоя|total|grand total|total (?:stay price|price|for the stay))[:.]?$/iu.test(label) &&
+    /^(?:(?:[A-Z]{3}|[€£])\s*\d[\d.,\s]*|\d[\d.,\s]*\s*(?:[A-Z]{3}|[€£]))$/iu.test(priceText) &&
+    Boolean(currency) && moneyFromText(priceText) > 0;
+  return { ...parsed, sourceId, price: verifiedTotal && parsed.pageKind === "checkout" ? moneyFromText(priceText) : 0,
+    currency: verifiedTotal && parsed.pageKind === "checkout" ? currency : "",
+    priceEvidence: { sourceId, label, text: priceText, currency, role: String(parsed.priceRole || "unknown") },
+    occupancy: require("../public/hotel-occupancy").normalize({ ...parsed.occupancy, confirmed: false }),
+    ...hotelBookingConditions(parsed) };
+}
+
+function hotelBookingConditions(hotel = {}) {
+  const nights = typeof hotel.nights === "boolean" ? NaN : Number(hotel.nights);
+  return {
+    ...(Number.isSafeInteger(nights) && nights > 0 ? { nights } : {}),
+    ...(hotel.nonRefundable === true ? { nonRefundable: true } : {}),
+    ...(hotel.transferOnRequest === true ? { transferOnRequest: true } : {})
+  };
+}
+
+function groupSmartHotelScreenshots(records) {
+  const options = [];
+  const unresolved = [];
+  for (const record of records) {
+    const identity = key(record.name);
+    if (!identity) {
+      unresolved.push(record);
+      continue;
+    }
+    const sameHotel = item => key(item.name) === identity &&
+      (!key(record.address) || !key(item.address) || key(record.address) === key(item.address));
+    const related = records.filter(item => item !== record && sameHotel(item));
+    const addresses = new Set([record, ...related].map(item => key(item.address)).filter(Boolean));
+    if (addresses.size > 1) {
+      options.push({ ...record, priceEvidenceRecords: [record.priceEvidence].filter(item => item?.text) });
+      continue;
+    }
+    const properties = related.filter(item => item.pageKind === "property");
+    const rates = related.filter(item => item.pageKind !== "property" && key(item.room));
+    if (record.pageKind === "property" && rates.length) continue;
+    const property = record.pageKind !== "property" && properties.length === 1 ? properties[0] : null;
+    const option = { ...record };
+    if (property) {
+      for (const field of ["stars", "area", "address", "location", "description", "transferOnRequest"]) {
+        option[field] ||= property[field];
+      }
+    }
+    // Retain distinct checkout records unless all commercial evidence agrees.
+    const signature = item => JSON.stringify([
+      key(item.name), key(item.address), key(item.room), key(item.ratePlan), item.price,
+      item.currency, item.priceEvidence?.text, item.stayDates, item.nights, item.nonRefundable,
+      item.meal, item.occupancy, item.pageKind, item.transferOnRequest
+    ]);
+    const evidence = [record.priceEvidence, property?.priceEvidence].filter(item => item?.text);
+    const existing = options.find(item => signature(item) === signature(option));
+    if (existing) {
+      existing.priceEvidenceRecords.push(...evidence);
+    } else {
+      options.push({ ...option, priceEvidenceRecords: evidence });
+    }
+  }
+  return { hotels: options, unresolved };
+}
+
 function hotelReviewWarnings(hotels, unresolved = []) {
   const warnings=[];
   for(const h of hotels) {
@@ -74,4 +143,4 @@ function importedMealEvidence(hotel = {}, parsed = {}) {
   const description = vm.mealSafeDescription({ ...hotel, meal });
   return { ...hotel, meal, description };
 }
-module.exports={importedMealEvidence,currencyFromText,moneyFromText,normalizeHotelMoney,groupHotelScreenshots,hotelReviewWarnings};
+module.exports={smartHotelRecord,groupSmartHotelScreenshots,hotelBookingConditions,importedMealEvidence,currencyFromText,moneyFromText,normalizeHotelMoney,groupHotelScreenshots,hotelReviewWarnings};
