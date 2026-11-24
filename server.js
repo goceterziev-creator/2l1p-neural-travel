@@ -36,6 +36,7 @@ const presentationViewModel = require("./gt63-core/presentation-view-model");
 const { buildLegacyOfferPrintInput } = require("./gt63-core/legacy-offer-print-input");
 const { prepareHotelPrintImages, verifiedHotelImagePath } = require("./gt63-core/hotel-print-images");
 
+const smartImportPriceBinding = require("./server/smart-import-price-binding");
 const { normalizeHotelMoney, groupHotelScreenshots, hotelReviewWarnings, smartHotelRecord, groupSmartHotelScreenshots, hotelBookingConditions } = require("./server/smart-import-hotel-review");
 
 const app = express();
@@ -2136,10 +2137,14 @@ const hotels = inputHotels.length
       meal: h.meal || "",
       price: toNumber(h.price, 0),
       currency: h.currency || body.currency || "EUR",
-      ...(["checkout", "operator"].includes(h.importedPrice?.kind) ? {
-        importedPrice: { kind: h.importedPrice.kind, sourceIds: h.importedPrice.kind === "checkout"
-          ? safeArray(h.importedPrice.sourceIds).filter(id => typeof id === "string" && /^SRC-[1-8]$/.test(id)) : [] }
-      } : {}),
+      ...(h.importedPrice?.kind === "checkout" && h.importedPrice.version === 1 ? {
+        importedPrice: { kind: "checkout", version: 1, referenceId: h.importedPrice.referenceId, intakeId: h.importedPrice.intakeId,
+          sourceId: h.importedPrice.sourceId, sourceIds: [h.importedPrice.sourceId] }
+      } : h.importedPrice?.kind === "operator" ? { importedPrice: { kind: "operator", sourceIds: [] } } : {}),
+      ...(h.address ? { address: h.address } : {}),
+      ...(h.ratePlan ? { ratePlan: h.ratePlan } : {}),
+      ...(h.stayDates ? { stayDates: h.stayDates } : {}),
+      ...(Array.isArray(h.propertySourceIds) ? { propertySourceIds: h.propertySourceIds.filter(id => /^SRC-[1-8]$/.test(id)) } : {}),
       sourcePrice: h.sourcePrice,
       sourceCurrency: h.sourceCurrency,
       exchangeRate: h.exchangeRate,
@@ -9308,12 +9313,20 @@ app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
   res.json({ success: true, offerVersion: offerRecordVersion(offer), offer: { ...withBulgarianOfferFlightDisplay(offer), validationWarnings: flightSafetyWarnings(offer), flightDateSafety: flightDateSafety(offer), hotelOccupancyStatus: hotelOccupancyQa.summary(offer), noticeReview: offerNotices.adminState(offer) } });
 });
 
+function bindSmartImportOfferPrices(body, db, req, previous) {
+  return smartImportPriceBinding.bindOfferPrices({
+    body, agencyId: previous ? entityAgencyId(previous) : getCurrentAgencyId(req),
+    intakes: db.smartImportPriceEvidenceV1, previous,
+    invalid: (hotelIndex, code) => routeError(`Невалидно checkout доказателство за хотелски вариант ${hotelIndex + 1}: ${code}`, 422, { hotelIndex, code })
+  });
+}
+
 app.post("/api/offers", requireCapability("offers.create"), async (req, res) => {
   try {
     let response;
     await mutateDb((db) => {
       assertFlightDataConsistency(req.body);
-      const offer = normalizeOffer(req.body);
+      const offer = normalizeOffer(bindSmartImportOfferPrices(req.body, db, req));
       assertClientStatusSafety(offer);
       offer.agencyId = getCurrentAgencyId(req);
       offer.createdBy = req.user.id;
@@ -9360,7 +9373,7 @@ app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) 
         throw routeError("Offer changed or version missing. Reopen the offer before saving; your edits have not been saved.", 409, { code: "OFFER_VERSION_CONFLICT" });
       }
       assertFlightDataConsistency(req.body);
-      const normalized = normalizeOffer(req.body);
+      const normalized = normalizeOffer(bindSmartImportOfferPrices(req.body, db, req, previous));
       const previousWarnings = uniqueWarnings(previous.validationWarnings).join("\n");
       const nextWarnings = uniqueWarnings(normalized.validationWarnings).join("\n");
       const updated = {
@@ -11751,7 +11764,7 @@ Rules:
 - translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
 - if not visible, use empty string or 0
 ${smartSources ? `For Smart Import also return pageKind (property, checkout, or unknown), priceRole (stay_total, per_person, tax, discount, credit, cancellation_fee, add_on, or unknown), and priceLabel (verbatim label on the same row as priceText). A Genius balance is a credit, including on a property page. For a visible non-total amount preserve its role, label and exact amount in these evidence fields; never label it stay_total.
-Return ratePlan and stayDates only when visible, occupancy as {adults, children, rooms, childAges} with null for unknown, nights as an integer or null, nonRefundable and transferOnRequest as booleans true only with explicit evidence. Never assume zero children or infer occupancy from a room name. Keep transfer and cancellation claims out of description and amenities.` : ""}
+Return ratePlan and stayDates only when visible, occupancy as {adults, children, rooms, childAges} with null for unknown, nights as an integer or null, nonRefundable true only with explicit evidence; transferOnRequest true for explicit availability on request, false for explicit unavailability, or null when unstated. Never assume zero children or infer occupancy from a room name. Keep transfer and cancellation claims out of description and amenities.` : ""}
 `
     });
     parsed = smartSources ? smartHotelRecord(parsed, smartSources[index]?.sourceId) : normalizeHotelMoney(parsed);
@@ -11777,7 +11790,9 @@ Return ratePlan and stayDates only when visible, occupancy as {adults, children,
   const hotelOptions = await Promise.all(grouped.hotels.map((parsed, index) => buildSmartImportHotelOption(
     { ...normalizeHotelTextToBulgarian(parsed), ...(smartSources ? {
       price: parsed.price, currency: parsed.currency, occupancy: parsed.occupancy,
-      priceEvidence: parsed.priceEvidenceRecords, ...hotelBookingConditions(parsed)
+      priceEvidence: parsed.priceEvidenceRecords, checkoutSourceId: parsed.sourceId,
+      address: parsed.address, ratePlan: parsed.ratePlan, stayDates: parsed.stayDates,
+      propertySourceIds: parsed.propertySourceIds, transferOnRequest: parsed.transferOnRequest, ...hotelBookingConditions(parsed)
     } : {}) }, parsed, destination || "", index
   )));
   const hotel = hotelOptions[0] || (smartSources ? {} : await buildSmartImportHotelOption(
@@ -11814,7 +11829,8 @@ Return ratePlan and stayDates only when visible, occupancy as {adults, children,
     missingFields: metadata.missingFields,
     operatorWarnings,
     rawParsedHotels,
-    hotelLinks: linked.links
+    hotelLinks: linked.links,
+    propertyReview: grouped.propertyReview || []
   };
 }
 
@@ -11894,6 +11910,7 @@ function buildSmartImportResponse({
     evidence: evidence && typeof evidence === "object" ? evidence : {},
     universalIntakeDeprecated: true,
     hotelLinks: safeArray(hotelResult?.hotelLinks),
+    ...(hotelResult?.propertyReview?.length ? { propertyReview: hotelResult.propertyReview } : {}),
     flight: flightResult?.canonical || null,
     hotel: hotelResult ? {
       metadata: hotelResult.metadata || {},
@@ -12061,6 +12078,35 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
     if (mixedSources.length) {
       warnings.push("Mixed screenshots were routed to both engines and require review.");
     }
+
+    const agencyId = getCurrentAgencyId(req);
+    let quote;
+    if (offerHotelOptions.some(hotel => hotel.checkoutSourceId && hotel.price > 0 && hotel.currency !== "EUR")) {
+      try { quote = await getOfferExchangeRates(); } catch {
+        warnings.push("Няма удостоверим курс за checkout. Въведете изрично операторска цена в EUR.");
+      }
+    }
+    const checkoutRecords = [];
+    for (const hotel of offerHotelOptions) {
+      if (!(hotel.price > 0) || !Array.isArray(hotel.priceEvidence)) continue;
+      const record = smartImportPriceBinding.checkoutRecord({
+        intakeId, agencyId, hotel, quote,
+        source: nextSources.find(item => item.sourceId === hotel.checkoutSourceId),
+        parsed: hotelResult?.rawParsedHotels?.find(item => item.sourceId === hotel.checkoutSourceId)
+      });
+      if (record) {
+        checkoutRecords.push(record);
+        hotel.checkoutBinding = { version: 1, referenceId: record.referenceId, intakeId, sourceId: record.sourceId, rate: record.rate, eurPrice: record.eurPrice };
+      } else {
+        hotel.price = 0;
+        hotel.currency = "";
+      }
+    }
+    if (checkoutRecords.length) await mutateDb(db => {
+      db.smartImportPriceEvidenceV1 ||= {};
+      db.smartImportPriceEvidenceV1[intakeId] = { agencyId, records: checkoutRecords };
+      return db;
+    });
 
     const responsePayload = buildSmartImportResponse({
       intakeId,

@@ -2,7 +2,7 @@
   "hotel-property.jpg": {
     "name": "Beethoven Premium Hotel",
     "stars": "4",
-    "address": "Istanbul",
+    "address": "Istanbul, Gençtürk Caddesi 47",
     "pageKind": "property",
     "priceLabel": "Genius credits",
     "priceRole": "credit",
@@ -12,7 +12,7 @@
   },
   "hotel-checkout.jpg": {
     "name": "Beethoven Premium Hotel",
-    "address": "Istanbul",
+    "address": "Istanbul, Gençtürk Caddesi 47",
     "pageKind": "checkout",
     "room": "Двойна делукс стая",
     "meal": "Включена закуска",
