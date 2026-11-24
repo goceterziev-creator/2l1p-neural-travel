@@ -113,7 +113,8 @@ function groupSmartHotelScreenshots(records) {
     const { property } = item;
     for (const option of item.exact) {
       for (const field of ["stars", "area", "location", "description"]) option[field] ||= property[field];
-      option.transferOnRequest ??= property.transferOnRequest;
+      // Keep checkout conditions tied to the checkout source.
+      if (option.pageKind !== "checkout") option.transferOnRequest ??= property.transferOnRequest;
       if (property.sourceId) option.propertySourceIds.push(property.sourceId);
       if (property.priceEvidence?.text) option.priceEvidenceRecords.push(property.priceEvidence);
     }
@@ -128,12 +129,27 @@ function groupSmartHotelScreenshots(records) {
   };
 }
 
-function hotelReviewWarnings(hotels, unresolved = []) {
+function hotelReviewWarnings(hotels, unresolved = [], sourceRecords = []) {
   const warnings=[];
   for(const h of hotels) {
     if (!(h.price>0)) warnings.push(`Липсва крайна хотелска цена: ${h.name || "безименна снимка"}.`);
     if (!h.currency) warnings.push(`Липсва валута: ${h.name || "безименна снимка"}.`);
     if (h.currency && h.currency!=="EUR") warnings.push(`${h.name}: ${h.price} ${h.currency}. Въведете курс към EUR преди общата цена.`);
+  }
+  for (const record of sourceRecords) {
+    if (record.pageKind !== "checkout") continue;
+    const occupancy = record.occupancy || {};
+    const conditions = hotelBookingConditions(record);
+    const missing = [
+      [occupancy.adults == null, "възрастни"],
+      [occupancy.children == null, "деца"],
+      [occupancy.rooms == null, "стаи"],
+      [!conditions.nights, "нощувки"],
+      [typeof record.stayDates !== "string" || !record.stayDates.trim(), "дати на престоя"],
+      [typeof record.nonRefundable !== "boolean", "условия за възстановяване"],
+      [typeof record.transferOnRequest !== "boolean", "заявка за трансфер"]
+    ].filter(([unknown]) => unknown).map(([, label]) => label);
+    if (missing.length) warnings.push(`${record.name || "Хотел"} (${record.sourceId}): за проверка — ${missing.join(", ")}.`);
   }
   if(unresolved.length) warnings.push(`${unresolved.length} хотелски снимки не могат да бъдат свързани еднозначно. Проверете ги.`);
   return warnings;

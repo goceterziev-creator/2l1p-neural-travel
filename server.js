@@ -11763,7 +11763,12 @@ Return ONLY strict JSON:
   "address": "",
   "location": "",
   "rating": "",
-  "amenities": []
+  "amenities": []${smartSources ? `,
+  "occupancy": { "adults": null, "children": null, "rooms": null, "childAges": null },
+  "nights": null,
+  "stayDates": null,
+  "nonRefundable": null,
+  "transferOnRequest": null` : ""}
 }
 Rules:
 - currency must be the visible source currency, including MKD or QAR; never relabel it EUR and never convert it
@@ -11785,7 +11790,7 @@ Rules:
 - translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
 - if not visible, use empty string or 0
 ${smartSources ? `For Smart Import also return pageKind (property, checkout, or unknown), priceRole (stay_total, per_person, tax, discount, credit, cancellation_fee, add_on, or unknown), and priceLabel (verbatim label on the same row as priceText). A Genius balance is a credit, including on a property page. For a visible non-total amount preserve its role, label and exact amount in these evidence fields; never label it stay_total.
-Return ratePlan and stayDates only when visible, occupancy as {adults, children, rooms, childAges} with null for unknown, nights as an integer or null, nonRefundable true for an explicit non-refundable rate, false for an explicitly refundable rate, or null when unstated; transferOnRequest true for explicit availability on request, including an optional checkout checkbox offering to request an airport transfer or receive details and prices (even when unchecked); a generic airport shuttle amenity is insufficient. Use false for explicit unavailability or null when unstated. A transfer request is not an included transfer. Never assume zero children or infer occupancy from a room name. Keep transfer and cancellation claims out of description and amenities.` : ""}
+Read occupancy, nights and stayDates from the checkout reservation summary for the selected room. Read nonRefundable alongside the selected room conditions. Keep the commercial keys in the example and use null when unknown; return ratePlan only when visible. Return nights as an integer or null, nonRefundable true for an explicit non-refundable rate, false for an explicitly refundable rate, or null when unstated; transferOnRequest true for explicit availability on request, including an optional checkout checkbox offering to request an airport transfer or receive details and prices (even when unchecked); a generic airport shuttle amenity is insufficient. Use false for explicit unavailability or null when unstated. A transfer request is not an included transfer. Never assume zero children or infer occupancy from a room name. Keep transfer and cancellation claims out of description and amenities.` : ""}
 `
     });
     parsed = smartSources ? smartHotelRecord(parsed, smartSources[index]?.sourceId) : normalizeHotelMoney(parsed);
@@ -11824,7 +11829,7 @@ Return ratePlan and stayDates only when visible, occupancy as {adults, children,
   ));
 
   const metadata = normalizeHotelProfileMetadata(hotel, rawParsedHotels[0] || {});
-  const operatorWarnings = [...hotelReviewWarnings(hotelOptions, grouped.unresolved), ...linked.warnings];
+  const operatorWarnings = [...hotelReviewWarnings(hotelOptions, grouped.unresolved, smartSources ? rawParsedHotels : []), ...linked.warnings];
 
   if (archive) {
     await archiveRegressionCaseSafe({
@@ -11886,7 +11891,7 @@ Rules:
     return {
       sourceId: `SRC-${index + 1}`,
       sourceType,
-      flightProvider: ["Booking Flights", "Skyscanner", "Kayak"].includes(result.flightProvider) ? result.flightProvider : "",
+      flightProvider: sourceType !== "hotel" && ["Booking Flights", "Skyscanner", "Kayak"].includes(result.flightProvider) ? result.flightProvider : "",
       confidence: Number(result.confidence || 0) || 0,
       reason: String(result.reason || "").trim()
     };
