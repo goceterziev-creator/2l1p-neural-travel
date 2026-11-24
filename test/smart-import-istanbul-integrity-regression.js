@@ -94,7 +94,17 @@ harness.paths = Module._nodeModulePaths(path.dirname(filename));
 harness._compile(fs.readFileSync(filename, "utf8") + `
   const fixtures = { ...require("./test/fixtures/smart-import/istanbul-integrity.json") };
   fixtures["hotel-checkout-replay.jpg"] = { ...fixtures["hotel-checkout.jpg"],
-    meal: "Закуска и SPA услуги", transferOnRequest: true };
+    meal: "Закуска и SPA услуги", stayDates: "25–27.11.2026", transferOnRequest: true };
+  // Supplied production delta, with synthetic filename markers in place of live Vision.
+  fixtures["hotel-incomplete-7237049.jpg"] = { ...fixtures["hotel-checkout.jpg"],
+    occupancy: null, nights: null, stayDates: null, nonRefundable: null,
+    transferOnRequest: null, amenities: ["Летищен трансфер"] };
+  fixtures["hotel-property-completeness.jpg"] = { ...fixtures["hotel-property.jpg"],
+    occupancy: { adults: 2, children: 0, rooms: 1 } };
+  fixtures["hotel-explicit-zero-false.jpg"] = { ...fixtures["hotel-checkout-replay.jpg"],
+    nonRefundable: false, transferOnRequest: false };
+  fixtures["hotel-unknown-children.jpg"] = { ...fixtures["hotel-checkout-replay.jpg"],
+    occupancy: { adults: 2, children: null, rooms: 1 } };
   fixtures["hotel-property-replay.jpg"] = { ...fixtures["hotel-property.jpg"], pageKind: undefined,
     description: "Описание и удобства на хотела.", transferOnRequest: undefined,
     priceRole: "stay_total", priceLabel: "", priceText: "225,07 лв" };
@@ -107,10 +117,6 @@ harness._compile(fs.readFileSync(filename, "utf8") + `
   fixtures["hotel-no-address.jpg"] = { ...fixtures["hotel-property.jpg"], address: "" };
   fixtures["hotel-conflicting.jpg"] = { ...fixtures["hotel-property.jpg"], address: "", transferOnRequest: false };
   fixtures["hotel-other-checkout.jpg"] = { ...fixtures["hotel-checkout.jpg"], address: "Beta 2" };
-  classifySmartImportSource = async (file, index) => ({
-    sourceId: "SRC-" + (index + 1), sourceType: file.originalname.startsWith("hotel") ? "hotel" : "flight",
-    flightProvider: fixtures[file.originalname].provider
-  });
   extractFlightWithAiVision = async (files, {sourceIds}) => {
     if (files.length !== 1) throw Error("Unrelated providers reached one extraction");
     const fixture = fixtures[files[0].originalname];
@@ -121,12 +127,25 @@ harness._compile(fs.readFileSync(filename, "utf8") + `
   };
   callVisionJson = async ({imageBuffer, prompt}) => {
     const name = imageBuffer.toString();
+    if (prompt.includes("Classify this travel screenshot")) {
+      return {
+        sourceType: name === "mixed.jpg" ? "mixed" : name.startsWith("hotel") ? "hotel" : "flight",
+        flightProvider: fixtures[name]?.provider || (name.startsWith("hotel") || name === "mixed.jpg" ? "Booking Flights" : "")
+      };
+    }
+    if (name === "hotel-checkout-replay.jpg") {
+      const example = JSON.parse(prompt.split("Return ONLY strict JSON:")[1].split("Rules:")[0]);
+      if (JSON.stringify(example.occupancy) !== '{"adults":null,"children":null,"rooms":null,"childAges":null}' ||
+          ["nights", "stayDates", "nonRefundable", "transferOnRequest"].some(key => example[key] !== null)) {
+        throw Error("Missing checkout JSON example");
+      }
+    }
     if (name === "hotel-checkout-replay.jpg" && (!prompt.includes("even when unchecked") ||
         !prompt.includes("generic airport shuttle amenity is insufficient"))) throw Error("Missing transfer extraction contract");
     return structuredClone(fixtures[name]);
   };
   archiveUniversalSourceEvidenceSafe = ({sources}) => ({sources});
-  module.exports.istanbulQa = { app, buildLegacyOfferPrintInput, renderGt63RegistryOfferHtml };
+  module.exports.istanbulQa = { classifySmartImportSource, app, buildLegacyOfferPrintInput, renderGt63RegistryOfferHtml };
 `, filename);
 
 async function run() {
@@ -139,6 +158,14 @@ async function run() {
   let restarted;
   try {
     const api = harness.exports.istanbulQa;
+    for (const [name, sourceType, flightProvider] of [
+      ["hotel-property.jpg", "hotel", ""],
+      ["booking-flights.jpg", "flight", "Booking Flights"],
+      ["mixed.jpg", "mixed", "Booking Flights"]
+    ]) {
+      const result = await api.classifySmartImportSource({ buffer: Buffer.from(name) }, 3);
+      assert.deepEqual([result.sourceId, result.sourceType, result.flightProvider], ["SRC-4", sourceType, flightProvider]);
+    }
     listener = api.app.listen(port, "127.0.0.1");
     await new Promise(resolve => listener.once("listening", resolve));
     browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
@@ -208,6 +235,7 @@ async function run() {
     assert.equal(Number(offer.finalPrice.toFixed(2)), advertisedTotal);
     assert.equal(offer.hotels[0].occupancy.confirmed, true);
     assert.equal(offer.hotels[0].nights, 2);
+    assert.equal(offer.hotels[0].stayDates, "25–27.11.2026");
     assert.equal(offer.hotels[0].meal, "Закуската е включена в цената");
     assert.equal(offer.hotels[0].transferOnRequest, true);
     assert.equal(offer.hotels[0].nonRefundable, true);
@@ -516,6 +544,35 @@ async function run() {
     assert.equal(operatorSnapshot.offer.hotels[0].nights, 3);
     assert.deepEqual(operatorSnapshot.offer.hotels[0].importedPrice, { kind: "operator", sourceIds: [] });
     console.log("PASS commercial scope POST/PUT matrix, atomic refusals, normalization, legacy, fresh checkout and explicit Admin operator choice");
+    for (const [name, expected, absent] of [
+      ["hotel-incomplete-7237049.jpg", "възрастни, деца, стаи, нощувки, дати на престоя, условия за възстановяване, заявка за трансфер", null],
+      ["hotel-unknown-children.jpg", "деца.", "нощувки"],
+      ["hotel-explicit-zero-false.jpg", null, "за проверка —"]
+    ]) {
+      const captured = page.waitForResponse(response =>
+        response.url().endsWith("/api/smart-import") && response.request().method() === "POST");
+      await upload([name, "hotel-property-completeness.jpg"]);
+      const result = await (await captured).json();
+      assert.deepEqual(result.sources.map(source => [source.sourceId, source.flightProvider]), [["SRC-1", ""], ["SRC-2", ""]]);
+      assert.equal(result.flightCandidates, undefined);
+      const reviewText = await page.$eval("#smartImportReview", node => node.innerText.split("Debug JSON")[0]);
+      if (expected) assert(reviewText.includes(expected), reviewText);
+      if (absent) assert(!reviewText.includes(absent), reviewText);
+      const checkout = result.hotel.hints[0];
+      assert.equal(checkout.occupancy.children, name.includes("zero") ? 0 : null);
+      assert.equal(checkout.transferOnRequest, name.includes("incomplete") ? null : !name.includes("false"));
+      assert.equal(result.offerHotelOptions[0].transferOnRequest, checkout.transferOnRequest);
+      assert.deepEqual(result.offerHotelOptions[0].occupancy, checkout.occupancy);
+      if (name.includes("false")) {
+        assert.equal(checkout.nonRefundable, false);
+        assert.deepEqual(result.offerHotelOptions[0].propertySourceIds, []);
+        assert.equal(result.propertyReview[0].sourceId, "SRC-2");
+        assert.equal(result.propertyReview[0].conflict, true);
+      } else {
+        assert.deepEqual(result.offerHotelOptions[0].propertySourceIds, ["SRC-2"]);
+      }
+    }
+    console.log("PASS checkout completeness warnings in Chromium Review and source classification");
     if (process.argv.includes("--commercial-scope-only")) return;
 
     await upload(["hotel-no-address.jpg", "hotel-conflicting.jpg", "hotel-checkout.jpg",
