@@ -153,8 +153,9 @@ function persistNavigationState() {
   });
 }
 
-async function fetchJson(url, options = {}) {
+async function fetchJson(url, options = {}, observeStatus) {
   const res = await fetch(url, options);
+  try { observeStatus?.(res.status); } catch { /* Optional observation. */ }
 
   let data = null;
   const contentType = res.headers.get("content-type") || "";
@@ -2626,6 +2627,53 @@ function diagnosticClassification(offer) {
   };
 }
 
+function diagnosticOfferVersion(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value) ? value : null;
+}
+
+function diagnosticHttpOutcome(http, data) {
+  const code = data?.details?.code || data?.error;
+  const safeCodes = ["OFFER_VERSION_CONFLICT", "AYA_FLIGHT_DATA_CONFLICT", "AYA_FLIGHT_DATE_BLOCKED",
+    "CHECKOUT_REFERENCE_INVALID", "CHECKOUT_HOTEL_RATE_MISMATCH", "CHECKOUT_COMMERCIAL_SCOPE_MISMATCH",
+    "CHECKOUT_COMMERCIAL_SCOPE_UNAVAILABLE", "CHECKOUT_AMOUNT_OR_FX_MISMATCH", "FLIGHT_OPERATOR_PRICE_INVALID",
+    "FLIGHT_PRICE_REFERENCE_INVALID", "FLIGHT_PRICE_ROUTE_MISMATCH", "FLIGHT_PRICE_ITINERARY_MISMATCH",
+    "FLIGHT_PRICE_PASSENGERS_MISMATCH", "FLIGHT_PRICE_AMOUNT_OR_FX_MISMATCH", "FLIGHT_PRICE_MULTIPLE_CANDIDATES",
+    "FLIGHT_PRICE_PROVENANCE_REQUIRED", "SMART_IMPORT_CLASSIFICATION_SOURCE_MISMATCH", "SMART_IMPORT_INTAKE_INVALID",
+    "SMART_IMPORT_INTAKE_UNKNOWN", "SMART_IMPORT_INTAKE_AGENCY_MISMATCH", "SMART_IMPORT_INTAKE_UNRELATED",
+    "SMART_IMPORT_INTAKE_STALE"];
+  return {
+    ...(Number.isInteger(http) && http >= 100 && http <= 599 && { http }),
+    ...(safeCodes.includes(code) && { code })
+  };
+}
+
+function assessOfferUpdateDiagnostic(report) {
+  if (report.hotelOrderChanged) return { status: "UNKNOWN", firstObservedDivergence: null, checks: [] };
+  const intents = new Map();
+  for (const event of report.events) {
+    if (event.type !== "blur") intents.set(event.hotelIndex, event.value);
+  }
+  const stages = [
+    ["CANONICAL", report.beforeCollectForm],
+    ["SERIALIZED_PUT", report.serializedPut],
+    ["PUT_RESPONSE", report.update?.returned],
+    ["SAME_VERSION_GET", report.readback?.state === "SAME_VERSION" ? report.readback.returned : null]
+  ];
+  const comparable = entry => ["VALUE", "UNKNOWN", "MISSING"].includes(entry?.state);
+  const checks = stages.flatMap(([stage, snapshot], index) =>
+    [...intents].sort(([a], [b]) => a - b).map(([hotelIndex, intent]) => {
+      const before = index === 0 ? intent : stages[index - 1][1]?.hotels?.[hotelIndex]?.stars;
+      const after = snapshot?.hotels?.[hotelIndex]?.stars;
+      const status = !comparable(before) || !comparable(after) ? "UNKNOWN"
+        : before.state === after.state && String(before.value ?? "").trim() === String(after.value ?? "").trim()
+          ? "PASS" : "FAIL";
+      return { stage, hotelIndex, status };
+    }));
+  const firstObservedDivergence = checks.find(check => check.status === "FAIL") || null;
+  return { status: firstObservedDivergence ? "FAIL" : !checks.length || checks.some(check => check.status === "UNKNOWN")
+    ? "UNKNOWN" : "PASS", firstObservedDivergence, checks };
+}
+
 function renderOfferUpdateDiagnostic() {
   const panel = $("offerUpdateDiagnostic");
   if (!panel) return;
@@ -2641,7 +2689,9 @@ function renderOfferUpdateDiagnostic() {
 function armOfferUpdateDiagnostic() {
   if (!editingOfferId || !canUseOfferUpdateDiagnostic()) return;
   offerUpdateDiagnostic = { offerId: editingOfferId, state: "ARMED",
-    report: { events: [], serverIntermediateNormalization: "UNOBSERVED" } };
+    report: { events: [], serverIntermediateNormalization: "UNOBSERVED",
+      transaction: { offerId: /^OFF-\d{13}-[a-z0-9]{5}$/i.test(editingOfferId) ? editingOfferId : null,
+        expectedVersion: null, putOfferVersion: null, getOfferVersion: null } } };
   renderOfferUpdateDiagnostic();
 }
 
@@ -2658,34 +2708,44 @@ for (const type of ["input", "change", "blur"]) {
       if (!event.isTrusted || !diagnostic || diagnostic.state !== "ARMED" ||
           diagnostic.offerId !== editingOfferId || !canUseOfferUpdateDiagnostic() ||
           !event.target.matches?.("#hotelCards [data-classification-input]")) return;
+      const hotelIndex = Number(event.target.dataset.classificationInput);
+      if (!Number.isInteger(hotelIndex) || hotelIndex < 0 || hotelIndex >= Math.min(hotels.length, 20)) return;
       const events = diagnostic.report.events;
       if (events.length >= 30) events.shift();
-      events.push({ type, value: diagnosticStars({ value: event.target.value }, "value"),
+      events.push({ type, hotelIndex, value: diagnosticStars({ value: event.target.value }, "value"),
         timestamp: new Date().toISOString() });
     } catch { /* Observation is optional. */ }
   }, true);
 }
 
-async function readOfferUpdateDiagnostic(diagnostic, result) {
+async function readOfferUpdateDiagnostic(diagnostic, result, http) {
   try {
     if (!canUseOfferUpdateDiagnostic() || offerUpdateDiagnostic !== diagnostic) return;
-    diagnostic.report.update = { state: "RETURNED", returned: diagnosticClassification(result.offer) };
+    diagnostic.report.transaction.putOfferVersion = diagnosticOfferVersion(result.offerVersion);
+    diagnostic.report.update = { state: "RETURNED", ...diagnosticHttpOutcome(http, result),
+      returned: diagnosticClassification(result.offer) };
     const response = await fetch(`/api/offers/${encodeURIComponent(diagnostic.offerId)}`,
       { cache: "no-store", credentials: "same-origin", redirect: "error", signal: AbortSignal.timeout(5000) });
     if (!response.ok) {
-      diagnostic.report.readback = { state: "UNKNOWN", http: response.status };
+      const data = await response.json().catch(() => null);
+      diagnostic.report.readback = { state: "UNKNOWN", ...diagnosticHttpOutcome(response.status, data) };
     } else {
       const data = await response.json();
-      const sameVersion = Boolean(result.offerVersion && data.offerVersion === result.offerVersion);
+      const putVersion = diagnostic.report.transaction.putOfferVersion;
+      const getVersion = diagnosticOfferVersion(data.offerVersion);
+      diagnostic.report.transaction.getOfferVersion = getVersion;
+      const sameVersion = Boolean(putVersion && getVersion === putVersion);
       diagnostic.report.readback = {
         state: sameVersion ? "SAME_VERSION" : "UNKNOWN",
-        versionDrift: result.offerVersion && data.offerVersion ? !sameVersion : null,
+        ...diagnosticHttpOutcome(response.status, data),
+        versionDrift: putVersion && getVersion ? !sameVersion : null,
         ...(data.offer ? { returned: diagnosticClassification(data.offer) } : {})
       };
     }
   } catch {
     diagnostic.report.readback = { state: "UNKNOWN" };
   } finally {
+    diagnostic.report.assessment = assessOfferUpdateDiagnostic(diagnostic.report);
     diagnostic.state = "COMPLETE";
     if (offerUpdateDiagnostic === diagnostic) renderOfferUpdateDiagnostic();
   }
@@ -3929,6 +3989,7 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
     return;
   }
   let updateReturned = false;
+  let updateHttp;
   try {
     const wasEditing = Boolean(editingOfferId);
     const editId = editingOfferId;
@@ -3944,20 +4005,24 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
     const body = JSON.stringify(wasEditing ? { ...payload, expectedVersion: editingOfferVersion } : payload);
     if (diagnostic) {
       diagnostic.state = "CAPTURING";
-      try { diagnostic.report.serializedPut = diagnosticClassification(JSON.parse(body)); }
+      try {
+        const serialized = JSON.parse(body);
+        diagnostic.report.transaction.expectedVersion = diagnosticOfferVersion(serialized.expectedVersion);
+        diagnostic.report.serializedPut = diagnosticClassification(serialized);
+      }
       catch { diagnostic.report.serializedPut = { state: "UNKNOWN" }; }
     }
     const result = await fetchJson(wasEditing ? `/api/offers/${editId}` : "/api/offers", {
       method: wasEditing ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body
-    });
+    }, diagnostic ? http => { updateHttp = http; } : undefined);
 
     updateReturned = Boolean(result?.offer);
     alert(wasEditing ? `Offer updated: ${result.offer.id}` : `Offer saved: ${result.offer.id}`);
     const completedDiagnostic = offerUpdateDiagnostic === diagnostic ? diagnostic : null;
     setEditMode(null, null, completedDiagnostic);
-    if (completedDiagnostic) void readOfferUpdateDiagnostic(completedDiagnostic, result).catch(() => {});
+    if (completedDiagnostic) void readOfferUpdateDiagnostic(completedDiagnostic, result, updateHttp).catch(() => {});
     if (!wasEditing) setCreateSurfaceOpen(false);
 
     await loadStats();
@@ -3970,8 +4035,9 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
     if (!updateReturned && diagnostic && offerUpdateDiagnostic === diagnostic) {
       try {
         diagnostic.report.update = { state: "REJECTED_OR_UNAVAILABLE",
-          ...(Number.isInteger(error.status) && { http: error.status }) };
+          ...diagnosticHttpOutcome(updateHttp ?? error.status, error.response) };
         diagnostic.report.readback = { state: "NOT_EXECUTED" };
+        diagnostic.report.assessment = assessOfferUpdateDiagnostic(diagnostic.report);
         diagnostic.state = "COMPLETE";
         renderOfferUpdateDiagnostic();
       } catch { /* The original save error still reaches the operator. */ }
@@ -4327,7 +4393,7 @@ function renderHotelCards() {
         <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;hotels[${i}].occupancy={...hotels[${i}].occupancy,confirmed:false};renderHotelCards();updateAutoPrice();" />
       </label>
       <label>Stars
-        <input data-classification-input placeholder="Unknown" value="${escapeHtml(h.stars || "")}" onchange="setHotelStars(${i}, this.value)" />
+        <input data-classification-input="${i}" placeholder="Unknown" value="${escapeHtml(h.stars || "")}" onchange="setHotelStars(${i}, this.value)" />
       </label>
       <label>Area
         <input placeholder="Not specified" value="${escapeHtml(h.area || "")}" onchange="hotels[${i}].area=this.value;updateAutoPrice();" />
@@ -4418,6 +4484,7 @@ function renderHotelCards() {
 }
 
 function addHotel(hotel = {}) {
+  if (offerUpdateDiagnostic?.state === "ARMED") offerUpdateDiagnostic.report.hotelOrderChanged = true;
   hotels.push({
     id: hotel.id || "",
     occupancy: globalThis.AYAHotelOccupancy.normalize({ ...hotel.occupancy, confirmed: false }),
@@ -4457,6 +4524,7 @@ function addHotel(hotel = {}) {
 }
 
 function removeHotel(index) {
+  if (offerUpdateDiagnostic?.state === "ARMED") offerUpdateDiagnostic.report.hotelOrderChanged = true;
   hotels.splice(index, 1);
 
   if (hotels.length && !hotels.some(h => h.selected)) {
