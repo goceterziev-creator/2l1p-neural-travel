@@ -68,6 +68,8 @@ harness.paths = Module._nodeModulePaths(path.dirname(filename));
 // Synthetic extraction only. Exercise real grouping, normalization, Apply and persistence.
 harness._compile(fs.readFileSync(filename, "utf8") + `
   const fixtures = { ...require("./test/fixtures/smart-import/istanbul-integrity.json") };
+  fixtures["skyscanner-unknown.jpg"] = { ...fixtures["skyscanner.jpg"], totalPrice: undefined,
+    priceObservations: [fixtures["skyscanner.jpg"].priceObservations[0]] };
   fixtures["hotel-child.jpg"] = { ...fixtures["hotel-checkout.jpg"], occupancy: {adults:2, children:1, rooms:1, childAges:[7]} };
   fixtures["hotel-unknown.jpg"] = { ...fixtures["hotel-checkout.jpg"], occupancy: {}, nonRefundable: null };
   fixtures["hotel-refundable.jpg"] = { ...fixtures["hotel-checkout.jpg"], nonRefundable: false };
@@ -79,9 +81,12 @@ harness._compile(fs.readFileSync(filename, "utf8") + `
     sourceId: "SRC-" + (index + 1), sourceType: file.originalname.startsWith("hotel") ? "hotel" : "flight",
     flightProvider: fixtures[file.originalname].provider
   });
-  extractFlightWithAiVision = async files => {
+  extractFlightWithAiVision = async (files, {sourceIds}) => {
     if (files.length !== 1) throw Error("Unrelated providers reached one extraction");
-    const canonical = validateGeminiFlightJson(fixtures[files[0].originalname]);
+    const fixture = fixtures[files[0].originalname];
+    const canonical = validateGeminiFlightJson({ ...fixture,
+      priceObservations: fixture.priceObservations?.map(item => ({ ...item, sourceId: sourceIds[0] })) });
+
     return { canonical, flight: geminiCanonicalToFlight(canonical) };
   };
   callVisionJson = async ({imageBuffer}) => structuredClone(fixtures[imageBuffer.toString()]);
@@ -90,6 +95,10 @@ harness._compile(fs.readFileSync(filename, "utf8") + `
 `, filename);
 
 async function run() {
+  const skyscanner = process.argv.includes("--skyscanner");
+  const flightTotal = skyscanner ? 288 : 294;
+  const baseTotal = skyscanner ? 478.98 : 484.98;
+  const advertisedTotal = skyscanner ? 502.93 : 509.23;
   let listener;
   let browser;
   let restarted;
@@ -122,13 +131,20 @@ async function run() {
     assert.equal(await page.$eval("#reviewHotelPrice0", node => Number(node.value)), 190.98);
     await page.select("#reviewFlightCandidate", "1");
     assert.equal(await page.$eval("#universalFlightPrice", node => Number(node.value)), 288);
-    await page.select("#reviewFlightCandidate", "0");
-    assert.equal(await page.$eval("#universalFlightPrice", node => Number(node.value)), 294);
+    const skyDebug = await page.$eval("#smartImportReview details pre", node => JSON.parse(node.textContent).flight);
+    assert.equal(skyDebug.representation, "normalized-selected-candidate");
+    assert.equal(skyDebug.provider, "Skyscanner");
+    assert.deepEqual(skyDebug.sourceIds, ["SRC-4"]);
+    assert.deepEqual(skyDebug.observations.map(item => [item.amount, item.priceUnit]), [[144,"unknown"],[288,"party-total"]]);
+    assert.equal(skyDebug.flight.baggage, "");
+    assert.equal(skyDebug.flight.outboundSegments[0].flightNumber, "");
+    if (!skyscanner) await page.select("#reviewFlightCandidate", "0");
+    assert.equal(await page.$eval("#universalFlightPrice", node => Number(node.value)), flightTotal);
     await page.evaluate(() => applyUniversalTravelIntakeResult());
     const applied = await page.evaluate(() => ({ hotels, flights }));
     assert.equal(applied.hotels.length, 1);
     assert.deepEqual(applied.hotels[0].occupancy, { adults: 2, children: 0, rooms: 1, childAges: null, confirmed: false });
-    assert.equal(applied.flights[0].price, 294);
+    assert.equal(applied.flights[0].price, flightTotal);
     assert.equal(applied.flights[0].outboundSegments[0].departure, "2026-11-25T12:55");
     console.log("PASS Chromium upload/review/Apply and untouched occupancy confirmation");
 
@@ -150,10 +166,10 @@ async function run() {
     const { offer } = await read.json();
     assert.equal(offer.status, "draft");
     assert.equal(offer.hotelPrice, 190.98);
-    assert.equal(offer.flightPrice, 294);
-    assert.equal(offer.basePrice, 484.98);
+    assert.equal(offer.flightPrice, flightTotal);
+    assert.equal(offer.basePrice, baseTotal);
     assert.equal(offer.markupPercent, 5);
-    assert.equal(Number(offer.finalPrice.toFixed(2)), 509.23);
+    assert.equal(Number(offer.finalPrice.toFixed(2)), advertisedTotal);
     assert.equal(offer.hotels[0].occupancy.confirmed, true);
     assert.equal(offer.hotels[0].nights, 2);
     assert.equal(offer.hotels[0].nonRefundable, true);
@@ -179,14 +195,20 @@ async function run() {
     }
     assert.equal(JSON.parse(fs.readFileSync(process.env.DB_FILE, "utf8")).offers.length, initialOfferCount);
     console.log("PASS referenced checkout, nine atomic 422 refusals and property source readback");
-    assert.equal(offer.flights[0].importSelection.alternatives[0].amount, 288);
+    assert.equal(offer.flights[0].importSelection.alternatives[0].amount, skyscanner ? 294 : 288);
+    assert.equal(offer.flights[0].importSelection.provider, skyscanner ? "Skyscanner" : "Booking Flights");
+    assert.equal(offer.flights[0].importedFlightPrice.kind, "source-total");
+    assert.equal(offer.flights[0].outboundSegments[0].flightNumber, skyscanner ? "" : "PC272");
+    if (skyscanner) assert(!JSON.stringify(offer.flights[0].baggage).includes("2 лични вещи"));
+    else assert(JSON.stringify(offer.flights[0].baggage).includes("2 лични вещи"));
     assert.equal(offer.flights.length, 1);
-    console.log("PASS local Admin save/readback 200/200, 484.98 × 1.05 = 509.23");
+    console.log("PASS local Admin save/readback 200/200", baseTotal, advertisedTotal);
 
     const visible = text => {
-      for (const value of ["Beethoven Premium Hotel", "Невъзвръщаема тарифа", "2 нощувки", "PC272", "PC273",
+      for (const value of ["Beethoven Premium Hotel", "Невъзвръщаема тарифа", "2 нощувки", ...(skyscanner ? [] : ["PC272", "PC273"]),
         "При заявка, извън включените услуги"]) assert(text.includes(value), value);
-      assert.match(text, /509[,.]23/);
+      assert(text.includes(String(advertisedTotal)) || text.includes(String(advertisedTotal).replace(".", ",")));
+      if (skyscanner) assert(!text.includes("PC272") && !text.includes("PC273"));
       assert(!text.includes("Genius credits"));
       assert(!text.includes("Skyscanner"));
     };
@@ -207,6 +229,113 @@ async function run() {
     fs.writeFileSync(pdfPath, Buffer.from(await pdf.arrayBuffer()));
     visible(execFileSync("pdftotext", [pdfPath, "-"], { encoding: "utf8" }).replace(/\s+/g, " "));
     console.log("PASS legacy/registry HTML, Chromium Print and production PDF handler with pdftotext in local QA");
+
+    if (process.argv.includes("--flight-evidence-only")) {
+      const target = base + "/api/offers/" + id;
+      const readSnapshot = async () => (await (await fetch(target, { headers: { cookie } })).json());
+      const snapshot = await readSnapshot();
+      const flight = snapshot.offer.flights[0];
+      const claim = flight.importedFlightPrice;
+      const selection = flight.importSelection;
+      const initialBytes = fs.readFileSync(process.env.DB_FILE);
+      const apiRequest = (method, flight, overrides = {}, auth = cookie) => fetch(method === "PUT" ? target : base + "/api/offers", {
+        method, headers: { cookie: auth, "content-type": "application/json" },
+        body: JSON.stringify({ ...snapshot.offer, expectedVersion: snapshot.offerVersion, flights: [flight], ...overrides })
+      });
+      const replaceFlightText = (before, after) => JSON.parse(JSON.stringify(flight).replaceAll(before, after));
+      const shifted = JSON.parse(JSON.stringify(flight).replaceAll("2026-11-25", "2026-12-02").replaceAll("2026-11-27", "2026-12-04"));
+      const withoutProvenance = { ...flight, importedFlightPrice: undefined, importSelection: undefined };
+      const cases = [
+        [{ importedFlightPrice: { ...claim, referenceId: "forged" } }, {}, "FLIGHT_PRICE_REFERENCE_INVALID"],
+        [{ importedFlightPrice: { ...claim, intakeId: "SMART-1-aaaaaa" } }, {}, "FLIGHT_PRICE_REFERENCE_INVALID"],
+        [{ importedFlightPrice: { ...claim, candidateId: "other" } }, {}, "FLIGHT_PRICE_REFERENCE_INVALID"],
+        [{ importSelection: { ...selection, provider: skyscanner ? "Booking Flights" : "Skyscanner" } }, {}, "FLIGHT_PRICE_REFERENCE_INVALID"],
+        [{ importSelection: { ...selection, sourceIds: ["SRC-1"] } }, {}, "FLIGHT_PRICE_REFERENCE_INVALID"],
+        [{ route: "SOF -> IST / IST -> SOF" }, {}, "FLIGHT_PRICE_ROUTE_MISMATCH"],
+        [{}, { guests: "3 възрастни" }, "FLIGHT_PRICE_PASSENGERS_MISMATCH"],
+        [{}, { guests: "1 възрастен и 1 дете" }, "FLIGHT_PRICE_PASSENGERS_MISMATCH"],
+        [{ price: 144 }, {}, "FLIGHT_PRICE_AMOUNT_OR_FX_MISMATCH"],
+        [{ importedFlightPrice: { ...claim, rate: 2 } }, {}, "FLIGHT_PRICE_AMOUNT_OR_FX_MISMATCH"],
+        [{ importedFlightPrice: null }, {}, "FLIGHT_PRICE_PROVENANCE_REQUIRED"],
+        [shifted, { travelDates: "02.12.2026 - 04.12.2026" }, "FLIGHT_PRICE_ITINERARY_MISMATCH"],
+        [replaceFlightText("12:55", "13:55"), {}, "FLIGHT_PRICE_ITINERARY_MISMATCH"],
+        [{ departure: flight.departure.replace("12:55", "13:55") }, {}, "FLIGHT_PRICE_ITINERARY_MISMATCH"],
+        [replaceFlightText("Pegasus", "OtherAir"), {}, "FLIGHT_PRICE_ITINERARY_MISMATCH"],
+        [skyscanner ? { outboundSegments: flight.outboundSegments.map(segment => ({ ...segment, flightNumber: "PC999" })), segments: undefined }
+          : replaceFlightText("PC272", "PC999"), {}, "FLIGHT_PRICE_ITINERARY_MISMATCH"]
+      ];
+      for (const [change, overrides, code] of cases) {
+        for (const method of ["POST", "PUT"]) {
+          const response = await apiRequest(method, { ...flight, ...change }, overrides);
+          assert.equal(response.status, 422, code);
+          assert.deepEqual((await response.json()).details, { flightIndex: 0, code });
+          assert.deepEqual(fs.readFileSync(process.env.DB_FILE), initialBytes);
+        }
+        assert.deepEqual(await readSnapshot(), snapshot);
+      }
+      assert.equal((await apiRequest("POST", flight, {}, "aya_session=" + sessionFor("QA2"))).status, 422);
+      assert.deepEqual(fs.readFileSync(process.env.DB_FILE), initialBytes);
+      for (const method of ["POST", "PUT"]) {
+        const double = await apiRequest(method, flight, { flights: [flight, flight] });
+        assert.equal(double.status, 422);
+        assert.deepEqual((await double.json()).details, { flightIndex: 1, code: "FLIGHT_PRICE_MULTIPLE_CANDIDATES" });
+        assert.deepEqual(fs.readFileSync(process.env.DB_FILE), initialBytes);
+      }
+      const removed = await apiRequest("PUT", withoutProvenance);
+      assert.equal(removed.status, 422);
+      assert.deepEqual((await removed.json()).details, { flightIndex: 0, code: "FLIGHT_PRICE_PROVENANCE_REQUIRED" });
+      const flat = await apiRequest("PUT", flight, { flights: [] });
+      assert.equal(flat.status, 422);
+      assert.deepEqual((await flat.json()).details, { flightIndex: 0, code: "FLIGHT_PRICE_PROVENANCE_REQUIRED" });
+      for (const method of ["POST", "PUT"]) {
+        for (const pair of [[flight, { ...withoutProvenance, price: 144 }], [{ ...withoutProvenance, price: 144 }, flight]]) {
+          const response = await apiRequest(method, flight, { flights: pair });
+          assert.equal(response.status, 422);
+          assert.deepEqual((await response.json()).details, {
+            flightIndex: pair.findIndex(item => !item.importedFlightPrice), code: "FLIGHT_PRICE_MULTIPLE_CANDIDATES"
+          });
+          assert.deepEqual(fs.readFileSync(process.env.DB_FILE), initialBytes);
+        }
+      }
+      assert.deepEqual(await readSnapshot(), snapshot);
+      const resolved = await apiRequest("PUT", flight);
+      assert.equal(resolved.status, 200);
+      const refreshed = await readSnapshot();
+      const manualPut = await apiRequest("PUT", { ...shifted, importedFlightPrice: { kind: "operator" } }, {
+        expectedVersion: refreshed.offerVersion, travelDates: "02.12.2026 - 04.12.2026"
+      });
+      assert.equal(manualPut.status, 200);
+      assert.deepEqual((await manualPut.json()).offer.flights[0].importedFlightPrice, { kind: "operator" });
+      const operator = await apiRequest("POST", { ...flight, price: 300, importedFlightPrice: { kind: "operator" } });
+      assert.equal(operator.status, 200);
+      assert.deepEqual((await operator.json()).offer.flights[0].importedFlightPrice, { kind: "operator" });
+      const legacyCreate = await apiRequest("POST", { ...flight, importSelection: undefined, importedFlightPrice: undefined });
+      assert.equal(legacyCreate.status, 200);
+      const legacyId = (await legacyCreate.json()).offer.id;
+      const legacyUrl = base + "/api/offers/" + legacyId;
+      const legacySnapshot = await (await fetch(legacyUrl, { headers: { cookie } })).json();
+      const legacyResave = await fetch(legacyUrl, { method: "PUT", headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ ...legacySnapshot.offer, expectedVersion: legacySnapshot.offerVersion }) });
+      assert.equal(legacyResave.status, 200);
+      assert.equal((await legacyResave.json()).offer.flights[0].importedFlightPrice, undefined);
+      if (!skyscanner) {
+        await page.goto(base + "/admin", { waitUntil: "networkidle0" });
+        await page.evaluate(() => {
+          const transfer = new DataTransfer();
+          transfer.items.add(new File(["skyscanner-unknown.jpg"], "skyscanner-unknown.jpg", { type:"image/jpeg" }));
+          document.getElementById("smartImportImage").files = transfer.files;
+          return uploadSmartImport();
+        });
+        const debug = await page.$eval("#smartImportReview details pre", node => JSON.parse(node.textContent).flight);
+        assert.equal(debug.observations[0].amount, 144);
+        assert.equal(debug.flight.price, 0);
+        assert.deepEqual(debug.warnings, ["FLIGHT_PRICE_SCOPE_UNKNOWN"]);
+        await page.evaluate(() => applyUniversalTravelIntakeResult());
+        assert.equal(await page.evaluate(() => flights.length), 0);
+      }
+      console.log("PASS itinerary and provenance POST/PUT matrix, atomic readback, explicit operator conversion and legacy resave");
+      return;
+    }
 
     const submit = (hotel, auth = cookie) => fetch(base + "/api/offers", {
       method: "POST", headers: { cookie: auth, "content-type": "application/json" },

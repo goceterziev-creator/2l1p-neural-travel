@@ -36,6 +36,7 @@ const presentationViewModel = require("./gt63-core/presentation-view-model");
 const { buildLegacyOfferPrintInput } = require("./gt63-core/legacy-offer-print-input");
 const { prepareHotelPrintImages, verifiedHotelImagePath } = require("./gt63-core/hotel-print-images");
 
+const smartFlightPrice = require("./server/smart-import-flight-price");
 const smartImportPriceBinding = require("./server/smart-import-price-binding");
 const { normalizeHotelMoney, groupHotelScreenshots, hotelReviewWarnings, smartHotelRecord, groupSmartHotelScreenshots, hotelBookingConditions } = require("./server/smart-import-hotel-review");
 
@@ -2006,6 +2007,7 @@ function normalizeStoredFlight(f = {}, fallbackPrice = 0) {
 
   return withBulgarianFlightDisplay({
     ...storedFlightImportSelection(f.importSelection),
+    ...(f.importedFlightPrice ? { importedFlightPrice: f.importedFlightPrice } : {}),
     ...(f.dateResolution?.version === 2 ? { dateResolution: cloneJsonSafe(f.dateResolution) } : {}),
     airline: f.airline || "",
     route: f.route || "",
@@ -6277,7 +6279,7 @@ function projectOfferNotices(offer) {
 
 function clientBaggageProjection(offer) {
   const copy = {...offer};
-  for (const key of ["flights","flightOptions"]) if (Array.isArray(copy[key])) copy[key] = copy[key].map(({ importSelection, ...flight })=>({...flight,baggage:presentationViewModel.baggageLabel(flight.baggage)}));
+  for (const key of ["flights","flightOptions"]) if (Array.isArray(copy[key])) copy[key] = copy[key].map(({ importSelection, importedFlightPrice, ...flight })=>({...flight,baggage:presentationViewModel.baggageLabel(flight.baggage)}));
   if (copy.proposalInput?.flight) copy.proposalInput = {...copy.proposalInput,flight:{...copy.proposalInput.flight,baggage:presentationViewModel.baggageLabel(copy.proposalInput.flight.baggage)}};
   return copy;
 }
@@ -9314,10 +9316,14 @@ app.get("/api/offers/:id", requireCapability("offers.view"), (req, res) => {
 });
 
 function bindSmartImportOfferPrices(body, db, req, previous) {
-  return smartImportPriceBinding.bindOfferPrices({
-    body, agencyId: previous ? entityAgencyId(previous) : getCurrentAgencyId(req),
+  const agencyId = previous ? entityAgencyId(previous) : getCurrentAgencyId(req);
+  const hotelBound = smartImportPriceBinding.bindOfferPrices({
+    body, agencyId,
     intakes: db.smartImportPriceEvidenceV1, previous,
     invalid: (hotelIndex, code, fields) => routeError(`Невалидно checkout доказателство за хотелски вариант ${hotelIndex + 1}: ${code}`, 422, { hotelIndex, code, fields })
+  });
+  return smartFlightPrice.bindFlightPrices({ body: hotelBound, agencyId, intakes: db.smartImportPriceEvidenceV1, previous,
+    invalid: (flightIndex, code) => routeError(`Невалидна цена за полетен вариант ${flightIndex + 1}: ${code}`, 422, { flightIndex, code })
   });
 }
 
@@ -9971,6 +9977,16 @@ const GEMINI_FLIGHT_SCHEMA = {
         stops: { type: "number" }
       }
     },
+    priceObservations: { type: "array", items: { type: "object", properties: {
+      sourceId: { type: "string" }, label: { type: "string" }, text: { type: "string" },
+      amount: { type: "number" }, currency: { type: "string" },
+      priceUnit: { type: "string", enum: ["per-person", "party-total", "unknown"] },
+      routeScope: { type: "string", enum: ["segment", "one-way", "round-trip", "unknown"] },
+      componentRole: { type: "string", enum: ["fare-total", "tax", "add-on", "unknown"] },
+      passengerScope: { type: "object", properties: {
+        count: { type: "number" }, adults: { type: "number" }, children: { type: "number" }, infants: { type: "number" }
+      } }
+    } } },
     price: { type: "number" },
     currency: { type: "string" },
     baggage: { type: "string" },
@@ -9989,8 +10005,7 @@ function firstVisionValue(...values) {
     if (value === 0) return value;
     if (value === false) return value;
     if (value == null) continue;
-    const text = String(value).trim();
-    if (text) return value;
+    if (typeof value !== "string" || smartFlightPrice.flightText(value)) return value;
   }
   return "";
 }
@@ -10116,7 +10131,7 @@ function validateGeminiFlightJson(value = {}) {
   const outboundSegments = safeGeminiSegments(value.outbound);
   const inboundSegments = safeGeminiSegments(value.inbound);
   const price = parseVisionPrice(value.price);
-  const dates = safeArray(value.dates).map((item) => String(item || "").trim()).filter(Boolean);
+  const dates = safeArray(value.dates).map(smartFlightPrice.flightText).filter(Boolean);
   return {
     outbound: {
       segments: outboundSegments,
@@ -10129,6 +10144,7 @@ function validateGeminiFlightJson(value = {}) {
       stops: Number(value.inbound?.stops ?? Math.max(inboundSegments.length - 1, 0)) || 0
     },
     price,
+    priceObservations: smartFlightPrice.normalizePriceObservations(value.priceObservations),
     currency: String(value.currency || "EUR").trim().toUpperCase() || "EUR",
     baggage: String(value.baggage || "").replace(/\s+/g, " ").trim(),
     passengers: Number(value.passengers || 0) || 0,
@@ -10147,8 +10163,8 @@ function geminiCanonicalToFlight(gemini = {}) {
   const lastOutbound = outboundSegments[outboundSegments.length - 1] || {};
   const firstInbound = inboundSegments[0] || {};
   const lastInbound = inboundSegments[inboundSegments.length - 1] || {};
-  const route = firstOutbound.from && lastOutbound.to && firstInbound.from && lastInbound.to
-    ? `${firstOutbound.from} -> ${lastOutbound.to} / ${firstInbound.from} -> ${lastInbound.to}`
+  const route = firstOutbound.from && lastOutbound.to
+    ? [`${firstOutbound.from} -> ${lastOutbound.to}`, ...(firstInbound.from && lastInbound.to ? [`${firstInbound.from} -> ${lastInbound.to}`] : [])].join(" / ")
     : "";
   const airline = [...new Set([
     ...outboundSegments.map((segment) => segment.airline),
@@ -10299,9 +10315,10 @@ async function postGeminiVisionWithRetry({
   return last || { response: null, payload: {}, model: "", attempt: 0, status: 0, message: "Gemini request failed" };
 }
 
+const FLIGHT_PRICE_OBSERVATION_RULE = "Return priceObservations for every visible monetary amount, including competing headlines and totals. Each object contains sourceId, label (exact visible label), text (only the exact visible amount and currency), amount, currency, priceUnit (per-person, party-total, unknown), routeScope (segment, one-way, round-trip, unknown), componentRole (fare-total, tax, add-on, unknown), and passengerScope (count, adults, children, infants when evidenced). Use unknown or omit unsupported details. Never infer a per-person price from arithmetic or treat a from-price as a total. Transcribe the visible party total separately. For missing flight fields omit them or use empty strings, never the string null.";
 const FLIGHT_SCREENSHOT_DATE_RULE = "For EVERY segment departure and arrival, retain the visibly associated day/month from itinerary date headings, including explicit next-day labels. Do not return only a clock when its date is visible. If the year is absent, retain day/month without a year; never guess the current year or borrow a hotel year. Do not assume arrival is on the departure day. If a heading cannot be associated unambiguously, leave the date missing and add a warning.";
 
-async function extractFlightWithGeminiVision(files = [], { destination = "" } = {}) {
+async function extractFlightWithGeminiVision(files = [], { destination = "", sourceIds = [] } = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     const error = new Error("Missing GEMINI_API_KEY. Add it in Railway Variables to enable Gemini Vision Test.");
@@ -10316,8 +10333,10 @@ async function extractFlightWithGeminiVision(files = [], { destination = "" } = 
     "Use IATA airport codes when visible. Use ISO-like YYYY-MM-DDTHH:MM when dates are visible enough; otherwise keep the visible text.",
     "Extract outbound and inbound segments, price, currency, baggage, passengers, and visible dates.",
     FLIGHT_SCREENSHOT_DATE_RULE,
+    FLIGHT_PRICE_OBSERVATION_RULE,
+    sourceIds.length ? "Screenshots in order: " + sourceIds.slice(0, 4).join(", ") : "",
     destination ? `Expected destination context: ${destination}` : "",
-    "Schema keys: outbound.segments[], inbound.segments[], price, currency, baggage, passengers, dates."
+    "Schema keys: outbound.segments[], inbound.segments[], price, currency, baggage, passengers, dates, priceObservations."
   ].filter(Boolean).join("\n");
 
   const imageParts = safeArray(files).slice(0, 4).map((file) => ({
@@ -10365,7 +10384,7 @@ async function extractFlightWithGeminiVision(files = [], { destination = "" } = 
   };
 }
 
-async function extractFlightWithOpenAiVision(files = [], { destination = "" } = {}) {
+async function extractFlightWithOpenAiVision(files = [], { destination = "", sourceIds = [] } = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     const error = new Error("Missing OPENAI_API_KEY. Add it in Railway Variables to enable OpenAI flight extraction fallback.");
@@ -10379,8 +10398,10 @@ async function extractFlightWithOpenAiVision(files = [], { destination = "" } = 
     "Use IATA airport codes when visible. Use ISO-like YYYY-MM-DDTHH:MM when dates are visible enough; otherwise keep the visible text.",
     "Extract outbound and inbound segments, price, currency, baggage, passengers, and visible dates.",
     FLIGHT_SCREENSHOT_DATE_RULE,
+    FLIGHT_PRICE_OBSERVATION_RULE,
+    sourceIds.length ? "Screenshots in order: " + sourceIds.slice(0, 4).join(", ") : "",
     "Do not extract hotel details. If no flight is visible, return the same schema with empty segment arrays.",
-    "Return exactly these top-level keys: outbound, inbound, price, currency, baggage, passengers, dates.",
+    "Return exactly these top-level keys: outbound, inbound, price, currency, baggage, passengers, dates, priceObservations.",
     "Each outbound and inbound object must contain a segments array.",
     "Segment keys must be exactly: from, to, departure, arrival, airline, flightNumber, duration.",
     "Do not use keys like departureAirport, arrivalAirport, departureTime, arrivalTime, outboundSegments, or returnSegments.",
@@ -11900,7 +11921,7 @@ function buildSmartImportResponse({
     mode: "GT63_SMART_IMPORT",
     ...(flightSourceReview ? {flightSourceReview} : {}),
     intakeId,
-    ...(flightCandidates.length > 1 ? { flightCandidates } : {}),
+    ...(flightCandidates.length ? { flightCandidates: flightCandidates.map(({ result, ...candidate }) => candidate) } : {}),
     sources: safeArray(sources),
     classifications: safeArray(classifications),
     offerFlight: offerFlight && typeof offerFlight === "object" ? offerFlight : {},
@@ -12034,26 +12055,33 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       const results = [];
       for (const group of groups.values()) {
         try {
-          const result = await extractFlightWithAiVision(group.files, { destination });
+          const result = await extractFlightWithAiVision(group.files, { destination, sourceIds: group.sourceIds });
           results.push({ provider: group.provider, sourceIds: group.sourceIds, result });
         } catch (error) {
           warnings.push(`Flight extraction failed (${group.provider || group.sourceIds.join(", ")}): ${error.message}`);
         }
       }
-      // Prefer complete, priced itineraries, then prefer evidence with flight numbers and baggage.
-      const completeness = ({ result }) => {
-        const flight = result.flight || {};
+      // Rank only price evidence that describes the selected itinerary and party.
+      for (const { provider, sourceIds, result } of results) {
+        const flight = { ...result.flight };
+        const observations = smartFlightPrice.normalizePriceObservations(result.canonical?.priceObservations);
+        // The server can identify an unlabelled observation only in a single-image extraction.
+        if (sourceIds.length === 1) for (const item of observations) item.sourceId ||= sourceIds[0];
+        const priceReview = smartFlightPrice.reviewFlightPrice(flight, observations, sourceIds, result.canonical?.passengers);
+        flight.price = priceReview.total?.amount || 0;
+        flight.currency = priceReview.total?.currency || "";
+        flight.baggage = smartFlightPrice.flightText(flight.baggage);
+        flightCandidates.push({ candidateId: crypto.randomUUID(), provider, sourceIds, flight, observations, priceReview, result });
+      }
+      const completeness = ({ flight }) => {
         const segments = [...safeArray(flight.outboundSegments), ...safeArray(flight.inboundSegments)];
         return 8 * Number(Boolean(flight.route && flight.price > 0)) +
-          2 * Number(segments.length > 0 && segments.every(segment => segment.flightNumber)) +
-          Number(Boolean(flight.baggage && flight.baggage !== "Не е посочено"));
+          2 * Number(segments.length > 0 && segments.every(segment => smartFlightPrice.flightText(segment.flightNumber))) +
+          Number(Boolean(flight.baggage));
       };
-      results.sort((a, b) => completeness(b) - completeness(a));
-      for (const { provider, sourceIds, result } of results) {
-        flightCandidates.push({ provider, sourceIds, flight: result.flight || {} });
-      }
-      flightResult = results[0]?.result || null;
-      offerFlight = flightResult?.flight || {};
+      flightCandidates.sort((a, b) => completeness(b) - completeness(a));
+      flightResult = flightCandidates[0]?.result || null;
+      offerFlight = flightCandidates[0]?.flight || {};
     }
 
     let offerHotel = {};
@@ -12081,7 +12109,8 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
 
     const agencyId = getCurrentAgencyId(req);
     let quote;
-    if (offerHotelOptions.some(hotel => hotel.checkoutSourceId && hotel.price > 0 && hotel.currency !== "EUR")) {
+    if (offerHotelOptions.some(hotel => hotel.checkoutSourceId && hotel.price > 0 && hotel.currency !== "EUR") ||
+        flightCandidates.some(item => item.flight.price > 0 && item.flight.currency !== "EUR")) {
       try { quote = await getOfferExchangeRates(); } catch {
         warnings.push("Няма удостоверим курс за checkout. Въведете изрично операторска цена в EUR.");
       }
@@ -12102,9 +12131,22 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
         hotel.currency = "";
       }
     }
-    if (checkoutRecords.length) await mutateDb(db => {
+    const flightRecords = [];
+    for (const candidate of flightCandidates) {
+      const record = smartFlightPrice.sourceFlightRecord({ intakeId, agencyId, candidate, quote });
+      if (record) {
+        flightRecords.push(record);
+        candidate.checkoutBinding = { version: record.version, intakeId, referenceId: record.referenceId,
+          candidateId: record.candidateId, rate: record.rate, eurPrice: record.eurPrice };
+      } else {
+        candidate.flight.price = 0;
+        candidate.flight.currency = "";
+        candidate.warnings = [candidate.priceReview.warning || (candidate.provider ? "FLIGHT_PRICE_FX_UNAVAILABLE" : "FLIGHT_PRICE_PROVIDER_UNKNOWN")];
+      }
+    }
+    if (checkoutRecords.length || flightRecords.length) await mutateDb(db => {
       db.smartImportPriceEvidenceV1 ||= {};
-      db.smartImportPriceEvidenceV1[intakeId] = { agencyId, records: checkoutRecords };
+      db.smartImportPriceEvidenceV1[intakeId] = { agencyId, records: checkoutRecords, flightRecords };
       return db;
     });
 
