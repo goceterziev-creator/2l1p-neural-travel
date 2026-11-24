@@ -2186,6 +2186,8 @@ const hotels = inputHotels.length
 
   const offer = {
     id: body.id || uid(),
+    ...(typeof body.smartImportIntakeId === "string" && /^SMART-\d{13}-[a-f0-9]{6}$/.test(body.smartImportIntakeId)
+      ? { smartImportIntakeId: body.smartImportIntakeId } : {}),
     clientName: body.clientName || "",
     clientPhone: body.clientPhone || "",
     destination: body.destination || "",
@@ -6205,10 +6207,13 @@ function enrichHotelImportFallbacks(hotel = {}, parsed = {}, destination = "") {
   const destinationName = normalizeImportDestinationName(destination || "");
   const address = String(parsed.address || parsed.location || "").trim();
   const amenities = Array.isArray(parsed.amenities)
-    ? parsed.amenities.map((item) => String(item || "").trim()).filter(Boolean).join(", ")
+    ? parsed.amenities.map((item) => String(item || "").trim())
+      .filter(item => item && !/(?:airport|летищ|трансфер|shuttle)/i.test(item)).join(", ")
     : String(parsed.amenities || "").trim();
   const rating = String(parsed.rating || "").trim();
-  const enriched = { ...hotel };
+  const stripUnstructuredTransferClaims = value => String(value || "").split(/(?<=[.!?])\s+/u)
+    .filter(sentence => !/(?:airport|летищ|трансфер|shuttle)/i.test(sentence)).join(" ").trim();
+  const enriched = { ...hotel, description: stripUnstructuredTransferClaims(hotel.description) };
 
   if (!enriched.area && address) enriched.area = address;
   if (!enriched.area && destinationName) enriched.area = destinationName;

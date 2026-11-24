@@ -6,6 +6,7 @@ const vm = require("node:vm");
 const offerNotices = require("../server/offer-notices");
 const test = require("node:test");
 const occupancy = require("../public/hotel-occupancy");
+const { hotelBookingConditions } = require("../server/smart-import-hotel-review");
 const { buildLegacyOfferPrintInput } = require("../gt63-core/legacy-offer-print-input");
 const { buildPresentationViewModel } = require("../gt63-core/presentation-view-model");
 const { renderPrintProposal } = require("../gt63-core/renderers/print-presentation");
@@ -151,7 +152,7 @@ test("READY dashboard excludes unconfirmed offers but accepts INFO-only confirme
 test("real save normalizer, JSON persistence, edit normalization and list/detail route handlers preserve independent hotel data", () => {
   const routes = new Map();
   let database = { offers: [] };
-  const integration = vm.createContext({ offerNotices, hotelOccupancyQa: occupancy, URL,
+  const integration = vm.createContext({ offerNotices, hotelOccupancyQa: occupancy, hotelBookingConditions, URL,
     offerRecordVersion: require("../server/offer-record-version").offerRecordVersion,
     crypto: require('node:crypto'), FLIGHT_AIRPORT_ALIASES: [],
     normalizeTravelDate: require('../server/travel-normalizers/date-normalizer').normalizeTravelDate,
@@ -165,10 +166,17 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   vm.runInContext(section(server, 'app.get("/api/offers",', 'app.get("/api/offers/stats/summary",') +
     section(server, 'app.get("/api/offers/:id",', 'app.post("/api/offers",'), integration);
   const body = withOccupancy({ ...normalized, childAges: [1, 9] });
+  body.hotels[0] = { ...body.hotels[0], stars: "4", transferOnRequest: false };
+  body.hotelStars = "5";
+  body.smartImportIntakeId = "SMART-1795542082853-a1b2c3";
   body.destination = '';
   const saved = integration.normalizeOffer(body);
   assert.equal(saved.hotels[0].id, 'hotel-a');
   assert.deepEqual(JSON.parse(JSON.stringify(saved.hotels[0].occupancy)), { ...normalized, childAges: [1, 9] });
+  assert.equal(saved.hotels[0].stars, "4");
+  assert.notEqual(saved.hotels[0].stars, body.hotelStars);
+  assert.equal(saved.hotels[0].transferOnRequest, false);
+  assert.equal(saved.smartImportIntakeId, body.smartImportIntakeId);
   const flightBefore = JSON.stringify(saved.flights);
   const pricingBefore = JSON.stringify([saved.flightPrice, saved.hotelPrice, saved.basePrice, saved.finalPrice, saved.markupPercent]);
   database = JSON.parse(JSON.stringify({ offers: [saved] }));
@@ -177,6 +185,8 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   assert.equal(JSON.stringify([edit.flightPrice, edit.hotelPrice, edit.basePrice, edit.finalPrice, edit.markupPercent]), pricingBefore);
   assert.equal(edit.hotels[0].selected, true);
   assert.deepEqual(JSON.parse(JSON.stringify(edit.hotels[0].occupancy)), { ...normalized, childAges: [1, 9] });
+  assert.equal(edit.hotels[0].transferOnRequest, false);
+  assert.equal(edit.smartImportIntakeId, body.smartImportIntakeId);
   let single, list;
   routes.get('/api/offers/:id')({ params: { id: saved.id } }, { json: x => { single = x.offer; } });
   routes.get('/api/offers')({}, { json: x => { list = x.offers[0]; } });

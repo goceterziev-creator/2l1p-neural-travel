@@ -63,7 +63,7 @@ function hotelBookingConditions(hotel = {}) {
   return {
     ...(Number.isSafeInteger(nights) && nights > 0 ? { nights } : {}),
     ...(typeof hotel.nonRefundable === "boolean" ? { nonRefundable: hotel.nonRefundable } : {}),
-    ...(hotel.transferOnRequest === true ? { transferOnRequest: true } : {})
+    ...(typeof hotel.transferOnRequest === "boolean" ? { transferOnRequest: hotel.transferOnRequest } : {})
   };
 }
 
