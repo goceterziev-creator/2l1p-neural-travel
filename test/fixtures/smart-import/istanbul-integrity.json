@@ -26,6 +26,10 @@
   },
   "booking-flights.jpg": {
     "provider": "Booking Flights",
+    "passengers": 2,
+    "priceObservations": [
+      {"label":"Общо за всички пътници","text":"294,00 EUR","amount":294,"currency":"EUR","priceUnit":"party-total","routeScope":"round-trip","componentRole":"fare-total","passengerScope":{"count":2,"adults":2,"children":0,"infants":0}}
+    ],
     "price": 294,
     "currency": "EUR",
     "baggage": "2 лични вещи",
@@ -34,9 +38,16 @@
   },
   "skyscanner.jpg": {
     "provider": "Skyscanner",
-    "price": 288,
+    "passengers": 2,
+    "priceObservations": [
+      {"label":"11 оферти от","text":"144 €","amount":144,"currency":"EUR","priceUnit":"unknown","routeScope":"unknown","componentRole":"unknown"},
+      {"label":"Общо","text":"288 €","amount":288,"currency":"EUR","priceUnit":"party-total","routeScope":"round-trip","componentRole":"fare-total","passengerScope":{"count":2,"adults":2,"children":0,"infants":0}}
+    ],
+    "price": {"amount":144,"currency":"EUR"},
+    "totalPrice": {"amount":288,"currency":"EUR"},
+    "baggage":"null",
     "currency": "EUR",
-    "outbound": { "segments": [{ "from": "SOF", "to": "SAW", "airline": "Pegasus", "departure": "25-ноем. 12:55", "arrival": "25-ноем. 15:10" }] },
+    "outbound": { "segments": [{ "from": "SOF", "to": "SAW", "airline": "Pegasus", "flightNumber": "null", "departure": "25-ноем. 12:55", "arrival": "25-ноем. 15:10" }] },
     "inbound": { "segments": [{ "from": "SAW", "to": "SOF", "airline": "Pegasus", "departure": "27-ноем. 18:05", "arrival": "27-ноем. 18:25" }] }
   }
 }

@@ -65,6 +65,7 @@ async function addFlight(flight = {}) {
     notes: cleanFlight.notes || "",
     price: Number(cleanFlight.price || 0),
     ...(cleanFlight.importSelection ? { importSelection: cleanFlight.importSelection } : {}),
+    ...(cleanFlight.importedFlightPrice ? { importedFlightPrice: cleanFlight.importedFlightPrice } : {}),
     outboundSegments: Array.isArray(cleanFlight.outboundSegments) ? cleanFlight.outboundSegments : [],
     inboundSegments: Array.isArray(cleanFlight.inboundSegments) ? cleanFlight.inboundSegments : [],
     stopoverAirports: Array.isArray(cleanFlight.stopoverAirports) ? cleanFlight.stopoverAirports : [],
@@ -2979,12 +2980,13 @@ function renderUniversalTravelReview(data = {}, files = []) {
   if (!box) return;
 
   const candidates = data.flightCandidates || [];
-  const flight = candidates[data.selectedFlightIndex || 0]?.flight || data.offerFlight || {};
+  const candidate = candidates[data.selectedFlightIndex || 0];
+  const flight = candidate?.flight || data.offerFlight || {};
   const hotel = data.offerHotel || {};
   const hotelAuthority = hotel.sourceAuthority || {};
   const hotelOptions = data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : []);
   const hotelSourceLinks = [...new Set([...(data.hotelLinks || []),hotel.url].filter(Boolean))];
-  const sourceCurrencies = [...new Set([flight.currency, ...hotelOptions.map(h=>h.currency)].filter(c=>c && c !== "EUR"))];
+  const sourceCurrencies = [...new Set([candidate?.checkoutBinding ? "" : flight.currency, ...hotelOptions.map(h=>h.currency)].filter(c=>c && c !== "EUR"))];
   const warnings = Array.from(new Set((data.warnings || []).map(universalWarningText).filter(Boolean)));
   const sources = Array.isArray(data.sources) ? data.sources : [];
   const hasFlight = Boolean(flight.route || flight.airline || (flight.outboundSegments || []).length || (flight.inboundSegments || []).length);
@@ -3037,7 +3039,12 @@ function renderUniversalTravelReview(data = {}, files = []) {
             <label>Baggage</label>
             <input id="universalFlightBaggage" value="${escapeHtml(adminBaggageText(flight.baggage))}" />
             <label>Flight Price (${escapeHtml(flight.currency || "неизвестна валута")})</label>
-            <input id="universalFlightPrice" type="number" step="0.01" value="${Number(flight.price || 0)}" />
+            <input id="universalFlightPrice" type="number" step="0.01" value="${Number(flight.price || 0) || ""}" ${candidate ? "readonly" : ""} />
+            ${candidate ? `<label>Операторска полетна цена в EUR
+              <input id="reviewFlightOperatorPrice" type="number" min="0.01" step="0.01" placeholder="Въведете изрично след проверка" />
+            </label>
+            ${(candidate.warnings || []).map(warning => `<p class="warning">Цената изисква преглед (${escapeHtml(warning)}).</p>`).join("")}
+            ${(candidate.observations || []).map(item => `<p>${escapeHtml([item.sourceId, item.label, item.text, item.priceUnit, item.routeScope, item.componentRole].filter(Boolean).join(" · "))}</p>`).join("")}` : ""}
             ${flight.displayBg?.itineraryText ? `<pre class="flight-segment-summary" style="white-space:pre-wrap; line-height:1.45;">${escapeHtml(flight.displayBg.itineraryText)}</pre>` : ""}
           ` : `<div class="muted">Не е открит видим полет.</div>`}
         </section>
@@ -3088,7 +3095,11 @@ function renderUniversalTravelReview(data = {}, files = []) {
           intakeId: data.intakeId,
           confidence: data.confidence,
           sources: data.sources,
-          flight: data.flight,
+          flight: candidate ? {
+            representation: "normalized-selected-candidate", candidateId: candidate.candidateId,
+            provider: candidate.provider, sourceIds: candidate.sourceIds, flight: candidate.flight,
+            observations: candidate.observations, priceReview: candidate.priceReview, warnings: candidate.warnings || []
+          } : data.flight,
           hotel: data.hotel,
           sourceAuthority: {
             flight: flight.sourceAuthority || {},
@@ -3264,6 +3275,23 @@ async function applyUniversalTravelIntakeResult() {
   if ($("universalFlightArrival")) flight.arrival = $("universalFlightArrival").value.trim();
   if ($("universalFlightBaggage")) flight.baggage = readAdminBaggageInput("universalFlightBaggage", flight.baggage);
   if ($("universalFlightPrice")) flight.price = Number($("universalFlightPrice").value || 0);
+  if (selectedCandidate) {
+    const operatorPrice = $("reviewFlightOperatorPrice")?.value;
+    const binding = selectedCandidate.checkoutBinding;
+    if (operatorPrice) {
+      const entered = Number(operatorPrice);
+      if (!Number.isFinite(entered) || entered <= 0) { alert("Въведете положителна операторска цена в EUR."); return; }
+      flight.price = entered;
+      flight.currency = "EUR";
+      flight.importedFlightPrice = { kind: "operator" };
+    } else if (binding) {
+      flight.importedFlightPrice = { kind: "source-total", version: binding.version, intakeId: binding.intakeId,
+        referenceId: binding.referenceId, candidateId: binding.candidateId, rate: binding.rate };
+    } else {
+      alert("Изберете полет с доказана обща цена или въведете изрично операторска цена в EUR.");
+      return;
+    }
+  }
   flight = await reviewFlightDateConsistencyUI(flight);
   if (!flight) return;
   if (selectedCandidate) {
@@ -3313,10 +3341,10 @@ async function applyUniversalTravelIntakeResult() {
     option.description ||= property.description;
     option.propertySourceIds = [...(option.propertySourceIds || []), property.sourceId];
   }
-  const currencies = [...new Set([flight.currency, ...reviewedHotels.map(h=>h.currency)].filter(c=>c && c !== "EUR"))];
+  const currencies = [...new Set([flight.importedFlightPrice?.kind === "source-total" ? "" : flight.currency, ...reviewedHotels.map(h=>h.currency)].filter(c=>c && c !== "EUR"))];
   const rates = Object.fromEntries(currencies.map((c,i)=>[c,Number($("reviewExchangeRate"+i)?.value || 0)]));
   const requiresRate = [flight, ...reviewedHotels].some(item => item.currency && item.currency !== "EUR" &&
-    item.importedPrice?.kind !== "checkout" && !(rates[item.currency]>0));
+    item.importedPrice?.kind !== "checkout" && item.importedFlightPrice?.kind !== "source-total" && !(rates[item.currency]>0));
   if (requiresRate) { alert("Въведете положителен курс за всяка изходна валута. Не могат да се събират различни валути."); return; }
   if (data.mode === "GT63_SMART_IMPORT" && reviewedHotels.some(h => Array.isArray(h.priceEvidence) && h.price > 0 && !h.importedPrice)) {
     alert("Изберете операторска цена или прегледайте checkout доказателството.");
@@ -3326,7 +3354,8 @@ async function applyUniversalTravelIntakeResult() {
   function inEuro(item) {
     const sourceCurrency = item.currency || "EUR";
     const sourcePrice = item.price;
-    const exchangeRate = item.importedPrice?.kind === "checkout" ? item.checkoutBinding.rate : sourceCurrency === "EUR" ? 1 : rates[sourceCurrency];
+    const exchangeRate = item.importedFlightPrice?.kind === "source-total" ? item.importedFlightPrice.rate :
+      item.importedPrice?.kind === "checkout" ? item.checkoutBinding.rate : sourceCurrency === "EUR" ? 1 : rates[sourceCurrency];
     const rateInput=$("reviewExchangeRate"+currencies.indexOf(sourceCurrency));
     const automatic = rateInput?.dataset?.quoteRate === String(exchangeRate);
     return {...item, sourcePrice, sourceCurrency, exchangeRate, exchangeRateDate:automatic ? rateInput.dataset.quoteDate : new Date().toISOString(), exchangeRateSource:automatic ? "ExchangeRate-API" : "operator", currency:"EUR", price: Math.round(sourcePrice / exchangeRate * 100) / 100};
@@ -3728,6 +3757,10 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
       window.open(`/api/offers/view/${result.offer.id}`, "_blank");
     }
   } catch (error) {
+    if (/^FLIGHT_(?:PRICE|OPERATOR_PRICE)_/.test(error.details?.code || "")) {
+      alert(`Полетен вариант ${error.details.flightIndex + 1}: ${error.details.code}. Проверете маршрута, пътниците и цената или изберете „Използвай операторска полетна цена“.`);
+      return;
+    }
     if (/^CHECKOUT_/.test(error.details?.code || "")) {
       const fields = error.details.fields?.join(", ");
       alert(`Хотелски вариант ${error.details.hotelIndex + 1}: checkout доказателството не съвпада${fields ? " (" + fields + ")" : ""}. Възстановете доказаните данни, импортирайте нов checkout или изберете „Използвай операторска цена“.`);
@@ -3930,6 +3963,8 @@ function renderFlightCards() {
       <textarea class="flight-notes-field" rows="6" placeholder="Flight Notes" onchange="flights[${i}].notes=this.value;updateAutoPrice();">${escapeHtml(f.notes || "")}</textarea>
       ${renderOperatorFlightSegments(f)}
       <button type="button" onclick="reviewSavedFlightDates(${i})">Провери / коригирай полетните дати</button>
+      ${f.importedFlightPrice?.kind === "source-total" ? `<button type="button" onclick="flights[${i}].importedFlightPrice={kind:'operator'};renderFlightCards();">Използвай операторска полетна цена</button>` : ""}
+      ${f.importedFlightPrice?.kind === "operator" ? "<small>Операторска полетна цена</small>" : ""}
       <button type="button" onclick="removeFlight(${i})">Remove Flight</button>
     </div>
   `).join("");

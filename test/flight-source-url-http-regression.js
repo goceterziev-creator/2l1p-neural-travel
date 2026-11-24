@@ -8,8 +8,8 @@ const filename=path.resolve(__dirname,'../server.js'),h=new Module(filename,modu
 // Replace external providers only inside the test module. Real route/auth/multipart,
 // response builder and UI execute unchanged. No paid calls or external fetching.
 h._compile(fs.readFileSync(filename,'utf8')+`
- classifySmartImportSource=async(file,index)=>({sourceType:file.originalname.includes('hotel')?'hotel':'flight',confidence:1,index});
- extractFlightWithAiVision=async()=>({flight:{airline:'Turkish Airlines',route:'SOF → AUH',price:7173.89,outboundSegments:[{from:'SOF',to:'AUH',departure:'2099-11-21T21:45',arrival:'2099-11-22T06:45'}]},canonical:{}});
+ classifySmartImportSource=async(file,index)=>({sourceId:'SRC-'+(index+1),sourceType:file.originalname.includes('hotel')?'hotel':'flight',flightProvider:'Booking Flights',confidence:1});
+ extractFlightWithAiVision=async()=>({flight:{airline:'Turkish Airlines',route:'SOF → AUH',price:7173.89,outboundSegments:[{from:'SOF',to:'AUH',departure:'2099-11-21T21:45',arrival:'2099-11-22T06:45'}]},canonical:{passengers:2,priceObservations:[{sourceId:'SRC-1',label:'Total for all passengers',text:'7173.89 EUR',amount:7173.89,currency:'EUR',priceUnit:'party-total',routeScope:'one-way',componentRole:'fare-total',passengerScope:{count:2,adults:2,children:0,infants:0}}]}});
  extractHotelHintWithSerpApi=async(files,options)=>{const linked=require('./server/hotel-import-link').attachHotelImportLinks([{name:'qa hotel',price:100,room:'QA ROOM'}],options.hotelLinks);return {hotel:linked.records[0],hotelOptions:linked.records,hotelLinks:linked.links};};
  archiveUniversalSourceEvidenceSafe=({sources})=>({sources});
  module.exports.flightUrlApp=app;`,filename);
@@ -29,7 +29,8 @@ let server,browser;const rows=[];
  // Exercise persistence even when a caller mistakenly forwards internal metadata.
  const rawSource='https://www.turkishairlines.com/?from=SOF&to=AUH&session=URLSECRET';
  const imported=(await request(rawSource)).data;
- const payload={...imported,flightSourceUrl:rawSource,clientName:'LOCAL LEAKAGE QA',destination:'QA Only',travelDates:'21.11.2099 - 29.11.2099',guests:'2 adults',status:'draft',flights:[imported.offerFlight],hotels:[{id:'qa',name:'QA HOTEL',room:'QA ROOM',price:100,selected:true,meal:'QA MEAL',occupancy:{adults:2,children:0,rooms:1,confirmed:true},images:[base+'/images/hotels/ao-london-docklands.jpg']}]};
+ const payload={...imported,flightSourceUrl:rawSource,clientName:'LOCAL LEAKAGE QA',destination:'QA Only',travelDates:'21.11.2099 - 29.11.2099',guests:'2 adults',status:'draft',currency:'EUR',flights:[{...imported.offerFlight,importSelection:{provider:'Booking Flights',sourceIds:['SRC-1'],amount:7173.89,currency:'EUR'},
+ importedFlightPrice:{kind:'source-total',...imported.flightCandidates[0].checkoutBinding}}],hotels:[{id:'qa',name:'QA HOTEL',room:'QA ROOM',price:100,selected:true,meal:'QA MEAL',occupancy:{adults:2,children:0,rooms:1,confirmed:true},images:[base+'/images/hotels/ao-london-docklands.jpg']}]};
  function clean(text,label){for(const marker of ['URLSECRET','turkishairlines.com','flightSourceReview','flightSourceUrl','url-parameters-only'])assert(!text.includes(marker),label+' leaked '+marker);}
  const create=await fetch(base+'/api/offers',{method:'POST',headers:{cookie:cookie('QA'),'Content-Type':'application/json'},body:JSON.stringify(payload)});assert.equal(create.status,200);const created=await create.json();clean(JSON.stringify(created),'create');const id=created.offer.id;rows.push({name:'create discards internal URL metadata',status:200,result:'PASS'});
  let stored=await(await fetch(base+'/api/offers/'+id,{headers:{cookie:cookie('QA')}})).json();clean(JSON.stringify(stored),'reopen');
