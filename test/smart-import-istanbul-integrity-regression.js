@@ -573,6 +573,70 @@ async function run() {
       }
     }
     console.log("PASS checkout completeness warnings in Chromium Review and source classification");
+    // Replay an already returned intake, without upload or a Vision call.
+    await page.goto(base + "/admin", { waitUntil: "networkidle0" });
+    const recovery = {
+      reviewTarget: "smartImportReview", mode: "GT63_SMART_IMPORT",
+      intakeId: "SMART-1795528793607-c0cdad",
+      flightCandidates: [
+        { provider: "Booking Flights", sourceIds: ["SRC-2"], flight: { price: 0 },
+          observations: [{ ...fixture["booking-flights.jpg"].priceObservations[0], sourceId: "SRC-2",
+            passengerScope: { count: null } }] },
+        { provider: "Skyscanner", sourceIds: ["SRC-1"], flight: { price: 0 },
+          observations: fixture["skyscanner.jpg"].priceObservations.map(item => ({ ...item, sourceId: "SRC-1" })) }
+      ]
+    };
+    await page.evaluate(data => renderUniversalTravelReview(data), recovery);
+    assert.equal(await page.$eval("#reviewFlightCandidate", input => input.value), "");
+    assert.equal(await page.$eval("#smartImportReview details pre",
+      node => JSON.parse(node.textContent).flight.representation), "normalized-preview-candidate");
+    assert(await page.$("#reviewFlightOperatorPrice"));
+    const appliedCount = () => page.evaluate(() => flights.length);
+    await page.evaluate(() => applyUniversalTravelIntakeResult());
+    assert.equal(await appliedCount(), 0);
+    await page.select("#reviewFlightCandidate", "0");
+    for (const price of ["-1", "0.001", "294"]) {
+      await page.$eval("#reviewFlightOperatorPrice", (input, value) => { input.value = value; }, price);
+      await page.evaluate(() => applyUniversalTravelIntakeResult());
+      assert.equal(await appliedCount(), 0);
+    }
+    await page.evaluate(() => {
+      document.getElementById("universalFlightAirline").value = "Pegasus";
+      document.getElementById("universalFlightRoute").value = "SOF -> SAW / SAW -> SOF";
+      document.getElementById("universalFlightDeparture").value = "25-ноем. 12:55";
+      document.getElementById("universalFlightArrival").value = "27-ноем. 18:05";
+    });
+    await page.evaluate(() => applyUniversalTravelIntakeResult());
+    assert.equal(await appliedCount(), 0);
+    await page.evaluate(() => {
+      document.getElementById("universalFlightDeparture").value = "2026-11-25 12:55";
+      document.getElementById("universalFlightArrival").value = "2026-11-27 18:05";
+    });
+    await page.evaluate(() => applyUniversalTravelIntakeResult());
+    assert.equal(await appliedCount(), 1);
+    const recovered = await page.evaluate(() => flights[0]);
+    assert.deepEqual(recovered.importedFlightPrice, { kind: "operator" });
+    assert.deepEqual(recovered.outboundSegments, []);
+    const recoveredPost = await fetch(base + "/api/offers", {
+      method: "POST", headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ destination: "Истанбул", status: "draft", currency: "EUR",
+        travelDates: "25.11.2026 - 27.11.2026", flights: [recovered] })
+    });
+    assert.equal(recoveredPost.status, 200);
+    const savedRecovery = (await readOffer((await recoveredPost.json()).offer.id)).offer.flights[0];
+    assert.deepEqual(savedRecovery.importedFlightPrice, { kind: "operator" });
+    assert.equal(savedRecovery.price, 294);
+    assert.equal(savedRecovery.importSelection.intakeId, recovery.intakeId);
+    assert.deepEqual(savedRecovery.importSelection.sourceIds, ["SRC-2"]);
+    assert.equal(savedRecovery.importSelection.observations[0].amount, 294);
+    assert.equal(savedRecovery.importSelection.observations[0].passengerScope.count, null);
+    assert.deepEqual(savedRecovery.importSelection.alternatives[0].observations.map(item => item.amount), [144, 288]);
+    await upload(["hotel-unknown-children.jpg"]);
+    assert.equal(await page.$("#reviewFlightOperatorPrice"), null);
+    await page.evaluate(() => applyUniversalTravelIntakeResult());
+    assert.equal(await appliedCount(), 0);
+    assert.equal(await page.evaluate(() => hotels.length), 1);
+    console.log("PASS existing intake replay, explicit choice, operator/date guards, readback provenance and hotel-only Apply");
     if (process.argv.includes("--commercial-scope-only")) return;
 
     await upload(["hotel-no-address.jpg", "hotel-conflicting.jpg", "hotel-checkout.jpg",
