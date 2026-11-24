@@ -3288,8 +3288,8 @@ async function applyUniversalTravelIntakeResult() {
     const currency = h.currency || (price > 0 ? "EUR" : "");
     let importedPrice;
     if (data.mode === "GT63_SMART_IMPORT" && Array.isArray(h.priceEvidence) && price > 0) {
-      if (price !== h.price || $("reviewHotelOperator" + i)?.checked) importedPrice = { kind: "operator" };
-      else if (h.checkoutBinding) importedPrice = { kind: "checkout", version: 1,
+      if ($("reviewHotelOperator" + i)?.checked || (!h.checkoutBinding && price !== h.price)) importedPrice = { kind: "operator" };
+      else if (h.checkoutBinding) importedPrice = { kind: "checkout", version: h.checkoutBinding.version,
         referenceId: h.checkoutBinding.referenceId, intakeId: h.checkoutBinding.intakeId, sourceId: h.checkoutBinding.sourceId };
     }
     return { ...h, price, currency, importedPrice };
@@ -3728,6 +3728,11 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
       window.open(`/api/offers/view/${result.offer.id}`, "_blank");
     }
   } catch (error) {
+    if (/^CHECKOUT_/.test(error.details?.code || "")) {
+      const fields = error.details.fields?.join(", ");
+      alert(`Хотелски вариант ${error.details.hotelIndex + 1}: checkout доказателството не съвпада${fields ? " (" + fields + ")" : ""}. Възстановете доказаните данни, импортирайте нов checkout или изберете „Използвай операторска цена“.`);
+      return;
+    }
     alert(`Save failed: ${error.message}`);
   }
 }
@@ -4100,8 +4105,13 @@ function renderHotelCards() {
         <legend>Условия на хотелската тарифа</legend>
         <label>Нощувки <input type="number" min="1" step="1" value="${escapeHtml(String(h.nights ?? ""))}"
           onchange="hotels[${i}].nights=this.value ? Number(this.value) : undefined" /></label>
-        <label><input type="checkbox" ${h.nonRefundable === true ? "checked" : ""}
-          onchange="hotels[${i}].nonRefundable=this.checked" /> Невъзвръщаема тарифа</label>
+        <label>Възвръщаемост
+          <select onchange="hotels[${i}].nonRefundable=this.value === '' ? undefined : this.value === 'true'">
+            <option value="" ${typeof h.nonRefundable !== "boolean" ? "selected" : ""}>Не е посочена</option>
+            <option value="true" ${h.nonRefundable === true ? "selected" : ""}>Невъзвръщаема</option>
+            <option value="false" ${h.nonRefundable === false ? "selected" : ""}>Възвръщаема</option>
+          </select>
+        </label>
         <label><input type="checkbox" ${h.transferOnRequest === true ? "checked" : ""}
           onchange="hotels[${i}].transferOnRequest=this.checked" /> Летищен трансфер при заявка, извън включените услуги</label>
       </fieldset>
@@ -4109,8 +4119,10 @@ function renderHotelCards() {
         <input placeholder="Not specified" value="${escapeHtml(h.roomsLeft || "")}" onchange="hotels[${i}].roomsLeft=this.value;updateAutoPrice();" />
       </label>
       <label>Hotel Price
-        <input type="number" step="0.01" placeholder="0.00" value="${Number(h.price || 0)}" onchange="hotels[${i}].price=Number(this.value||0);if(hotels[${i}].importedPrice) hotels[${i}].importedPrice={kind:'operator'};updateAutoPrice();" />
+        <input type="number" step="0.01" placeholder="0.00" value="${Number(h.price || 0)}" onchange="hotels[${i}].price=Number(this.value||0);updateAutoPrice();" />
       </label>
+      ${h.importedPrice?.kind === "checkout" ? `<button type="button" onclick="hotels[${i}].importedPrice={kind:'operator'};renderHotelCards();">Използвай операторска цена</button>` : ""}
+      ${h.importedPrice?.kind === "operator" ? `<small>Операторска цена</small>` : ""}
 
       <label>
         <input
@@ -4151,7 +4163,7 @@ function addHotel(hotel = {}) {
     id: hotel.id || "",
     occupancy: globalThis.AYAHotelOccupancy.normalize({ ...hotel.occupancy, confirmed: false }),
     ...(hotel.nights ? { nights: hotel.nights } : {}),
-    ...(hotel.nonRefundable === true ? { nonRefundable: true } : {}),
+    ...(typeof hotel.nonRefundable === "boolean" ? { nonRefundable: hotel.nonRefundable } : {}),
     ...(hotel.transferOnRequest === true ? { transferOnRequest: true } : {}),
     name: hotel.name || "",
     stars: hotel.stars || "",

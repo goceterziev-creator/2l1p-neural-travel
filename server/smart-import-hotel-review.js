@@ -62,7 +62,7 @@ function hotelBookingConditions(hotel = {}) {
   const nights = typeof hotel.nights === "boolean" ? NaN : Number(hotel.nights);
   return {
     ...(Number.isSafeInteger(nights) && nights > 0 ? { nights } : {}),
-    ...(hotel.nonRefundable === true ? { nonRefundable: true } : {}),
+    ...(typeof hotel.nonRefundable === "boolean" ? { nonRefundable: hotel.nonRefundable } : {}),
     ...(hotel.transferOnRequest === true ? { transferOnRequest: true } : {})
   };
 }

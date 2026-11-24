@@ -2137,8 +2137,8 @@ const hotels = inputHotels.length
       meal: h.meal || "",
       price: toNumber(h.price, 0),
       currency: h.currency || body.currency || "EUR",
-      ...(h.importedPrice?.kind === "checkout" && h.importedPrice.version === 1 ? {
-        importedPrice: { kind: "checkout", version: 1, referenceId: h.importedPrice.referenceId, intakeId: h.importedPrice.intakeId,
+      ...(h.importedPrice?.kind === "checkout" && h.importedPrice.version === 2 ? {
+        importedPrice: { kind: "checkout", version: h.importedPrice.version, referenceId: h.importedPrice.referenceId, intakeId: h.importedPrice.intakeId,
           sourceId: h.importedPrice.sourceId, sourceIds: [h.importedPrice.sourceId] }
       } : h.importedPrice?.kind === "operator" ? { importedPrice: { kind: "operator", sourceIds: [] } } : {}),
       ...(h.address ? { address: h.address } : {}),
@@ -9317,7 +9317,7 @@ function bindSmartImportOfferPrices(body, db, req, previous) {
   return smartImportPriceBinding.bindOfferPrices({
     body, agencyId: previous ? entityAgencyId(previous) : getCurrentAgencyId(req),
     intakes: db.smartImportPriceEvidenceV1, previous,
-    invalid: (hotelIndex, code) => routeError(`Невалидно checkout доказателство за хотелски вариант ${hotelIndex + 1}: ${code}`, 422, { hotelIndex, code })
+    invalid: (hotelIndex, code, fields) => routeError(`Невалидно checkout доказателство за хотелски вариант ${hotelIndex + 1}: ${code}`, 422, { hotelIndex, code, fields })
   });
 }
 
@@ -11764,7 +11764,7 @@ Rules:
 - translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
 - if not visible, use empty string or 0
 ${smartSources ? `For Smart Import also return pageKind (property, checkout, or unknown), priceRole (stay_total, per_person, tax, discount, credit, cancellation_fee, add_on, or unknown), and priceLabel (verbatim label on the same row as priceText). A Genius balance is a credit, including on a property page. For a visible non-total amount preserve its role, label and exact amount in these evidence fields; never label it stay_total.
-Return ratePlan and stayDates only when visible, occupancy as {adults, children, rooms, childAges} with null for unknown, nights as an integer or null, nonRefundable true only with explicit evidence; transferOnRequest true for explicit availability on request, false for explicit unavailability, or null when unstated. Never assume zero children or infer occupancy from a room name. Keep transfer and cancellation claims out of description and amenities.` : ""}
+Return ratePlan and stayDates only when visible, occupancy as {adults, children, rooms, childAges} with null for unknown, nights as an integer or null, nonRefundable true for an explicit non-refundable rate, false for an explicitly refundable rate, or null when unstated; transferOnRequest true for explicit availability on request, false for explicit unavailability, or null when unstated. Never assume zero children or infer occupancy from a room name. Keep transfer and cancellation claims out of description and amenities.` : ""}
 `
     });
     parsed = smartSources ? smartHotelRecord(parsed, smartSources[index]?.sourceId) : normalizeHotelMoney(parsed);
@@ -12096,7 +12096,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       });
       if (record) {
         checkoutRecords.push(record);
-        hotel.checkoutBinding = { version: 1, referenceId: record.referenceId, intakeId, sourceId: record.sourceId, rate: record.rate, eurPrice: record.eurPrice };
+        hotel.checkoutBinding = { version: record.version, referenceId: record.referenceId, intakeId, sourceId: record.sourceId, rate: record.rate, eurPrice: record.eurPrice };
       } else {
         hotel.price = 0;
         hotel.currency = "";

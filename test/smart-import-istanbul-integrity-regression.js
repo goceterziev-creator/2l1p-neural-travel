@@ -68,6 +68,9 @@ harness.paths = Module._nodeModulePaths(path.dirname(filename));
 // Synthetic extraction only. Exercise real grouping, normalization, Apply and persistence.
 harness._compile(fs.readFileSync(filename, "utf8") + `
   const fixtures = { ...require("./test/fixtures/smart-import/istanbul-integrity.json") };
+  fixtures["hotel-child.jpg"] = { ...fixtures["hotel-checkout.jpg"], occupancy: {adults:2, children:1, rooms:1, childAges:[7]} };
+  fixtures["hotel-unknown.jpg"] = { ...fixtures["hotel-checkout.jpg"], occupancy: {}, nonRefundable: null };
+  fixtures["hotel-refundable.jpg"] = { ...fixtures["hotel-checkout.jpg"], nonRefundable: false };
   fixtures["hotel-foreign.jpg"] = { ...fixtures["hotel-checkout.jpg"], priceText: "248,28 USD" };
   fixtures["hotel-no-address.jpg"] = { ...fixtures["hotel-property.jpg"], address: "" };
   fixtures["hotel-conflicting.jpg"] = { ...fixtures["hotel-property.jpg"], address: "", transferOnRequest: false };
@@ -156,7 +159,7 @@ async function run() {
     assert.equal(offer.hotels[0].nonRefundable, true);
     const proof = offer.hotels[0].importedPrice;
     assert.equal(proof.kind, "checkout");
-    assert.equal(proof.version, 1);
+    assert.equal(proof.version, 2);
     assert.deepEqual(proof.sourceIds, ["SRC-2"]);
     assert.deepEqual(offer.hotels[0].propertySourceIds, ["SRC-1"]);
     const rejected = [
@@ -238,6 +241,116 @@ async function run() {
       await page.evaluate(() => uploadSmartImport());
     }
 
+    const readOffer = async id => {
+      const response = await fetch(base + "/api/offers/" + id, { headers: { cookie } });
+      assert.equal(response.status, 200);
+      return response.json();
+    };
+    const importHotel = async filename => {
+      const form = new FormData();
+      form.append("image", new Blob([filename], { type: "image/jpeg" }), filename);
+      const response = await fetch(base + "/api/smart-import", { method: "POST", headers: { cookie }, body: form });
+      assert.equal(response.status, 200);
+      const hotel = (await response.json()).offerHotelOptions[0];
+      const { rate, eurPrice, ...reference } = hotel.checkoutBinding;
+      return { ...hotel, sourcePrice: hotel.price, sourceCurrency: hotel.currency, exchangeRate: rate,
+        currency: "EUR", price: eurPrice, importedPrice: { kind: "checkout", ...reference } };
+    };
+    async function assertScopeRejected(snapshot, change, fields, code = "CHECKOUT_COMMERCIAL_SCOPE_MISMATCH") {
+      const hotel = { ...snapshot.offer.hotels[0], ...change };
+      const before = fs.readFileSync(process.env.DB_FILE);
+      const responses = [
+        await submit(hotel),
+        await put({ ...snapshot, offer: { ...snapshot.offer, hotels: [hotel] } })
+      ];
+      for (const response of responses) {
+        assert.equal(response.status, 422);
+        assert.deepEqual((await response.json()).details, { hotelIndex: 0, code, ...(fields ? { fields } : {}) });
+      }
+      assert.deepEqual(await readOffer(snapshot.offer.id), snapshot);
+      assert.deepEqual(fs.readFileSync(process.env.DB_FILE), before);
+    }
+    const scopeCreate = await submit(offer.hotels[0]);
+    assert.equal(scopeCreate.status, 200);
+    const scopeId = (await scopeCreate.json()).offer.id;
+    const original = await readOffer(scopeId);
+    const originalHotel = original.offer.hotels[0];
+    const pendingCreate = await submit({ ...originalHotel, occupancy: { ...originalHotel.occupancy, confirmed: false } });
+    assert.equal(pendingCreate.status, 200);
+    const pending = await readOffer((await pendingCreate.json()).offer.id);
+    const confirm = await put({ ...pending, offer: { ...pending.offer, hotels: [originalHotel] } });
+    assert.equal(confirm.status, 200);
+    const confirmed = await readOffer(pending.offer.id);
+    assert.equal(confirmed.offer.hotels[0].occupancy.confirmed, true);
+    assert.deepEqual(confirmed.offer.hotels[0].importedPrice, proof);
+    assert.equal((await submit(originalHotel)).status, 200);
+
+    const changes = [
+      [{ occupancy: { ...originalHotel.occupancy, adults: 3 } }, "adults"],
+      [{ occupancy: { ...originalHotel.occupancy, children: 1 } }, "children"],
+      [{ occupancy: { ...originalHotel.occupancy, rooms: 2 } }, "rooms"],
+      [{ nights: 3 }, "nights"], [{ meal: "Без изхранване" }, "meal"],
+      [{ nonRefundable: false }, "nonRefundable"]
+    ];
+    for (const [change, field] of changes) {
+      // Child age evidence is unknown again when the child count changes.
+      await assertScopeRejected(original, change, field === "children" ? ["children", "childAges"] : [field]);
+    }
+
+    const child = await importHotel("hotel-child.jpg");
+    const newBinding = await put({ ...original, offer: { ...original.offer, hotels: [child] } });
+    assert.equal(newBinding.status, 200);
+    const childSnapshot = await readOffer(scopeId);
+    assert.equal(childSnapshot.offer.hotels[0].occupancy.children, 1);
+    assert.equal(childSnapshot.offer.hotels[0].importedPrice.referenceId, child.importedPrice.referenceId);
+    await assertScopeRejected(childSnapshot, { occupancy: { ...child.occupancy, childAges: [8] } }, ["childAges"]);
+    const equivalent = { ...child, meal: "  ВКЛЮЧЕНА   ЗАКУСКА ", nights: "2",
+      occupancy: { adults: "2", children: "1", rooms: "1", childAges: ["7"] } };
+    assert.equal((await submit(equivalent)).status, 200);
+    assert.equal((await put({ ...childSnapshot, offer: { ...childSnapshot.offer, hotels: [equivalent] } })).status, 200);
+
+    const unknown = await importHotel("hotel-unknown.jpg");
+    const unknownResponse = await submit(unknown);
+    assert.equal(unknownResponse.status, 200);
+    const unknownSnapshot = await readOffer((await unknownResponse.json()).offer.id);
+    await assertScopeRejected(unknownSnapshot, { nonRefundable: false }, ["nonRefundable"]);
+    await assertScopeRejected(unknownSnapshot, { occupancy: { children: 0 } }, ["children", "childAges"]);
+    const refundable = await importHotel("hotel-refundable.jpg");
+    const refundableResponse = await submit(refundable);
+    assert.equal(refundableResponse.status, 200);
+    assert.equal((await refundableResponse.json()).offer.hotels[0].nonRefundable, false);
+
+    // Seed a pre-change server record in the isolated DB, without adding commercial evidence to it.
+    const db = JSON.parse(fs.readFileSync(process.env.DB_FILE, "utf8"));
+    const intake = db.smartImportPriceEvidenceV1[proof.intakeId];
+    const v1 = { ...intake.records[0], version: 1, referenceId: crypto.randomUUID() };
+    delete v1.commercialScope;
+    intake.records.push(v1);
+    fs.writeFileSync(process.env.DB_FILE, JSON.stringify(db));
+    const latest = await readOffer(scopeId);
+    await assertScopeRejected(latest, { importedPrice: { ...proof, version: 1, referenceId: v1.referenceId } },
+      undefined, "CHECKOUT_COMMERCIAL_SCOPE_UNAVAILABLE");
+
+    await page.goto(base + "/admin", { waitUntil: "networkidle0" });
+    await page.evaluate(offerId => editOffer(offerId), scopeId);
+    const alerts = [];
+    const captureAlert = dialog => alerts.push(dialog.message());
+    page.on("dialog", captureAlert);
+    await page.evaluate(() => { hotels[0].nights = 3; return saveOffer(); });
+    assert(alerts.some(message => message.includes("nights") && message.includes("Използвай операторска цена")));
+    assert.deepEqual((await readOffer(scopeId)).offer.hotels[0].importedPrice, latest.offer.hotels[0].importedPrice);
+    await page.evaluate(() => {
+      const button = [...document.querySelectorAll("button")].find(item => item.textContent === "Използвай операторска цена");
+      button.click();
+      return saveOffer();
+    });
+    page.off("dialog", captureAlert);
+    const operatorSnapshot = await readOffer(scopeId);
+    assert.equal(operatorSnapshot.offer.hotels[0].nights, 3);
+    assert.deepEqual(operatorSnapshot.offer.hotels[0].importedPrice, { kind: "operator", sourceIds: [] });
+    console.log("PASS commercial scope POST/PUT matrix, atomic refusals, normalization, legacy, fresh checkout and explicit Admin operator choice");
+    if (process.argv.includes("--commercial-scope-only")) return;
+
     await upload(["hotel-no-address.jpg", "hotel-conflicting.jpg", "hotel-checkout.jpg",
       "hotel-other-checkout.jpg", "booking-flights.jpg", "skyscanner.jpg"]);
     const propertyText = await page.$eval("#smartImportReview", node => node.textContent);
@@ -250,6 +363,7 @@ async function run() {
     await page.select("#reviewFlightCandidate", "1");
     await page.evaluate(() => {
       document.getElementById("reviewHotelPrice0").value = "191.98";
+      document.getElementById("reviewHotelOperator0").checked = true;
       document.getElementById("reviewHotelOperator1").checked = true;
     });
     await page.evaluate(() => applyUniversalTravelIntakeResult());
