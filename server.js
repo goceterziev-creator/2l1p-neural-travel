@@ -1992,9 +1992,12 @@ function storedFlightImportSelection(selection) {
     provider: ["Booking Flights", "Skyscanner", "Kayak"].includes(item.provider) ? item.provider : "",
     sourceIds: safeArray(item.sourceIds).filter(id => typeof id === "string" && /^SRC-[1-8]$/.test(id)),
     amount: Math.max(0, toNumber(item.amount, 0)),
-    currency: /^[A-Z]{3}$/.test(item.currency || "") ? item.currency : ""
+    currency: /^[A-Z]{3}$/.test(item.currency || "") ? item.currency : "",
+    ...(Array.isArray(item.observations) ? { observations: smartFlightPrice.normalizePriceObservations(item.observations) } : {})
   });
-  return { importSelection: { ...summary(selection), alternatives: safeArray(selection.alternatives)
+  return { importSelection: { ...summary(selection),
+    ...(/^SMART-\d+-[a-f0-9]{6}$/.test(selection.intakeId || "") ? { intakeId: selection.intakeId } : {}),
+    alternatives: safeArray(selection.alternatives)
     .filter(item => item && typeof item === "object").slice(0, 7).map(summary) } };
 }
 
