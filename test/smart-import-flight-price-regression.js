@@ -30,6 +30,29 @@ for (const [name, evidence, expected] of [
   ["source outside candidate", [{ ...total, sourceId: "SRC-2" }], "FLIGHT_PRICE_SCOPE_UNKNOWN"]
 ]) test(name, () => assert.deepEqual(review(evidence), { warning: expected }));
 
+for (const label of ["Обща цена за всички пътници", "Обща цена за всички пасажери"]) {
+  test(`Booking total label still requires a proven party count: ${label}`, () => {
+    const booking = { ...total, label, text: "294,00 €", amount: 294 };
+    assert.deepEqual(review([{ ...booking, passengerScope: { count: null } }]),
+      { warning: "FLIGHT_PRICE_EVIDENCE_INCOMPLETE" });
+    assert.equal(review([booking]).total.amount, 294);
+  });
+}
+
+test("year resolution requires partial source dates rather than only times", () => {
+  const { resolveYearContext } = require("../public/flight-data-consistency");
+  const flight = {
+    outboundSegments: [{ from: "SOF", to: "SAW", departure: "25-ноем. 12:55", arrival: "25-ноем. 15:10" }],
+    inboundSegments: [{ from: "SAW", to: "SOF", departure: "27-ноем. 18:05", arrival: "27-ноем. 18:25" }]
+  };
+  const context = { now: new Date("2026-11-24T12:00:00Z"), verifiedTravelDates: "2026-11-25 – 2026-11-27" };
+  assert.equal(resolveYearContext(flight, context).flight.outboundSegments[0].departure, "2026-11-25T12:55");
+  const timesOnly = Object.fromEntries(Object.entries(flight).map(([leg, segments]) => [leg, segments.map(segment => ({
+    ...segment, departure: segment.departure.slice(-5), arrival: segment.arrival.slice(-5)
+  }))]));
+  assert.deepEqual(resolveYearContext(timesOnly, context), { ok: false, reason: "Ambiguous source date" });
+});
+
 test("null sentinels do not masquerade as flight facts", () => {
   for (const value of [null, undefined, "", " null ", "NULL", "Не е посочено"]) assert.equal(flightText(value), "");
   assert.equal(flightText("25-ноем. 12:55"), "25-ноем. 12:55");
