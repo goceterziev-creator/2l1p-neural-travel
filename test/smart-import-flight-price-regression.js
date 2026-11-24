@@ -37,7 +37,7 @@ test("null sentinels do not masquerade as flight facts", () => {
 
 test("EUR conversion uses the server quote and rounds to cents", () => {
   const priceReview = review([{ ...total, currency: "USD", text: "320 USD", amount: 320 }]);
-  const args = { candidate: { priceReview, provider: "Skyscanner", candidateId: "candidate", sourceIds: ["SRC-1"] },
+  const args = { candidate: { priceReview, flight: route, provider: "Skyscanner", candidateId: "candidate", sourceIds: ["SRC-1"] },
     intakeId: "SMART-1-aaaaaa", agencyId: "QA" };
   assert.equal(sourceFlightRecord(args), null);
   const record = sourceFlightRecord({ ...args, quote: { rates: { USD: 1.3 }, provider: "source" } });

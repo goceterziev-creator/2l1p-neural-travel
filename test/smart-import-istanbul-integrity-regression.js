@@ -242,6 +242,9 @@ async function run() {
         method, headers: { cookie: auth, "content-type": "application/json" },
         body: JSON.stringify({ ...snapshot.offer, expectedVersion: snapshot.offerVersion, flights: [flight], ...overrides })
       });
+      const replaceFlightText = (before, after) => JSON.parse(JSON.stringify(flight).replaceAll(before, after));
+      const shifted = JSON.parse(JSON.stringify(flight).replaceAll("2026-11-25", "2026-12-02").replaceAll("2026-11-27", "2026-12-04"));
+      const withoutProvenance = { ...flight, importedFlightPrice: undefined, importSelection: undefined };
       const cases = [
         [{ importedFlightPrice: { ...claim, referenceId: "forged" } }, {}, "FLIGHT_PRICE_REFERENCE_INVALID"],
         [{ importedFlightPrice: { ...claim, intakeId: "SMART-1-aaaaaa" } }, {}, "FLIGHT_PRICE_REFERENCE_INVALID"],
@@ -253,7 +256,13 @@ async function run() {
         [{}, { guests: "1 възрастен и 1 дете" }, "FLIGHT_PRICE_PASSENGERS_MISMATCH"],
         [{ price: 144 }, {}, "FLIGHT_PRICE_AMOUNT_OR_FX_MISMATCH"],
         [{ importedFlightPrice: { ...claim, rate: 2 } }, {}, "FLIGHT_PRICE_AMOUNT_OR_FX_MISMATCH"],
-        [{ importedFlightPrice: null }, {}, "FLIGHT_PRICE_PROVENANCE_REQUIRED"]
+        [{ importedFlightPrice: null }, {}, "FLIGHT_PRICE_PROVENANCE_REQUIRED"],
+        [shifted, { travelDates: "02.12.2026 - 04.12.2026" }, "FLIGHT_PRICE_ITINERARY_MISMATCH"],
+        [replaceFlightText("12:55", "13:55"), {}, "FLIGHT_PRICE_ITINERARY_MISMATCH"],
+        [{ departure: flight.departure.replace("12:55", "13:55") }, {}, "FLIGHT_PRICE_ITINERARY_MISMATCH"],
+        [replaceFlightText("Pegasus", "OtherAir"), {}, "FLIGHT_PRICE_ITINERARY_MISMATCH"],
+        [skyscanner ? { outboundSegments: flight.outboundSegments.map(segment => ({ ...segment, flightNumber: "PC999" })), segments: undefined }
+          : replaceFlightText("PC272", "PC999"), {}, "FLIGHT_PRICE_ITINERARY_MISMATCH"]
       ];
       for (const [change, overrides, code] of cases) {
         for (const method of ["POST", "PUT"]) {
@@ -272,7 +281,31 @@ async function run() {
         assert.deepEqual((await double.json()).details, { flightIndex: 1, code: "FLIGHT_PRICE_MULTIPLE_CANDIDATES" });
         assert.deepEqual(fs.readFileSync(process.env.DB_FILE), initialBytes);
       }
-      assert.equal((await apiRequest("PUT", flight)).status, 200);
+      const removed = await apiRequest("PUT", withoutProvenance);
+      assert.equal(removed.status, 422);
+      assert.deepEqual((await removed.json()).details, { flightIndex: 0, code: "FLIGHT_PRICE_PROVENANCE_REQUIRED" });
+      const flat = await apiRequest("PUT", flight, { flights: [] });
+      assert.equal(flat.status, 422);
+      assert.deepEqual((await flat.json()).details, { flightIndex: 0, code: "FLIGHT_PRICE_PROVENANCE_REQUIRED" });
+      for (const method of ["POST", "PUT"]) {
+        for (const pair of [[flight, { ...withoutProvenance, price: 144 }], [{ ...withoutProvenance, price: 144 }, flight]]) {
+          const response = await apiRequest(method, flight, { flights: pair });
+          assert.equal(response.status, 422);
+          assert.deepEqual((await response.json()).details, {
+            flightIndex: pair.findIndex(item => !item.importedFlightPrice), code: "FLIGHT_PRICE_MULTIPLE_CANDIDATES"
+          });
+          assert.deepEqual(fs.readFileSync(process.env.DB_FILE), initialBytes);
+        }
+      }
+      assert.deepEqual(await readSnapshot(), snapshot);
+      const resolved = await apiRequest("PUT", flight);
+      assert.equal(resolved.status, 200);
+      const refreshed = await readSnapshot();
+      const manualPut = await apiRequest("PUT", { ...shifted, importedFlightPrice: { kind: "operator" } }, {
+        expectedVersion: refreshed.offerVersion, travelDates: "02.12.2026 - 04.12.2026"
+      });
+      assert.equal(manualPut.status, 200);
+      assert.deepEqual((await manualPut.json()).offer.flights[0].importedFlightPrice, { kind: "operator" });
       const operator = await apiRequest("POST", { ...flight, price: 300, importedFlightPrice: { kind: "operator" } });
       assert.equal(operator.status, 200);
       assert.deepEqual((await operator.json()).offer.flights[0].importedFlightPrice, { kind: "operator" });
@@ -300,7 +333,7 @@ async function run() {
         await page.evaluate(() => applyUniversalTravelIntakeResult());
         assert.equal(await page.evaluate(() => flights.length), 0);
       }
-      console.log("PASS flight scope POST/PUT matrix, cross-agency rejection, atomic readback and operator price");
+      console.log("PASS itinerary and provenance POST/PUT matrix, atomic readback, explicit operator conversion and legacy resave");
       return;
     }
 

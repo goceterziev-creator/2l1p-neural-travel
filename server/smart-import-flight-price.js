@@ -1,6 +1,8 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
+const { tokens, summary } = require("../public/flight-data-consistency");
+const { extractTime } = require("./travel-normalizers/date-normalizer");
 const { currencyFromText, moneyFromText } = require("./smart-import-hotel-review");
 
 function flightText(value) {
@@ -48,6 +50,71 @@ function routeIdentity(flight) {
   return route === expected ? [outbound, inbound] : null;
 }
 
+function segmentFacts(segment) {
+  const moment = side => {
+    const raw = flightText(segment?.[side]);
+    const dates = tokens(raw);
+    return { date: dates.length === 0 ? null : dates.length === 1 && dates[0].key || false, clock: extractTime(raw) };
+  };
+  return {
+    airline: flightText(segment?.airline).toUpperCase(),
+    flightNumber: flightText(segment?.flightNumber).replace(/\s/g, "").toUpperCase(),
+    departure: moment("departure"), arrival: moment("arrival")
+  };
+}
+
+function itineraryFacts(flight) {
+  return {
+    airline: flightText(flight.airline).toUpperCase(),
+    outbound: (flight.outboundSegments || []).map(segmentFacts),
+    inbound: (flight.inboundSegments || []).map(segmentFacts)
+  };
+}
+
+function sameEvidenceDate(expected, actual) {
+  if (expected === false || actual === false) return false;
+  if (typeof expected === "string" && expected.startsWith("????-")) {
+    return typeof actual === "string" && expected.slice(4) === actual.slice(4);
+  }
+  return expected === actual;
+}
+
+function matchesItinerary(flight, evidence) {
+  const current = itineraryFacts(flight);
+  if (current.airline !== evidence.airline) return false;
+  const matches = (list, expected) => list.length === expected.length && list.every((item, index) => {
+    const original = expected[index];
+    return item.airline === original.airline && item.flightNumber === original.flightNumber &&
+      ["departure", "arrival"].every(side => sameEvidenceDate(original[side].date, item[side].date) &&
+        original[side].clock === item[side].clock);
+  });
+  const clocks = raw => [...flightText(raw).matchAll(/(?<!\d)\d{1,2}:\d{2}(?:\s*[AP]M)?\b/gi)]
+    .map(match => extractTime(match[0]));
+  for (const [leg, field] of [["outbound", "departure"], ["inbound", "arrival"]]) {
+    if (!matches(current[leg], evidence[leg])) return false;
+    const nested = flight[leg]?.segments;
+    if (Array.isArray(nested) && nested.length && !matches(nested.map(segmentFacts), evidence[leg])) return false;
+    const expectedSummary = summary(flight[leg + "Segments"]);
+    if (expectedSummary && flightText(flight[field]) &&
+        JSON.stringify(clocks(flight[field])) !== JSON.stringify(clocks(expectedSummary))) return false;
+  }
+  return !Array.isArray(flight.segments) || !flight.segments.length ||
+    matches(flight.segments.map(segmentFacts), [...evidence.outbound, ...evidence.inbound]);
+}
+
+function journeyKey(flight) {
+  if (!flight) return "";
+  const legs = [flight.outboundSegments, flight.inboundSegments].filter(leg => Array.isArray(leg) && leg.length);
+  if (legs.length) {
+    const endpoints = legs.map(leg => [flightText(leg[0]?.from).toUpperCase(), flightText(leg.at(-1)?.to).toUpperCase()]);
+    if (endpoints.every(pair => pair.every(code => /^[A-Z]{3}$/.test(code)))) return endpoints.map(pair => pair.join(">")).join("/");
+  }
+  return flightText(flight.route).toUpperCase().split("/").map(leg => {
+    const airports = leg.match(/\b[A-Z]{3}\b/g);
+    return airports?.length >= 2 ? airports[0] + ">" + airports.at(-1) : "";
+  }).filter(Boolean).join("/");
+}
+
 function reviewFlightPrice(flight, observations, sourceIds, advertisedPassengerCount) {
   const route = routeIdentity(flight);
   const scope = route?.[1].length ? "round-trip" : "one-way";
@@ -74,8 +141,9 @@ function sourceFlightRecord({ intakeId, agencyId, candidate, quote }) {
   if (!Number.isFinite(rate) || rate <= 0) return null;
   const eurPrice = Math.round(total.amount / rate * 100) / 100;
   if (!Number.isFinite(eurPrice) || eurPrice <= 0) return null;
-  return { version: 1, referenceId: randomUUID(), intakeId, agencyId, provider: candidate.provider,
+  return { version: 2, referenceId: randomUUID(), intakeId, agencyId, provider: candidate.provider,
     candidateId: candidate.candidateId, sourceIds: candidate.sourceIds, total, route, eurPrice,
+    itinerary: itineraryFacts(candidate.flight),
     rate, rateOrigin: total.currency === "EUR" ? "EUR" : quote.provider,
     rateDate: total.currency === "EUR" ? null : quote.updatedAt };
 }
@@ -99,13 +167,35 @@ function matchesGuests(value, evidence) {
 }
 
 function bindFlightPrices({ body, agencyId, intakes, previous, invalid }) {
-  if (!Array.isArray(body.flights)) return body;
+  const oldFlights = Array.isArray(previous?.flights) ? previous.flights : [];
+  const wasSourceBound = oldFlights.some(flight => flight.importedFlightPrice?.kind === "source-total");
+  const flights = Array.isArray(body.flights) ? body.flights : [];
+  if (!flights.length) {
+    if (wasSourceBound && Number(body.flightPrice) > 0) throw invalid(0, "FLIGHT_PRICE_PROVENANCE_REQUIRED");
+    return body;
+  }
   const selectedIntakes = new Set();
   const selectedRoutes = new Set();
+  const hasReplacement = flights.some(flight => flight?.importedFlightPrice);
+  for (const [index, flight] of flights.entries()) {
+    const route = journeyKey(flight);
+    if (!route || !(Number(flight?.price) > 0)) continue;
+    if (flights.some((other, otherIndex) => otherIndex !== index && Number(other?.price) > 0 && journeyKey(other) === route &&
+        (!flight.importedFlightPrice ? other.importedFlightPrice : otherIndex < index && other.importedFlightPrice))) {
+      throw invalid(index, "FLIGHT_PRICE_MULTIPLE_CANDIDATES");
+    }
+  }
   return { ...body, flights: body.flights.map((flight, index) => {
     const claim = flight?.importedFlightPrice;
     const selection = flight?.importSelection;
     if (!claim) {
+      const oldSourceForRoute = oldFlights.some(old => old.importedFlightPrice?.kind === "source-total" &&
+        journeyKey(old) && journeyKey(old) === journeyKey(flight));
+      const unchangedManual = oldFlights.some(old => !old.importedFlightPrice && old.route === flight?.route &&
+        old.price === flight?.price && old.departure === flight?.departure && old.arrival === flight?.arrival);
+      if (Number(flight?.price) > 0 && (oldSourceForRoute || (wasSourceBound && !hasReplacement && !unchangedManual))) {
+        throw invalid(index, "FLIGHT_PRICE_PROVENANCE_REQUIRED");
+      }
       if (!selection || previous?.flights?.some(old => !old.importedFlightPrice && old.price === flight.price &&
         old.route === flight.route && JSON.stringify(old.importSelection) === JSON.stringify(selection))) return flight;
       throw invalid(index, "FLIGHT_PRICE_PROVENANCE_REQUIRED");
@@ -121,12 +211,13 @@ function bindFlightPrices({ body, agencyId, intakes, previous, invalid }) {
       return { ...flight, importedFlightPrice: { kind: "operator" } };
     }
     const intake = /^SMART-\d+-[a-f0-9]{6}$/.test(claim.intakeId || "") ? intakes?.[claim.intakeId] : null;
-    const record = intake?.agencyId === agencyId && claim.kind === "source-total" && claim.version === 1
+    const record = intake?.agencyId === agencyId && claim.kind === "source-total" && claim.version === 2
       ? intake.flightRecords?.find(item => item.referenceId === claim.referenceId && item.agencyId === agencyId &&
         item.intakeId === claim.intakeId && item.version === claim.version) : null;
     if (!record || record.candidateId !== claim.candidateId || record.provider !== selection?.provider ||
         JSON.stringify(record.sourceIds) !== JSON.stringify(selection?.sourceIds)) throw invalid(index, "FLIGHT_PRICE_REFERENCE_INVALID");
     if (JSON.stringify(record.route) !== JSON.stringify(route)) throw invalid(index, "FLIGHT_PRICE_ROUTE_MISMATCH");
+    if (!record.itinerary || !matchesItinerary(flight, record.itinerary)) throw invalid(index, "FLIGHT_PRICE_ITINERARY_MISMATCH");
     if (!matchesGuests(body.guests, record.total.passengerScope)) throw invalid(index, "FLIGHT_PRICE_PASSENGERS_MISMATCH");
     const price = Math.round(record.total.amount / record.rate * 100) / 100;
     if (selection.amount !== record.total.amount || selection.currency !== record.total.currency ||
