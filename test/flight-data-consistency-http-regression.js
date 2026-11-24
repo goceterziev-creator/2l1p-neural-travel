@@ -68,4 +68,40 @@ function pass(name,result){rows.push({name,result:'PASS',...result});console.log
   let pdfStatus=null;if(accept){const guestPdf=await request(guestUrl+'/pdf','GET',undefined,'');assert.equal(guestPdf.status,200);const txt=pdfTools.extractPdfText(guestPdf.bytes).compactText;assert(txt.includes('2възрастнии2деца'));assert(txt.includes('315'));assert(txt.includes('FR625'));pdfStatus=200;}
   pass('confirmed family Guests '+(accept?'accepted':'declined')+' through actual browser/save/reopen',{create:200,put:200,get:200,html:200,pdf:pdfStatus,guests:afterGuest.data.offer.guests,flightTicketEvidenceUnchanged:true,hotelsPricingDatesUnchanged:true});
  }
+ const rawPegasus = {
+   airline: 'Pegasus', route: 'SOF -> SAW / SAW -> SOF', price: 200,
+   departure: 'SOF -> SAW, 2026-11-25T12:55 - 2026-11-25T15:10',
+   arrival: 'SAW -> SOF, 2026-11-27T18:05 - 2026-11-27T18:25',
+   outbound: { segments: [{ flightNumber: 'PC272', from: 'SOF', to: 'SAW', departure: '25-ноем. 12:55', arrival: '25-ноем. 15:10' }] },
+   inbound: { segments: [{ flightNumber: 'PC273', from: 'SAW', to: 'SOF', departure: '27-ноем. 18:05', arrival: '27-ноем. 18:25' }] }
+ };
+ const pegasusDraft = { ...fixture, id: undefined, status: 'draft', destination: 'Истанбул',
+   travelDates: '25.11.2026 - 27.11.2026', flightDeparture: rawPegasus.departure,
+   flightArrival: rawPegasus.arrival, flights: [rawPegasus] };
+ const beforePegasus = snapshot();
+ const rejectedPegasus = await request('/api/offers', 'POST', pegasusDraft);
+ assert.equal(rejectedPegasus.status, 422);
+ assert.equal(rejectedPegasus.data.error, 'AYA_FLIGHT_DATA_CONFLICT');
+ assert.equal(snapshot(), beforePegasus);
+
+ const confirmedPegasus = consistency.resolve(rawPegasus, 'manual', {
+   outbound: [{ departure: '2026-11-25', arrival: '2026-11-25' }],
+   inbound: [{ departure: '2026-11-27', arrival: '2026-11-27' }]
+ });
+ const createdPegasus = await request('/api/offers', 'POST', {
+   ...pegasusDraft, flights: [confirmedPegasus],
+   flightDeparture: confirmedPegasus.departure, flightArrival: confirmedPegasus.arrival
+ });
+ assert.equal(createdPegasus.status, 200, createdPegasus.text);
+ const persistedPegasus = await request('/api/offers/' + createdPegasus.data.offer.id);
+ assert.equal(persistedPegasus.status, 200);
+ const persistedFlight = persistedPegasus.data.offer.flights[0];
+ assert.deepEqual(persistedFlight.segments.map(({flightNumber, departure, arrival}) => [flightNumber, departure, arrival]), [
+   ['PC272', '2026-11-25T12:55', '2026-11-25T15:10'],
+   ['PC273', '2026-11-27T18:05', '2026-11-27T18:25']
+ ]);
+ assert.equal(persistedFlight.departure, confirmedPegasus.departure);
+ assert.equal(persistedFlight.arrival, confirmedPegasus.arrival);
+ assert.deepEqual(consistency.offerConflicts({ flights: [persistedFlight] }), []);
+ pass('PC272/PC273 unresolved draft blocked; explicit dates save and reopen', { unresolvedPost: 422, confirmedPost: 200, confirmedGet: 200 });
 }catch(e){rows.push({result:'FAIL',error:e.stack});console.error(e);process.exitCode=1;}finally{if(browser)await browser.close();if(child&&child.exitCode===null){child.kill('SIGKILL');await new Promise(r=>child.once('exit',r));}if(process.env.AYA_CONSISTENCY_REPORT)fs.writeFileSync(process.env.AYA_CONSISTENCY_REPORT,JSON.stringify(rows,null,2));fs.rmSync(tmp,{recursive:true,force:true});}})();

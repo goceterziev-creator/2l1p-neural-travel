@@ -33,4 +33,66 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 
 
 
+ // Execute the production Use Result and addFlight handlers with a synthetic intake.
+ await page.addScriptTag({content:
+   source.slice(source.indexOf('async function applyUniversalTravelIntakeResult('), source.indexOf('function getImportedFlightPrice(')) +
+   source.slice(source.indexOf('function flightIdentityKey('), source.indexOf('function addHotel('))
+ });
+ await page.evaluate(() => {
+   const fields = {
+     travelDates: { value: '25.11 - 27.11' },
+     universalFlightDeparture: { value: 'SOF -> SAW, 2026-11-25T12:55 - 2026-11-25T15:10' },
+     universalFlightArrival: { value: 'SAW -> SOF, 2026-11-27T18:05 - 2026-11-27T18:25' },
+     flightDeparture: { value: '' },
+     flightArrival: { value: '' }
+   };
+   window.$ = id => fields[id];
+   window.flights = [];
+   window.normalizeFlightFields = flight => flight;
+   window.renderFlightCards = () => {};
+   window.updateAutoPrice = () => {};
+   window.calculatePricing = () => {};
+   window.setAdminBaggageInput = () => {};
+   const flight = {
+     airline: 'Pegasus', route: 'SOF -> SAW / SAW -> SOF', currency: 'EUR', price: 100,
+     outbound: { segments: [{ flightNumber: 'PC272', from: 'SOF', to: 'SAW', departure: '25-ноем. 12:55', arrival: '25-ноем. 15:10' }] },
+     inbound: { segments: [{ flightNumber: 'PC273', from: 'SAW', to: 'SOF', departure: '27-ноем. 18:05', arrival: '27-ноем. 18:25' }] }
+   };
+   window.latestUniversalTravelIntake = { mode: 'GT63_SMART_IMPORT', flight, offerFlight: flight };
+   window.intakeBefore = JSON.stringify(latestUniversalTravelIntake);
+ });
+ await page.evaluate(() => { window.pending = applyUniversalTravelIntakeResult(); });
+ await page.click('[data-date-source="cancel"]');
+ await page.evaluate(() => pending);
+ assert.equal(await page.evaluate(() => flights.length), 0);
+
+ const manualDates = ['2026-11-25', '2026-11-25', '2026-11-27', '2026-11-27'];
+ const dialogs = [];
+ page.on('dialog', async dialog => {
+   dialogs.push(dialog.message());
+   await dialog.accept(dialog.type() === 'prompt' ? manualDates.shift() : undefined);
+ });
+ await page.evaluate(() => { window.pending = applyUniversalTravelIntakeResult(); });
+ await page.click('[data-date-source="manual"]');
+ await page.evaluate(() => pending);
+ assert.equal(manualDates.length, 0);
+ assert(dialogs.some(message => message.includes('Smart Import result applied')));
+ assert(!dialogs.some(message => message.includes('Датите не са приложени')));
+ const applied = await page.evaluate(() => ({
+   flight: flights[0],
+   summaries: [$('flightDeparture').value, $('flightArrival').value],
+   conflicts: AYAFlightDataConsistency.offerConflicts({ flights }),
+   unchanged: JSON.stringify(latestUniversalTravelIntake) === intakeBefore
+ }));
+ assert.deepEqual(applied.flight.outboundSegments.map(({ flightNumber, departure, arrival }) => [flightNumber, departure, arrival]), [
+   ['PC272', '2026-11-25T12:55', '2026-11-25T15:10']
+ ]);
+ assert.deepEqual(applied.flight.inboundSegments.map(({ flightNumber, departure, arrival }) => [flightNumber, departure, arrival]), [
+   ['PC273', '2026-11-27T18:05', '2026-11-27T18:25']
+ ]);
+ assert.deepEqual(applied.summaries, [applied.flight.departure, applied.flight.arrival]);
+ assert.deepEqual(applied.conflicts, []);
+ assert(applied.unchanged);
+ console.log('PASS real Chromium: PC272/PC273 Use Result, manual dates, synchronized summaries, and save guard');
+
  }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
