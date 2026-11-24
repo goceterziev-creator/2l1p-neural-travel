@@ -3227,6 +3227,32 @@ async function uploadSmartImport() {
   }
 }
 
+async function recoverSmartImport() {
+  if (smartImportInProgress || !hasCapability("imports.run")) return;
+  const intakeId = $("smartImportRecoveryId")?.value.trim();
+  if (!/^SMART-\d{13}-[a-f0-9]{6}$/.test(intakeId || "")) {
+    alert("Въведете валиден Smart Import intake ID.");
+    return;
+  }
+  smartImportInProgress = true;
+  try {
+    const url = `/api/smart-import/${encodeURIComponent(intakeId)}`;
+    const data = await fetchJson(url);
+    const files = await Promise.all(data.sources.map(async source => {
+      const response = await fetch(`${url}/source/${encodeURIComponent(source.sourceId)}`);
+      if (!response.ok || !response.headers.get("content-type")?.startsWith("application/octet-stream")) {
+        throw new Error("Липсва оригинален кадър.");
+      }
+      return new File([await response.blob()], source.originalFilename, { type: source.mimeType });
+    }));
+    renderUniversalTravelReview({ ...data, reviewTarget: "smartImportReview" }, files);
+  } catch {
+    alert("Архивът на Smart Import е недостъпен или непълен.");
+  } finally {
+    smartImportInProgress = false;
+  }
+}
+
 async function uploadUniversalTravelIntake() {
   if (!hasCapability("imports.run")) {
     alert("Your role cannot run imports.");

@@ -77,7 +77,7 @@ const GEMINI_INTAKE_TEST_DIR = process.env.GEMINI_INTAKE_TEST_DIR
     : path.join(__dirname, "storage", "gemini-intake-test"));
 const SOURCE_EVIDENCE_DIR = process.env.SOURCE_EVIDENCE_DIR
   ? path.resolve(process.env.SOURCE_EVIDENCE_DIR)
-  : path.join(__dirname, "storage", "source-evidence");
+  : fs.existsSync("/data") ? path.join("/data", "SOURCE_EVIDENCE") : path.join(__dirname, "storage", "source-evidence");
 console.log("DB FILE:", DB_FILE);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const HOTEL_PRINT_IMAGE_DIR = path.resolve(DATA_DIR, "HOTEL_PRINT_IMAGES");
@@ -10837,7 +10837,8 @@ function archiveUniversalSourceEvidenceSafe({ files = [], intakeId = "", sources
     const nextSources = safeArray(sources).map((source, index) => {
       const file = files[index];
       if (!Buffer.isBuffer(file?.buffer)) return source;
-      const ext = path.extname(file.originalname || "") || ".png";
+      const suppliedExt = path.extname(file.originalname || "");
+      const ext = /^\.[a-z0-9]{1,10}$/i.test(suppliedExt) ? suppliedExt : ".png";
       const filename = `source_${index + 1}${ext}`;
       const storedPath = path.join(baseDir, filename);
       fs.writeFileSync(storedPath, file.buffer);
@@ -12016,6 +12017,53 @@ app.get("/api/exchange-rates", requireCapability("imports.run"), async (req,res)
   } catch(error) {res.status(503).json({error:"Курсът не е достъпен. Въведете ръчно проверен курс.",details:error.message});}
 });
 
+function smartImportArchiveDigest(bytes) {
+  return crypto.createHash("sha256").update(bytes).digest("hex");
+}
+
+function readSmartImportArchiveFile(root, relativePath, expectedDigest) {
+  const file = path.join(root, relativePath);
+  if (fs.realpathSync(file) !== file || !fs.lstatSync(file).isFile()) throw new Error("Invalid archive file");
+  const bytes = fs.readFileSync(file, { flag: fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW });
+  if (smartImportArchiveDigest(bytes) !== expectedDigest) throw new Error("Invalid evidence digest");
+  return bytes;
+}
+
+app.get(["/api/smart-import/:intakeId", "/api/smart-import/:intakeId/source/:sourceId"],
+  requireCapability("imports.run"), (req, res) => {
+    const { intakeId, sourceId } = req.params;
+    res.set("Cache-Control", "private, no-store");
+    const unavailable = () => res.status(404).json({ error: "Smart Import archive unavailable" });
+    if (!/^SMART-\d{13}-[a-f0-9]{6}$/.test(intakeId)) return unavailable();
+    const intake = readDb().smartImportPriceEvidenceV1?.[intakeId];
+    if (!intake || intake.agencyId !== getCurrentAgencyId(req) || intake.archive?.version !== 1) return unavailable();
+    try {
+      const root = path.join(fs.realpathSync(SOURCE_EVIDENCE_DIR), "offers", intakeId);
+      const { responseDigest, originals } = intake.archive;
+      const payload = JSON.parse(readSmartImportArchiveFile(root, "smart_import_response.json", responseDigest));
+      if (payload.intakeId !== intakeId || payload.mode !== "GT63_SMART_IMPORT" ||
+          !Array.isArray(originals) || !originals.length || originals.length > 8 ||
+          payload.sources?.length !== originals.length ||
+          !originals.every((entry, index) => entry.sourceId === `SRC-${index + 1}` &&
+            payload.sources[index]?.sourceId === entry.sourceId &&
+            new RegExp(`^source_${index + 1}\\.[a-z0-9]{1,10}$`, "i").test(entry.filename))) return unavailable();
+      const readOriginal = entry => readSmartImportArchiveFile(root, path.join("original", entry.filename), entry.digest);
+      if (sourceId !== undefined) {
+        const source = originals.find(entry => entry.sourceId === sourceId);
+        if (!source) return unavailable();
+        const bytes = readOriginal(source);
+        return res.set("X-Content-Type-Options", "nosniff").attachment(source.filename)
+          .type("application/octet-stream").send(bytes);
+      }
+      for (const source of originals) readOriginal(source);
+      const withoutPath = ({ storedPath, ...source }) => source;
+      const sources = payload.sources.map(withoutPath);
+      return res.json({ ...payload, sources, evidence: { archived: true, sources } });
+    } catch {
+      return unavailable();
+    }
+  });
+
 app.post("/api/smart-import", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {
   const intakeId = `SMART-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   try {
@@ -12152,12 +12200,6 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
         candidate.warnings = [candidate.priceReview.warning || (candidate.provider ? "FLIGHT_PRICE_FX_UNAVAILABLE" : "FLIGHT_PRICE_PROVIDER_UNKNOWN")];
       }
     }
-    if (checkoutRecords.length || flightRecords.length) await mutateDb(db => {
-      db.smartImportPriceEvidenceV1 ||= {};
-      db.smartImportPriceEvidenceV1[intakeId] = { agencyId, records: checkoutRecords, flightRecords };
-      return db;
-    });
-
     const responsePayload = buildSmartImportResponse({
       intakeId,
       flightSourceUrl: req.body?.flightSourceUrl || "",
@@ -12173,14 +12215,29 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       hotelResult
     });
 
-    if (evidence?.root) {
+    let archive;
+    if (evidence?.archived && evidence.root) {
       const evidenceRoot = path.dirname(evidence.root);
       try {
-        writeJsonFile(path.join(evidenceRoot, "smart_import_response.json"), responsePayload);
+        const originals = nextSources.map((source, index) => {
+          if (source.sourceId !== `SRC-${index + 1}` || !source.storedPath) throw new Error("Missing source file");
+          const filename = path.basename(source.storedPath);
+          const digest = smartImportArchiveDigest(imageFiles[index].buffer);
+          readSmartImportArchiveFile(fs.realpathSync(evidenceRoot), path.join("original", filename), digest);
+          return { sourceId: source.sourceId, filename, digest };
+        });
+        const response = JSON.stringify(responsePayload, null, 2);
+        fs.writeFileSync(path.join(evidenceRoot, "smart_import_response.json"), response, { flag: "wx" });
+        archive = { version: 1, responseDigest: smartImportArchiveDigest(response), originals };
       } catch (error) {
         console.warn("GT63 SMART IMPORT EVIDENCE WRITE FAILED:", error.message);
       }
     }
+    if (archive || checkoutRecords.length || flightRecords.length) await mutateDb(db => {
+      db.smartImportPriceEvidenceV1 ||= {};
+      db.smartImportPriceEvidenceV1[intakeId] = { agencyId, records: checkoutRecords, flightRecords, ...(archive && { archive }) };
+      return db;
+    });
 
     return res.json(responsePayload);
   } catch (error) {

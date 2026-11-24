@@ -63,13 +63,15 @@ const base = "http://127.0.0.1:" + port;
 const secret = crypto.randomBytes(32).toString("hex");
 Object.assign(process.env, {
   DATA_DIR: temp, DB_FILE: path.join(temp, "db.json"), REGRESSION_LIBRARY_DIR: path.join(temp, "library"),
+  SOURCE_EVIDENCE_DIR: path.join(temp, "source-evidence"),
   PORT: String(port), LIVE_BASE_URL: base, AUTH_SECRET: secret, BETA_AUTH_BYPASS: "false", SERPAPI_KEY: "",
   AIRPORT_CONFIG_FILE: path.join(temp, "airports.json"), OCR_PATTERN_CONFIG_FILE: path.join(temp, "ocr.json")
 });
 fs.writeFileSync(process.env.DB_FILE, JSON.stringify({
   offers: [], users: [
     { id: "QA", name: "QA", agencyId: "AGY-AYA", role: "admin", email: "qa@example.test" },
-    { id: "QA2", name: "QA2", agencyId: "AGY-QA2", role: "admin", email: "qa2@example.test" }
+    { id: "QA2", name: "QA2", agencyId: "AGY-QA2", role: "admin", email: "qa2@example.test" },
+    { id: "VIEWER", name: "Viewer", agencyId: "AGY-AYA", role: "viewer", email: "viewer@example.test" }
   ], activities: []
 }));
 function sessionFor(userId) {
@@ -144,7 +146,6 @@ harness._compile(fs.readFileSync(filename, "utf8") + `
         !prompt.includes("generic airport shuttle amenity is insufficient"))) throw Error("Missing transfer extraction contract");
     return structuredClone(fixtures[name]);
   };
-  archiveUniversalSourceEvidenceSafe = ({sources}) => ({sources});
   module.exports.istanbulQa = { classifySmartImportSource, app, buildLegacyOfferPrintInput, renderGt63RegistryOfferHtml };
 `, filename);
 
@@ -295,6 +296,99 @@ async function run() {
     fs.writeFileSync(pdfPath, Buffer.from(await pdf.arrayBuffer()));
     visible(execFileSync("pdftotext", [pdfPath, "-"], { encoding: "utf8" }).replace(/\s+/g, " "));
     console.log("PASS legacy/registry HTML, Chromium Print and production PDF handler with pdftotext in local QA");
+
+    if (process.argv.includes("--archive-recovery")) {
+      const intakeId = proof.intakeId;
+      const url = base + "/api/smart-import/" + intakeId;
+      const archiveRoot = path.join(process.env.SOURCE_EVIDENCE_DIR, "offers", intakeId);
+      const payloadPath = path.join(archiveRoot, "smart_import_response.json");
+      const originalPath = path.join(archiveRoot, "original", "source_1.jpg");
+      const original = fs.readFileSync(originalPath);
+      assert.equal(original.toString(), "hotel-property-replay.jpg");
+      const raw = fs.readFileSync(payloadPath);
+      const payload = JSON.parse(raw);
+      assert.equal(payload.intakeId, intakeId);
+      const unboundForm = new FormData();
+      unboundForm.append("image", new Blob(["skyscanner-unknown.jpg"], { type: "image/jpeg" }), "skyscanner-unknown.jpg");
+      const unboundImport = await fetch(base + "/api/smart-import", { method: "POST", headers: { cookie }, body: unboundForm });
+      assert.equal(unboundImport.status, 200);
+      const unbound = await unboundImport.json();
+      assert.equal(unbound.flightCandidates[0].checkoutBinding, undefined);
+      const dbBytes = fs.readFileSync(process.env.DB_FILE);
+      const archive = JSON.parse(dbBytes).smartImportPriceEvidenceV1[intakeId].archive;
+      assert.equal(archive.responseDigest, crypto.createHash("sha256").update(raw).digest("hex"));
+      assert.deepEqual(archive.originals.map(item => item.sourceId), ["SRC-1", "SRC-2", "SRC-3", "SRC-4"]);
+      assert.equal(archive.originals[0].digest, crypto.createHash("sha256").update(original).digest("hex"));
+
+      // A fresh process runs the actual server, with no synthetic extraction hooks.
+      await new Promise(resolve => {
+        listener.close(resolve);
+        listener.closeAllConnections();
+      });
+      listener = null;
+      restarted = spawn(process.execPath, [filename], { stdio: "ignore", env: process.env });
+      const get = (suffix = "", auth = cookie) => fetch(url + suffix, { headers: auth ? { cookie: auth } : {} });
+      let result;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        try { result = await get(); break; } catch {}
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      assert.equal(result?.status, 200);
+      assert.equal(result.headers.get("cache-control"), "private, no-store");
+      const unboundRecovered = await fetch(base + "/api/smart-import/" + unbound.intakeId, { headers: { cookie } });
+      assert.equal(unboundRecovered.status, 200);
+      const unboundCandidate = (await unboundRecovered.json()).flightCandidates[0];
+      assert.equal(unboundCandidate.checkoutBinding, undefined);
+      assert.equal(unboundCandidate.observations[0].amount, 144);
+      const recovered = await result.json();
+      for (const key of ["flightCandidates", "offerHotelOptions", "hotel", "intakeId", "warnings"]) {
+        assert.deepEqual(recovered[key], payload[key], key);
+      }
+      assert(recovered.sources.every(source => !source.storedPath));
+      assert.equal((await get("", "")).status, 401);
+      assert.equal((await get("/source/SRC-1", "")).status, 401);
+      assert.equal((await get("", "aya_session=" + sessionFor("VIEWER"))).status, 403);
+      const foreignAgency = "aya_session=" + sessionFor("QA2");
+      assert.equal((await get("", foreignAgency)).status, 404);
+      assert.equal((await get("/source/SRC-1", foreignAgency)).status, 404);
+      assert.equal((await get("/source/SRC-9")).status, 404);
+      assert.equal((await fetch(base + "/api/smart-import/SMART-1795528793607-c0cdad", { headers: { cookie } })).status, 404);
+      const photo = await get("/source/SRC-1");
+      assert.equal(photo.status, 200);
+      assert.equal(photo.headers.get("x-content-type-options"), "nosniff");
+      assert.deepEqual(Buffer.from(await photo.arrayBuffer()), original);
+
+      fs.renameSync(originalPath, originalPath + ".bak");
+      assert.equal((await get()).status, 404);
+      assert.equal((await get("/source/SRC-1")).status, 404);
+      fs.symlinkSync(originalPath + ".bak", originalPath);
+      assert.equal((await get("/source/SRC-1")).status, 404);
+      fs.unlinkSync(originalPath);
+      fs.writeFileSync(originalPath, "changed");
+      assert.equal((await get()).status, 404);
+      fs.renameSync(originalPath + ".bak", originalPath);
+      fs.writeFileSync(payloadPath, Buffer.concat([raw, Buffer.from(" ")]));
+      assert.equal((await get()).status, 404);
+      fs.writeFileSync(payloadPath, raw);
+
+      await page.goto(base + "/admin", { waitUntil: "networkidle0" });
+      const imports = [];
+      page.on("request", request => {
+        if (request.url().includes("/api/smart-import")) imports.push(request.method());
+      });
+      await page.evaluate(async id => {
+        document.getElementById("smartImportRecoveryId").value = id;
+        await recoverSmartImport();
+      }, intakeId);
+      assert.deepEqual(imports, ["GET", "GET", "GET", "GET", "GET"]);
+      assert.equal(await page.$$eval("#smartImportReview img", imgs => imgs.length), 4);
+      assert.equal(await page.$eval("#reviewFlightCandidate", node => node.value), "");
+      await page.evaluate(() => applyUniversalTravelIntakeResult());
+      assert.equal(await page.evaluate(() => flights.length + hotels.length), 0);
+      assert.deepEqual(fs.readFileSync(process.env.DB_FILE), dbBytes);
+      console.log("PASS restart, original bytes/digests, authenticated Chromium recovery, capability/agency denial, missing or tampered archive and GET-only Review");
+      return;
+    }
 
     if (process.argv.includes("--flight-evidence-only")) {
       const target = base + "/api/offers/" + id;
