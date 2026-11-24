@@ -2136,6 +2136,18 @@ const hotels = inputHotels.length
       ...hotelBookingConditions(h),
       name: h.name || "",
       stars: h.stars || "",
+      ...(h.classificationProvenance && ["source", "operator-correction"].includes(h.classificationProvenance.kind) ? {
+        classificationProvenance: {
+          kind: h.classificationProvenance.kind,
+          ...(typeof h.classificationProvenance.sourceStars === "string" ? { sourceStars: h.classificationProvenance.sourceStars } : {}),
+          ...(h.classificationProvenance.kind === "operator-correction" ? { value: String(h.stars ?? "") } : {}),
+          sourceIds: safeArray(h.classificationProvenance.sourceIds).filter(id => /^SRC-[1-8]$/.test(id)),
+          ...(typeof h.classificationProvenance.actorId === "string" ? { actorId: h.classificationProvenance.actorId } : {}),
+          ...(typeof h.classificationProvenance.correctedAt === "string" ? { correctedAt: h.classificationProvenance.correctedAt } : {})
+        }
+      } : {}),
+      ...(typeof body.smartImportIntakeId === "string" && h.smartImportIntakeId === body.smartImportIntakeId && /^SMART-\d{13}-[a-f0-9]{6}$/.test(h.smartImportIntakeId)
+        ? { smartImportIntakeId: h.smartImportIntakeId } : {}),
       area: h.area || "",
       distance: h.distance || "",
       room: h.room || "",
@@ -2186,6 +2198,8 @@ const hotels = inputHotels.length
 
   const offer = {
     id: body.id || uid(),
+    ...(typeof body.smartImportIntakeId === "string" && /^SMART-\d{13}-[a-f0-9]{6}$/.test(body.smartImportIntakeId)
+      ? { smartImportIntakeId: body.smartImportIntakeId } : {}),
     clientName: body.clientName || "",
     clientPhone: body.clientPhone || "",
     destination: body.destination || "",
@@ -9335,7 +9349,10 @@ app.post("/api/offers", requireCapability("offers.create"), async (req, res) => 
     let response;
     await mutateDb((db) => {
       assertFlightDataConsistency(req.body);
-      const offer = normalizeOffer(bindSmartImportOfferPrices(req.body, db, req));
+      const offerBody = bindAppliedSmartImportIntake(req.body, db, req);
+      const offer = bindHotelClassificationCorrections(
+        normalizeOffer(bindSmartImportOfferPrices(offerBody, db, req)), null, req
+      );
       assertClientStatusSafety(offer);
       offer.agencyId = getCurrentAgencyId(req);
       offer.createdBy = req.user.id;
@@ -9382,7 +9399,10 @@ app.put("/api/offers/:id", requireCapability("offers.update"), async (req, res) 
         throw routeError("Offer changed or version missing. Reopen the offer before saving; your edits have not been saved.", 409, { code: "OFFER_VERSION_CONFLICT" });
       }
       assertFlightDataConsistency(req.body);
-      const normalized = normalizeOffer(bindSmartImportOfferPrices(req.body, db, req, previous));
+      const offerBody = bindAppliedSmartImportIntake(req.body, db, req, previous);
+      const normalized = bindHotelClassificationCorrections(
+        normalizeOffer(bindSmartImportOfferPrices(offerBody, db, req, previous)), previous, req
+      );
       const previousWarnings = uniqueWarnings(previous.validationWarnings).join("\n");
       const nextWarnings = uniqueWarnings(normalized.validationWarnings).join("\n");
       const updated = {
@@ -12029,6 +12049,63 @@ function readSmartImportArchiveFile(root, relativePath, expectedDigest) {
   return bytes;
 }
 
+function readVerifiedSmartImportArchive(intakeId, intake = {}) {
+  if (!/^SMART-\d{13}-[a-f0-9]{6}$/.test(intakeId) || intake.archive?.version !== 1) return null;
+  try {
+    const root = path.join(fs.realpathSync(SOURCE_EVIDENCE_DIR), "offers", intakeId);
+    const { responseDigest, originals } = intake.archive;
+    const payload = JSON.parse(readSmartImportArchiveFile(root, "smart_import_response.json", responseDigest));
+    if (payload.intakeId !== intakeId || payload.mode !== "GT63_SMART_IMPORT" ||
+        !Array.isArray(originals) || originals.length < 1 || originals.length > 8 ||
+        payload.sources?.length !== originals.length ||
+        !originals.every((entry, index) => entry.sourceId === `SRC-${index + 1}` &&
+          payload.sources[index]?.sourceId === entry.sourceId &&
+          new RegExp(`^source_${index + 1}\\.[a-z0-9]{1,10}$`, "i").test(entry.filename))) return null;
+    const sourceBytes = originals.map(entry => readSmartImportArchiveFile(root, path.join("original", entry.filename), entry.digest));
+    return { payload, originals, sourceBytes, sources: payload.sources.map(({ storedPath, ...source }) => source) };
+  } catch { return null; }
+}
+
+function bindAppliedSmartImportIntake(body = {}, db = {}, req = {}, previous = null) {
+  const intakeId = String(body.smartImportIntakeId || previous?.smartImportIntakeId || "").trim();
+  if (!intakeId) return { ...body, smartImportIntakeId: "" };
+  if (!/^SMART-\d{13}-[a-f0-9]{6}$/.test(intakeId)) throw routeError("Invalid Smart Import intake identity", 422, { code: "SMART_IMPORT_INTAKE_INVALID" });
+  const intake = db.smartImportPriceEvidenceV1?.[intakeId];
+  if (!intake) throw routeError("Smart Import intake is unknown", 422, { code: "SMART_IMPORT_INTAKE_UNKNOWN" });
+  if (intake.agencyId !== getCurrentAgencyId(req)) throw routeError("Smart Import intake belongs to another agency", 403, { code: "SMART_IMPORT_INTAKE_AGENCY_MISMATCH" });
+  const archive = readVerifiedSmartImportArchive(intakeId, intake);
+  if (!archive) throw routeError("Smart Import archive is unavailable or failed integrity checks", 422, { code: "SMART_IMPORT_ARCHIVE_UNAVAILABLE" });
+  const links = [
+    ...safeArray(body.flights).flatMap(flight => [flight?.importSelection?.intakeId, flight?.importedFlightPrice?.intakeId]),
+    ...safeArray(body.hotels).flatMap(hotel => [hotel?.smartImportIntakeId, hotel?.importedPrice?.intakeId, hotel?.checkoutBinding?.intakeId])
+  ].filter(value => typeof value === "string" && value.trim());
+  if (!links.length) throw routeError("Smart Import intake is not linked to applied offer evidence", 422, { code: "SMART_IMPORT_INTAKE_UNRELATED" });
+  if (links.some(value => value !== intakeId)) throw routeError("Offer evidence refers to a different Smart Import intake", 422, { code: "SMART_IMPORT_INTAKE_STALE" });
+  const validSourceIds = new Set(archive.sources.map(source => source.sourceId));
+  if (safeArray(body.hotels).some(hotel => hotel.smartImportIntakeId === intakeId &&
+      safeArray(hotel.classificationProvenance?.sourceIds).some(sourceId => !validSourceIds.has(sourceId)))) {
+    throw routeError("Hotel classification provenance refers to a source outside its Smart Import intake", 422, { code: "SMART_IMPORT_CLASSIFICATION_SOURCE_MISMATCH" });
+  }
+  return { ...body, smartImportIntakeId: intakeId };
+}
+
+function bindHotelClassificationCorrections(offer = {}, previous = null, req = {}) {
+  offer.hotels = safeArray(offer.hotels).map((hotel, index) => {
+    const provenance = hotel.classificationProvenance;
+    if (provenance?.kind !== "operator-correction") return hotel;
+    const oldHotels = safeArray(previous?.hotels);
+    const identified = hotel.id ? oldHotels.filter(item => item.id === hotel.id) : [];
+    const named = !identified.length && hotel.name ? oldHotels.filter(item => item.name === hotel.name) : [];
+    const old = identified.length === 1 ? identified[0] : named.length === 1 ? named[0] : oldHotels[index];
+    const oldProvenance = old?.classificationProvenance;
+    const unchanged = oldProvenance?.kind === "operator-correction" && old.stars === hotel.stars && oldProvenance.value === hotel.stars;
+    return { ...hotel, classificationProvenance: unchanged ? oldProvenance : {
+      ...provenance, value: String(hotel.stars ?? ""), actorId: req.user?.id || "", correctedAt: new Date().toISOString()
+    } };
+  });
+  return offer;
+}
+
 app.get(["/api/smart-import/:intakeId", "/api/smart-import/:intakeId/source/:sourceId"],
   requireCapability("imports.run"), (req, res) => {
     const { intakeId, sourceId } = req.params;
@@ -12037,31 +12114,16 @@ app.get(["/api/smart-import/:intakeId", "/api/smart-import/:intakeId/source/:sou
     if (!/^SMART-\d{13}-[a-f0-9]{6}$/.test(intakeId)) return unavailable();
     const intake = readDb().smartImportPriceEvidenceV1?.[intakeId];
     if (!intake || intake.agencyId !== getCurrentAgencyId(req) || intake.archive?.version !== 1) return unavailable();
-    try {
-      const root = path.join(fs.realpathSync(SOURCE_EVIDENCE_DIR), "offers", intakeId);
-      const { responseDigest, originals } = intake.archive;
-      const payload = JSON.parse(readSmartImportArchiveFile(root, "smart_import_response.json", responseDigest));
-      if (payload.intakeId !== intakeId || payload.mode !== "GT63_SMART_IMPORT" ||
-          !Array.isArray(originals) || !originals.length || originals.length > 8 ||
-          payload.sources?.length !== originals.length ||
-          !originals.every((entry, index) => entry.sourceId === `SRC-${index + 1}` &&
-            payload.sources[index]?.sourceId === entry.sourceId &&
-            new RegExp(`^source_${index + 1}\\.[a-z0-9]{1,10}$`, "i").test(entry.filename))) return unavailable();
-      const readOriginal = entry => readSmartImportArchiveFile(root, path.join("original", entry.filename), entry.digest);
+    const archive = readVerifiedSmartImportArchive(intakeId, intake);
+    if (!archive) return unavailable();
       if (sourceId !== undefined) {
-        const source = originals.find(entry => entry.sourceId === sourceId);
+        const sourceIndex = archive.originals.findIndex(entry => entry.sourceId === sourceId);
+        const source = archive.originals[sourceIndex];
         if (!source) return unavailable();
-        const bytes = readOriginal(source);
         return res.set("X-Content-Type-Options", "nosniff").attachment(source.filename)
-          .type("application/octet-stream").send(bytes);
+          .type("application/octet-stream").send(archive.sourceBytes[sourceIndex]);
       }
-      for (const source of originals) readOriginal(source);
-      const withoutPath = ({ storedPath, ...source }) => source;
-      const sources = payload.sources.map(withoutPath);
-      return res.json({ ...payload, sources, evidence: { archived: true, sources } });
-    } catch {
-      return unavailable();
-    }
+      return res.json({ ...archive.payload, sources: archive.sources, evidence: { archived: true, sources: archive.sources } });
   });
 
 app.post("/api/smart-import", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {

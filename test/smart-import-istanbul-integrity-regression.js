@@ -9,7 +9,7 @@ const Module = require("node:module");
 const { execFileSync, spawn } = require("node:child_process");
 const puppeteer = require("puppeteer");
 const fixture = require("./fixtures/smart-import/istanbul-integrity.json");
-const { smartHotelRecord, groupSmartHotelScreenshots } = require("../server/smart-import-hotel-review");
+const { smartHotelRecord, groupSmartHotelScreenshots, hotelBookingConditions } = require("../server/smart-import-hotel-review");
 
 const property = smartHotelRecord(fixture["hotel-property.jpg"], "SRC-1");
 const checkout = smartHotelRecord(fixture["hotel-checkout.jpg"], "SRC-2");
@@ -25,6 +25,14 @@ assert(conflict.propertyReview.every(item => item.conflict));
 assert.equal(conflict.hotels[0].transferOnRequest, undefined);
 const differentAddress = { ...checkout, address: "Beta 2", sourceId: "SRC-6" };
 assert.equal(groupSmartHotelScreenshots([property, differentAddress]).hotels[0].transferOnRequest, undefined);
+for (const [stars, provenance] of [
+  ["3", { kind: "operator-correction", sourceStars: "4", value: "3", sourceIds: ["SRC-1"] }],
+  ["", { kind: "operator-correction", sourceStars: "4", value: "", sourceIds: ["SRC-1"] }]
+]) {
+  const corrected = groupSmartHotelScreenshots([property, { ...checkout, stars, classificationProvenance: provenance }]).hotels[0];
+  assert.equal(corrected.stars, stars);
+  assert.deepEqual(corrected.classificationProvenance, provenance);
+}
 const ambiguousProperty = { ...property, address: "" };
 const ambiguous = groupSmartHotelScreenshots([ambiguousProperty, checkout, differentAddress]);
 assert.equal(ambiguous.hotels.length, 2);
@@ -41,6 +49,7 @@ const checkoutReplay = { ...checkout, sourceId: "SRC-3" };
 const groupedReplay = groupSmartHotelScreenshots([checkoutReplay, propertyReplay]);
 assert.equal(groupedReplay.hotels.length, 1);
 assert.equal(groupedReplay.hotels[0].price, 190.98);
+assert.equal(groupedReplay.hotels[0].stars, "4");
 assert.deepEqual(groupedReplay.hotels[0].propertySourceIds, ["SRC-4"]);
 assert.equal(groupSmartHotelScreenshots([checkoutReplay, separateRate, propertyReplay]).hotels.length, 2);
 for (const address of ["", "Beta 2"]) {
@@ -56,6 +65,9 @@ for (const evidence of [{ pageKind: "checkout" }, { room: "Double" }, { occupanc
 assert.equal(smartHotelRecord({ occupancy: { adults: 2, rooms: 1 } }, "SRC-3").occupancy.children, null);
 assert.equal(checkout.occupancy.children, 0);
 assert.notEqual(smartHotelRecord({ amenities: ["Летищен трансфер"] }, "SRC-3").transferOnRequest, true);
+assert.equal(hotelBookingConditions({ transferOnRequest: false }).transferOnRequest, false);
+assert.deepEqual(hotelBookingConditions({ transferOnRequest: null }), {});
+assert.equal(groupSmartHotelScreenshots([{ ...property, stars: "" }, checkout]).hotels[0].stars, "");
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "aya-istanbul-integrity-"));
 const port = 42000 + Math.floor(Math.random() * 8000);
@@ -127,7 +139,9 @@ harness._compile(fs.readFileSync(filename, "utf8") + `
 
     return { canonical, flight: geminiCanonicalToFlight(canonical) };
   };
+  let syntheticVisionCalls = 0;
   callVisionJson = async ({imageBuffer, prompt}) => {
+    syntheticVisionCalls += 1;
     const name = imageBuffer.toString();
     if (prompt.includes("Classify this travel screenshot")) {
       return {
@@ -146,7 +160,9 @@ harness._compile(fs.readFileSync(filename, "utf8") + `
         !prompt.includes("generic airport shuttle amenity is insufficient"))) throw Error("Missing transfer extraction contract");
     return structuredClone(fixtures[name]);
   };
-  module.exports.istanbulQa = { classifySmartImportSource, app, buildLegacyOfferPrintInput, renderGt63RegistryOfferHtml };
+  module.exports.istanbulQa = { classifySmartImportSource, app, buildLegacyOfferPrintInput, renderGt63RegistryOfferHtml, renderOfferHtml,
+    enrichHotelImportFallbacks, bindAppliedSmartImportIntake, bindHotelClassificationCorrections,
+    visionCallCount: () => syntheticVisionCalls };
 `, filename);
 
 async function run() {
@@ -159,6 +175,8 @@ async function run() {
   let restarted;
   try {
     const api = harness.exports.istanbulQa;
+    assert.match(api.enrichHotelImportFallbacks({ description: "На 5 минути от летището." }, { amenities: ["Летищен трансфер"] }, "")
+      .description, /Летищен трансфер/);
     for (const [name, sourceType, flightProvider] of [
       ["hotel-property.jpg", "hotel", ""],
       ["booking-flights.jpg", "flight", "Booking Flights"],
@@ -167,8 +185,51 @@ async function run() {
       const result = await api.classifySmartImportSource({ buffer: Buffer.from(name) }, 3);
       assert.deepEqual([result.sourceId, result.sourceType, result.flightProvider], ["SRC-4", sourceType, flightProvider]);
     }
+    if (process.argv.includes("--unit-only")) {
+      console.log("PASS synthetic Smart Import grouping, unknown/false transfer, unstructured transfer-claim removal and classification checks");
+      return;
+    }
     listener = api.app.listen(port, "127.0.0.1");
     await new Promise(resolve => listener.once("listening", resolve));
+    const syntheticUpload = async (name, auth = cookie) => {
+      const form = new FormData();
+      form.append("image", new Blob([name], { type: "image/jpeg" }), name);
+      const response = await fetch(base + "/api/smart-import", { method: "POST", headers: { cookie: auth }, body: form });
+      assert.equal(response.status, 200);
+      return response.json();
+    };
+    const boundEvidence = await syntheticUpload("hotel-checkout-replay.jpg");
+    const beforeRecovery = api.visionCallCount();
+    const recoveredEvidence = await fetch(base + `/api/smart-import/${boundEvidence.intakeId}`, { headers: { cookie } });
+    assert.equal(recoveredEvidence.status, 200);
+    const recoveredSources = (await recoveredEvidence.json()).sources;
+    for (const source of recoveredSources) assert.equal((await fetch(base + `/api/smart-import/${boundEvidence.intakeId}/source/${source.sourceId}`, { headers: { cookie } })).status, 200);
+    assert.equal(api.visionCallCount(), beforeRecovery, "archive recovery must not invoke Vision");
+    let bindingDb = JSON.parse(fs.readFileSync(process.env.DB_FILE, "utf8"));
+    const validationBody = { smartImportIntakeId: boundEvidence.intakeId,
+      hotels: [{ smartImportIntakeId: boundEvidence.intakeId }] };
+    assert.doesNotThrow(() => api.bindAppliedSmartImportIntake(validationBody, bindingDb, { user: { agencyId: "AGY-AYA" } }));
+    const assertIntakeCode = (body, code, agency = "AGY-AYA") => assert.throws(
+      () => api.bindAppliedSmartImportIntake(body, bindingDb, { user: { agencyId: agency } }), error => error.details?.code === code
+    );
+    assertIntakeCode({ ...validationBody, smartImportIntakeId: "SMART-1795542082853-a1b2c3" }, "SMART_IMPORT_INTAKE_UNKNOWN");
+    assertIntakeCode({ smartImportIntakeId: boundEvidence.intakeId, hotels: [] }, "SMART_IMPORT_INTAKE_UNRELATED");
+    const staleEvidence = await syntheticUpload("hotel-checkout-replay.jpg");
+    bindingDb = JSON.parse(fs.readFileSync(process.env.DB_FILE, "utf8"));
+    assertIntakeCode({ ...validationBody, smartImportIntakeId: staleEvidence.intakeId }, "SMART_IMPORT_INTAKE_STALE");
+    const crossAgency = await syntheticUpload("hotel-checkout-replay.jpg", "aya_session=" + sessionFor("QA2"));
+    bindingDb = JSON.parse(fs.readFileSync(process.env.DB_FILE, "utf8"));
+    assertIntakeCode({ smartImportIntakeId: crossAgency.intakeId,
+      hotels: [{ smartImportIntakeId: crossAgency.intakeId }] }, "SMART_IMPORT_INTAKE_AGENCY_MISMATCH");
+    const stamped = api.bindHotelClassificationCorrections({ hotels: [{ stars: "", classificationProvenance: {
+      kind: "operator-correction", sourceStars: "4", value: "", sourceIds: ["SRC-1"]
+    } }] }, null, { user: { id: "QA" } });
+    assert.equal(stamped.hotels[0].classificationProvenance.actorId, "QA");
+    assert.equal(stamped.hotels[0].classificationProvenance.value, "");
+    const restamped = api.bindHotelClassificationCorrections(structuredClone(stamped), stamped, { user: { id: "QA" } });
+    assert.deepEqual(restamped.hotels[0].classificationProvenance, stamped.hotels[0].classificationProvenance);
+    console.log("PASS authenticated Smart Import archive readback without Vision; offer intake binding rejects unknown, unrelated, stale and cross-agency IDs");
+    if (process.argv.includes("--integrity-api-only")) return;
     browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
     const page = await browser.newPage();
     await page.setCookie({ name: "aya_session", value: session, url: base });
@@ -190,7 +251,10 @@ async function run() {
     }, { names: Object.keys(fixture).map(name => name.startsWith("hotel") ? name.replace(".jpg", "-replay.jpg") : name), skyscanner });
     await page.evaluate(() => uploadSmartImport());
     const review = await page.$eval("#smartImportReview", node => node.textContent);
-    for (const text of ["225,07 лв", "Booking Flights", "Skyscanner"]) assert(review.includes(text), text);
+    for (const text of ["225,07 лв", "Booking Flights", "Skyscanner", "Intake ID:", "recoverable"]) assert(review.includes(text), text);
+    const intakeId = await page.$eval("#smartImportRecoveryId", node => node.value);
+    assert.match(intakeId, /^SMART-\d{13}-[a-f0-9]{6}$/);
+    assert.equal(await page.$eval("#universalHotelStars", node => node.value), "4");
     assert.equal(await page.$eval("#reviewHotelPrice0", node => Number(node.value)), 190.98);
     assert.equal(await page.$("#reviewHotelPrice1"), null);
     await page.select("#reviewFlightCandidate", "1");
@@ -206,6 +270,7 @@ async function run() {
     assert.equal(await page.$eval("#universalFlightPrice", node => Number(node.value)), flightTotal);
     await page.evaluate(() => applyUniversalTravelIntakeResult());
     const applied = await page.evaluate(() => ({ hotels, flights }));
+    assert.equal(await page.$eval("#hotelStars", node => node.value), "4");
     assert.equal(applied.hotels.length, 1);
     assert.deepEqual(applied.hotels[0].occupancy, { adults: 2, children: 0, rooms: 1, childAges: null, confirmed: false });
     assert.equal(applied.flights[0].price, flightTotal);
@@ -228,6 +293,7 @@ async function run() {
     const read = await fetch(base + "/api/offers/" + id, { headers: { cookie } });
     assert.equal(read.status, 200);
     const { offer } = await read.json();
+    let latestSavedOffer = offer;
     assert.equal(offer.status, "draft");
     assert.equal(offer.hotelPrice, 190.98);
     assert.equal(offer.flightPrice, flightTotal);
@@ -239,6 +305,8 @@ async function run() {
     assert.equal(offer.hotels[0].stayDates, "25–27.11.2026");
     assert.equal(offer.hotels[0].meal, "Закуската е включена в цената");
     assert.equal(offer.hotels[0].transferOnRequest, true);
+    assert.equal(offer.hotels[0].stars, "4");
+    assert.equal(offer.smartImportIntakeId, intakeId);
     assert.equal(offer.hotels[0].nonRefundable, true);
     const proof = offer.hotels[0].importedPrice;
     assert.equal(proof.kind, "checkout");
@@ -271,6 +339,44 @@ async function run() {
     assert.equal(offer.flights.length, 1);
     console.log("PASS local Admin save/readback 200/200", baseTotal, advertisedTotal);
 
+    const saveStarValue = async value => {
+      await page.evaluate(offerId => editOffer(offerId), id);
+      const selector = "#hotelCards .hotel-card input[placeholder=\"Unknown\"]";
+      assert(await page.$(selector), "hotel star correction control must be visible after reopen");
+      await page.$eval(selector, (node, nextValue) => {
+        node.value = nextValue;
+        node.dispatchEvent(new Event("change", { bubbles: true }));
+      }, value);
+      const savedResponse = page.waitForResponse(res => res.url() === base + "/api/offers/" + id && res.request().method() === "PUT");
+      await page.evaluate(() => saveOffer());
+      const result = await savedResponse;
+      const body = await result.json();
+      assert.equal(result.status(), 200, JSON.stringify(body));
+      const readback = await fetch(base + "/api/offers/" + id, { headers: { cookie } });
+      assert.equal(readback.status, 200);
+      latestSavedOffer = (await readback.json()).offer;
+      return latestSavedOffer;
+    };
+    const corrected = await saveStarValue("5");
+    assert.equal(corrected.hotels[0].stars, "5");
+    assert.equal(corrected.hotels[0].classificationProvenance.kind, "operator-correction");
+    assert.equal(corrected.hotels[0].classificationProvenance.sourceStars, "4");
+    assert.equal(corrected.hotels[0].classificationProvenance.value, "5");
+    assert.equal(corrected.hotels[0].classificationProvenance.actorId, "QA");
+    assert(corrected.hotels[0].classificationProvenance.correctedAt);
+    await page.evaluate(offerId => editOffer(offerId), id);
+    const resaveResponse = page.waitForResponse(res => res.url() === base + "/api/offers/" + id && res.request().method() === "PUT");
+    await page.evaluate(() => saveOffer());
+    assert.equal((await resaveResponse).status(), 200);
+    const resaved = await (await fetch(base + "/api/offers/" + id, { headers: { cookie } })).json();
+    assert.deepEqual(resaved.offer.hotels[0].classificationProvenance, corrected.hotels[0].classificationProvenance);
+    latestSavedOffer = resaved.offer;
+    const deliberateUnknown = await saveStarValue("");
+    assert.equal(deliberateUnknown.hotels[0].stars, "");
+    assert.equal(deliberateUnknown.hotels[0].classificationProvenance.value, "");
+    assert.equal(deliberateUnknown.hotels[0].classificationProvenance.sourceStars, "4");
+    console.log("PASS operator star correction and deliberate unknown survive Save, reopen, resave and readback with actor provenance");
+
     const visible = text => {
       for (const value of ["Beethoven Premium Hotel", "Невъзвръщаема тарифа", "2 нощувки", ...(skyscanner ? [] : ["PC272", "PC273"]),
         "При заявка, извън включените услуги"]) assert(text.includes(value), value);
@@ -282,8 +388,11 @@ async function run() {
     const legacy = await fetch(base + "/api/offers/" + id + "/qa-preview", { headers: { cookie } });
     assert.equal(legacy.status, 200);
     visible(await legacy.text());
-    const proposalInput = api.buildLegacyOfferPrintInput(offer);
-    visible(api.renderGt63RegistryOfferHtml({ ...offer, proposalInput, proposalTemplate: proposalInput.proposalTemplate }));
+    const clientHtml = await api.renderOfferHtml(latestSavedOffer);
+    visible(clientHtml);
+    assert(!clientHtml.includes("Категория: 4 звезди"));
+    const proposalInput = api.buildLegacyOfferPrintInput(latestSavedOffer);
+    visible(api.renderGt63RegistryOfferHtml({ ...latestSavedOffer, proposalInput, proposalTemplate: proposalInput.proposalTemplate }));
     await page.goto(base + "/api/offers/" + id + "/print");
     visible(await page.$eval("body", node => node.innerText));
     const transferState = await page.$$eval(".gt63-print-service-card", cards => cards
@@ -294,7 +403,9 @@ async function run() {
     assert.equal(pdf.status, 200);
     const pdfPath = path.join(temp, "istanbul.pdf");
     fs.writeFileSync(pdfPath, Buffer.from(await pdf.arrayBuffer()));
-    visible(execFileSync("pdftotext", [pdfPath, "-"], { encoding: "utf8" }).replace(/\s+/g, " "));
+    const generatedPdfText = execFileSync("pdftotext", [pdfPath, "-"], { encoding: "utf8" }).replace(/\s+/g, " ");
+    visible(generatedPdfText);
+    assert(!generatedPdfText.includes("Категория: 4 звезди"));
     console.log("PASS legacy/registry HTML, Chromium Print and production PDF handler with pdftotext in local QA");
 
     if (process.argv.includes("--archive-recovery")) {

@@ -21,6 +21,11 @@ function buildLegacyOfferPrintInput(offer = {}) {
   const calculated = baseAmount * (1 + marginPercent / 100);
   const finalAmount = amount(offer.finalPrice) > 0 ? amount(offer.finalPrice) : calculated;
 
+  const transferSource = offer.proposalInput?.transfer || offer.transfer || {};
+  const transfer = transferAmount > 0 || Object.keys(transferSource).length
+    ? { ...transferSource, ...(transferAmount > 0 && transferSource.price == null ? { price: transferAmount } : {}) }
+    : null;
+
   return {
     proposalInputVersion: "1.0", mode: "GT63_LUXURY_PROPOSAL_INPUT",
     readiness: "review", blockingIssues: [], warnings: list(offer.validationWarnings),
@@ -33,7 +38,7 @@ function buildLegacyOfferPrintInput(offer = {}) {
       inboundSegments: flights.flatMap(flight => list(flight.inboundSegments))
     } : null,
     hotel: selected, hotelOptions: options,
-    transfer: transferAmount > 0 ? { price: transferAmount, status: "Според офертата" } : null,
+    transfer,
     pricing: {
       currency: offer.currency || "EUR", flightAmount, hotelAmount, transferAmount, marginPercent,
       baseAmount, totalAmount: finalAmount,

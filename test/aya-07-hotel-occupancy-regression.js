@@ -6,6 +6,7 @@ const vm = require("node:vm");
 const offerNotices = require("../server/offer-notices");
 const test = require("node:test");
 const occupancy = require("../public/hotel-occupancy");
+const { hotelBookingConditions } = require("../server/smart-import-hotel-review");
 const { buildLegacyOfferPrintInput } = require("../gt63-core/legacy-offer-print-input");
 const { buildPresentationViewModel } = require("../gt63-core/presentation-view-model");
 const { renderPrintProposal } = require("../gt63-core/renderers/print-presentation");
@@ -151,7 +152,7 @@ test("READY dashboard excludes unconfirmed offers but accepts INFO-only confirme
 test("real save normalizer, JSON persistence, edit normalization and list/detail route handlers preserve independent hotel data", () => {
   const routes = new Map();
   let database = { offers: [] };
-  const integration = vm.createContext({ offerNotices, hotelOccupancyQa: occupancy, URL,
+  const integration = vm.createContext({ offerNotices, hotelOccupancyQa: occupancy, hotelBookingConditions, URL,
     offerRecordVersion: require("../server/offer-record-version").offerRecordVersion,
     crypto: require('node:crypto'), FLIGHT_AIRPORT_ALIASES: [],
     normalizeTravelDate: require('../server/travel-normalizers/date-normalizer').normalizeTravelDate,
@@ -165,10 +166,19 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   vm.runInContext(section(server, 'app.get("/api/offers",', 'app.get("/api/offers/stats/summary",') +
     section(server, 'app.get("/api/offers/:id",', 'app.post("/api/offers",'), integration);
   const body = withOccupancy({ ...normalized, childAges: [1, 9] });
+  body.hotels[0] = { ...body.hotels[0], stars: "4", transferOnRequest: false,
+    classificationProvenance: { kind: "operator-correction", sourceStars: "5", value: "4", sourceIds: ["SRC-2"], actorId: "QA", correctedAt: "2026-11-24T00:00:00.000Z" } };
+  body.hotelStars = "5";
+  body.smartImportIntakeId = "SMART-1795542082853-a1b2c3";
   body.destination = '';
   const saved = integration.normalizeOffer(body);
   assert.equal(saved.hotels[0].id, 'hotel-a');
   assert.deepEqual(JSON.parse(JSON.stringify(saved.hotels[0].occupancy)), { ...normalized, childAges: [1, 9] });
+  assert.equal(saved.hotels[0].stars, "4");
+  assert.notEqual(saved.hotels[0].stars, body.hotelStars);
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.hotels[0].classificationProvenance)), body.hotels[0].classificationProvenance);
+  assert.equal(saved.hotels[0].transferOnRequest, false);
+  assert.equal(saved.smartImportIntakeId, body.smartImportIntakeId);
   const flightBefore = JSON.stringify(saved.flights);
   const pricingBefore = JSON.stringify([saved.flightPrice, saved.hotelPrice, saved.basePrice, saved.finalPrice, saved.markupPercent]);
   database = JSON.parse(JSON.stringify({ offers: [saved] }));
@@ -177,6 +187,9 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   assert.equal(JSON.stringify([edit.flightPrice, edit.hotelPrice, edit.basePrice, edit.finalPrice, edit.markupPercent]), pricingBefore);
   assert.equal(edit.hotels[0].selected, true);
   assert.deepEqual(JSON.parse(JSON.stringify(edit.hotels[0].occupancy)), { ...normalized, childAges: [1, 9] });
+  assert.equal(edit.hotels[0].transferOnRequest, false);
+  assert.deepEqual(JSON.parse(JSON.stringify(edit.hotels[0].classificationProvenance)), body.hotels[0].classificationProvenance);
+  assert.equal(edit.smartImportIntakeId, body.smartImportIntakeId);
   let single, list;
   routes.get('/api/offers/:id')({ params: { id: saved.id } }, { json: x => { single = x.offer; } });
   routes.get('/api/offers')({}, { json: x => { list = x.offers[0]; } });
@@ -186,6 +199,10 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   assert.equal(single.guests, body.guests);
   assert.equal(single.hotels[0].occupancy.children, 2);
   assert.equal(single.hotels[0].occupancy.rooms, 1);
+  const deliberateUnknown = integration.normalizeOffer({ ...body, hotels: [{ ...body.hotels[0], stars: "",
+    classificationProvenance: { kind: "operator-correction", sourceStars: "4", value: "", sourceIds: ["SRC-2"], actorId: "QA", correctedAt: "2026-11-24T00:00:00.000Z" } }] });
+  assert.equal(deliberateUnknown.hotels[0].stars, "");
+  assert.equal(deliberateUnknown.hotels[0].classificationProvenance.value, "");
   const unconfirmed = integration.normalizeOffer({ ...body, hotels: [{ ...body.hotels[0], occupancy: { ...normalized, confirmed: false } }] });
   assert.equal(unconfirmed.hotels[0].occupancy.confirmed, false);
 });

@@ -20,6 +20,7 @@ let currentCapabilities = [];
 let regressionCaseCache = [];
 let latestUniversalTravelIntake = null;
 let latestUniversalTravelObjectUrls = [];
+let appliedSmartImportIntakeId = "";
 const NAV_STATE_KEY = "gt63_navigation_state_v1";
 const WORKSPACE_LAZY_FLAGS = {
   activity: "lazy",
@@ -2215,7 +2216,7 @@ function renderOfferWorkspace(offerId = activeWorkspaceOfferId) {
         <a class="workspace-asset-card" href="/api/offers/${escapeHtml(offer.id)}/pdf" target="_blank"><span>Document</span><strong>PDF</strong></a>
         <button class="workspace-asset-card" type="button" onclick="copyOfferLink('${escapeHtml(offer.id)}')"><span>Share Link</span><strong>Copy</strong></button>
       </div>
-      <div class="workspace-asset-note">Persisted hotel images: ${hotelImages.length}</div>
+      <div class="workspace-asset-note">Saved hotel image URLs: ${hotelImages.length}</div>
       ${hotelImages.length ? `<div class="workspace-images">${hotelImages.map((src) => `<img src="${escapeHtml(src)}" alt="Hotel image" loading="lazy" decoding="async" />`).join("")}</div>` : `<div class="muted">No persisted hotel images.</div>`}
     `) : ""}
 
@@ -2636,6 +2637,7 @@ function updateCreateSurfaceSummary() {
 }
 
 function populateForm(offer = {}) {
+  appliedSmartImportIntakeId = offer.smartImportIntakeId || "";
   const flight = firstItem(offer.flights || offer.flightOptions);
   const hotel = firstItem(offer.hotels || offer.hotelOptions);
   flights = Array.isArray(offer.flights) && offer.flights.length ? offer.flights.map((item) => ({ ...item })) : (flight.airline || flight.route || flight.price ? [{ ...flight, price: Number(offer.flightPrice || flight.price || 0) }] : []);
@@ -2676,6 +2678,7 @@ function populateForm(offer = {}) {
   setValue("hotelRoomsLeft", hotel.roomsLeft);
   setValue("hotelDescription", hotel.description);
   setValue("hotelImages", uniqueHotelImages(collectHotelImageAliases(hotel)).join("\n"));
+  if ($("smartImportRecoveryId")) $("smartImportRecoveryId").value = appliedSmartImportIntakeId;
 
   setValue("destinationDescription", offer.destinationDescription);
   setValue("notes", offer.notes);
@@ -2997,6 +3000,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
     <div class="upload-box" style="margin-top: 12px;">
       <h3>${data.mode === "GT63_SMART_IMPORT" ? "Smart Import Review" : "Universal Intake Review"}</h3>
       <div class="muted">${data.mode === "GT63_SMART_IMPORT" ? "Review recognized flight and hotel details before using the result." : "Test mode. Review and edit before using the result."}</div>
+      ${data.mode === "GT63_SMART_IMPORT" && data.intakeId ? `<div class="notice ${data.recoveryVerified ? "notice-success" : "warning"}"><strong>Intake ID:</strong> <code>${escapeHtml(data.intakeId)}</code> <button type="button" onclick="navigator.clipboard.writeText('${escapeHtml(data.intakeId)}')">Copy ID</button><div>${data.recoveryVerified ? "Original evidence archive verified and recoverable." : "Extraction succeeded; future recovery is not verified. Retain the original screenshots."}</div></div>` : ""}
 
       <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 12px 0;">
         ${latestUniversalTravelObjectUrls.map((url, index) => `
@@ -3056,6 +3060,8 @@ function renderUniversalTravelReview(data = {}, files = []) {
           ${hasHotel ? `
             <label>Hotel Name</label>
             <input id="universalHotelName" value="${escapeHtml(hotel.name || "")}" />
+            <label>Hotel classification (source evidence or operator correction)</label>
+            <input id="universalHotelStars" placeholder="Unknown" value="${escapeHtml(hotel.stars || "")}" />
             <label>Area</label>
             <input id="universalHotelArea" value="${escapeHtml(hotel.area || "")}" />
             <label>Room</label>
@@ -3119,7 +3125,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
   if (sourceCurrencies.length) loadReviewExchangeRates(data, sourceCurrencies);
   $("reviewFlightCandidate")?.addEventListener("change", event => {
     const hotelFields = ["universalHotelName", "universalHotelArea", "universalHotelRoom",
-      "universalHotelMeal", "universalHotelDescription", ...hotelOptions.map((_, index) => "reviewHotelPrice" + index),
+      "universalHotelMeal", "universalHotelStars", "universalHotelDescription", ...hotelOptions.map((_, index) => "reviewHotelPrice" + index),
       ...(data.propertyReview || []).map((_, index) => "reviewProperty" + index)];
     const edits = hotelFields.map(id => [id, $(id)?.value]);
     const operatorPrices = hotelOptions.map((_, i) => $("reviewHotelOperator" + i)?.checked);
@@ -3207,10 +3213,18 @@ async function uploadSmartImport() {
       body: formData
     });
 
-    smartImportInProgress = false;
     console.log("SMART IMPORT DATA:", data);
     data.reviewTarget = "smartImportReview";
-    if ($("homeLastIntake")) $("homeLastIntake").textContent = (data.warnings?.length || data.flightSourceReview?.warnings?.length) ? "REVIEW" : "PASS";
+    if (data.intakeId && $("smartImportRecoveryId")) $("smartImportRecoveryId").value = data.intakeId;
+    if (data.intakeId) {
+      try {
+        const archived = await fetchJson(`/api/smart-import/${encodeURIComponent(data.intakeId)}`);
+        data.recoveryVerified = archived?.intakeId === data.intakeId && archived?.evidence?.archived === true &&
+          Array.isArray(archived.sources) && archived.sources.length === data.sources?.length;
+      } catch { data.recoveryVerified = false; }
+    }
+    smartImportInProgress = false;
+    if ($("homeLastIntake")) $("homeLastIntake").textContent = (data.warnings?.length || data.flightSourceReview?.warnings?.length || data.recoveryVerified !== true) ? "REVIEW" : "PASS";
     renderUniversalTravelReview(data, files.slice(0, 8));
   } catch (error) {
     smartImportInProgress = false;
@@ -3245,7 +3259,7 @@ async function recoverSmartImport() {
       }
       return new File([await response.blob()], source.originalFilename, { type: source.mimeType });
     }));
-    renderUniversalTravelReview({ ...data, reviewTarget: "smartImportReview" }, files);
+    renderUniversalTravelReview({ ...data, reviewTarget: "smartImportReview", recoveryVerified: true }, files);
   } catch {
     alert("Архивът на Smart Import е недостъпен или непълен.");
   } finally {
@@ -3358,6 +3372,7 @@ async function applyUniversalTravelIntakeResult() {
   }
 
   if ($("universalHotelName")) hotel.name = $("universalHotelName").value.trim();
+  if ($("universalHotelStars")) hotel.stars = $("universalHotelStars").value.trim();
   if ($("universalHotelArea")) hotel.area = $("universalHotelArea").value.trim();
   if ($("universalHotelRoom")) hotel.room = $("universalHotelRoom").value.trim();
   if ($("universalHotelMeal")) hotel.meal = $("universalHotelMeal").value.trim();
@@ -3373,9 +3388,17 @@ async function applyUniversalTravelIntakeResult() {
       else if (h.checkoutBinding) importedPrice = { kind: "checkout", version: h.checkoutBinding.version,
         referenceId: h.checkoutBinding.referenceId, intakeId: h.checkoutBinding.intakeId, sourceId: h.checkoutBinding.sourceId };
     }
-    return { ...h, price, currency, importedPrice };
+    const sourceStars = String(h.stars ?? "");
+    const reviewedStars = i === 0 ? String(hotel.stars ?? "") : sourceStars;
+    const classificationProvenance = reviewedStars === sourceStars
+      ? (h.classificationProvenance || { kind: "source", sourceIds: [...new Set([h.checkoutSourceId, ...(h.propertySourceIds || [])].filter(Boolean))] })
+      : { kind: "operator-correction", sourceStars, value: reviewedStars,
+          sourceIds: [...new Set([h.checkoutSourceId, ...(h.propertySourceIds || [])].filter(Boolean))] };
+    return { ...h, stars: reviewedStars, classificationProvenance, price, currency, importedPrice,
+      ...(data.mode === "GT63_SMART_IMPORT" && data.recoveryVerified === true && data.intakeId
+        ? { smartImportIntakeId: data.intakeId } : {}) };
   });
-  if (reviewedHotels.length) reviewedHotels[0] = { ...reviewedHotels[0], name: hotel.name, area: hotel.area, room: hotel.room, meal: hotel.meal, description: hotel.description };
+  if (reviewedHotels.length) reviewedHotels[0] = { ...reviewedHotels[0], name: hotel.name, stars: hotel.stars, area: hotel.area, room: hotel.room, meal: hotel.meal, description: hotel.description };
   for (const [index, property] of (data.propertyReview || []).entries()) {
     const choice = $("reviewProperty" + index)?.value;
     if (choice === "exclude") continue;
@@ -3390,7 +3413,7 @@ async function applyUniversalTravelIntakeResult() {
       return;
     }
     option.transferOnRequest ??= property.transferOnRequest;
-    option.stars ||= property.stars;
+    if (option.classificationProvenance?.kind !== "operator-correction") option.stars ||= property.stars;
     option.description ||= property.description;
     option.propertySourceIds = [...(option.propertySourceIds || []), property.sourceId];
   }
@@ -3448,6 +3471,8 @@ async function applyUniversalTravelIntakeResult() {
   }
 
   calculatePricing();
+  appliedSmartImportIntakeId = data.mode === "GT63_SMART_IMPORT" && data.recoveryVerified === true ? data.intakeId : "";
+  if ($("smartImportRecoveryId") && appliedSmartImportIntakeId) $("smartImportRecoveryId").value = appliedSmartImportIntakeId;
   alert(`${data.mode === "GT63_SMART_IMPORT" ? "Smart Import" : "Universal Travel Intake"} result applied. Review and save the offer.`);
 }
 
@@ -3667,6 +3692,7 @@ formValidationWarnings.push(
     hotelRoomsLeft: $("hotelRoomsLeft")?.value.trim() || "",
     hotelDescription: $("hotelDescription")?.value.trim() || "",
     hotelImages: uniqueHotelImages(splitLines($("hotelImages")?.value || "")),
+    smartImportIntakeId: appliedSmartImportIntakeId,
 
     destinationDescription: $("destinationDescription")?.value.trim() || "",
     notes: $("notes")?.value.trim() || "",
@@ -4161,7 +4187,7 @@ function renderHotelCards() {
         <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;hotels[${i}].occupancy={...hotels[${i}].occupancy,confirmed:false};renderHotelCards();updateAutoPrice();" />
       </label>
       <label>Stars
-        <input placeholder="Not specified" value="${escapeHtml(h.stars || "")}" onchange="hotels[${i}].stars=this.value;updateAutoPrice();" />
+        <input placeholder="Unknown" value="${escapeHtml(h.stars || "")}" onchange="setHotelStars(${i}, this.value)" />
       </label>
       <label>Area
         <input placeholder="Not specified" value="${escapeHtml(h.area || "")}" onchange="hotels[${i}].area=this.value;updateAutoPrice();" />
@@ -4200,8 +4226,13 @@ function renderHotelCards() {
             <option value="false" ${h.nonRefundable === false ? "selected" : ""}>Възвръщаема</option>
           </select>
         </label>
-        <label><input type="checkbox" ${h.transferOnRequest === true ? "checked" : ""}
-          onchange="hotels[${i}].transferOnRequest=this.checked" /> Летищен трансфер при заявка, извън включените услуги</label>
+        <label>Наличност на трансфер
+          <select onchange="hotels[${i}].transferOnRequest=this.value === 'unknown' ? undefined : this.value === 'on_request'">
+            <option value="unknown" ${typeof h.transferOnRequest !== "boolean" ? "selected" : ""}>Неизвестна</option>
+            <option value="on_request" ${h.transferOnRequest === true ? "selected" : ""}>При заявка (не е включен)</option>
+            <option value="unavailable" ${h.transferOnRequest === false ? "selected" : ""}>Изрично не се предлага</option>
+          </select>
+        </label>
       </fieldset>
       <label>Rooms Left
         <input placeholder="Not specified" value="${escapeHtml(h.roomsLeft || "")}" onchange="hotels[${i}].roomsLeft=this.value;updateAutoPrice();" />
@@ -4250,9 +4281,11 @@ function addHotel(hotel = {}) {
   hotels.push({
     id: hotel.id || "",
     occupancy: globalThis.AYAHotelOccupancy.normalize({ ...hotel.occupancy, confirmed: false }),
+    classificationProvenance: hotel.classificationProvenance,
+    ...(hotel.smartImportIntakeId ? { smartImportIntakeId: hotel.smartImportIntakeId } : {}),
     ...(hotel.nights ? { nights: hotel.nights } : {}),
     ...(typeof hotel.nonRefundable === "boolean" ? { nonRefundable: hotel.nonRefundable } : {}),
-    ...(hotel.transferOnRequest === true ? { transferOnRequest: true } : {}),
+    ...(typeof hotel.transferOnRequest === "boolean" ? { transferOnRequest: hotel.transferOnRequest } : {}),
     name: hotel.name || "",
     stars: hotel.stars || "",
     area: hotel.area || "",
@@ -4294,7 +4327,22 @@ function removeHotel(index) {
   updateAutoPrice();
 }
 
+function setHotelStars(index, value) {
+  const hotel = hotels[index];
+  if (!hotel) return;
+  const sourceStars = String(hotel.classificationProvenance?.sourceStars ?? hotel.stars ?? "");
+  const nextStars = String(value ?? "").trim();
+  hotel.stars = nextStars;
+  hotel.classificationProvenance = nextStars === sourceStars
+    ? { kind: "source", sourceIds: hotel.classificationProvenance?.sourceIds || hotel.propertySourceIds || [] }
+    : { kind: "operator-correction", sourceStars, value: nextStars,
+        sourceIds: hotel.classificationProvenance?.sourceIds || hotel.propertySourceIds || [] };
+  updateAutoPrice();
+  renderHotelCards();
+}
+
 function clearForm() {
+  appliedSmartImportIntakeId = "";
   if (editingOfferId) setEditMode(null);
 
   const ids = [
@@ -4320,6 +4368,7 @@ function clearForm() {
     "hotelRoomsLeft",
     "hotelDescription",
     "hotelImages",
+    "smartImportRecoveryId",
     "destinationDescription",
     "notes",
     "customValidUntil",
