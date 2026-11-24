@@ -284,6 +284,32 @@
       (match, offset, source) => /(?:не е|не са|not)\s*$/i.test(source.slice(0, offset)) ? match : "Изхранването е за потвърждение");
   }
 
+  function serviceSafeDescription(hotel = {}, transfer = {}) {
+    transfer = transfer && typeof transfer === "object" ? transfer : {};
+    const description = mealSafeDescription(hotel);
+    if (transfer.included === true) return description;
+    const inclusionClaim = /(?:included|included in (?:the )?price|free of charge|включен[аои]?|включен[аои]? в цената|безплатен|безплатна)/iu;
+    const negatedInclusion = /(?:(?:is|are|was|were)\s+)?(?:not|isn't|aren't|не\s+(?:е|са|бил[аои]?))\s+(?:included|включен[аои]?)/iu;
+    const transferTerm = /(?:airport\s+transfer|transfer|трансфер|летищен\s+трансфер)/iu;
+    const clauseSeparator = /(\s+(?:and|и)\s+|[,;])/iu;
+    const clauses = description.split(clauseSeparator);
+    for (let index = 0; index < clauses.length; index += 1) {
+      if (clauses[index] && transferTerm.test(clauses[index]) && inclusionClaim.test(clauses[index]) && !negatedInclusion.test(clauses[index])) {
+        clauses[index] = "Трансферът подлежи на потвърждение";
+      }
+    }
+    return clauses.join("").replace(/\s+([,;.])/g, "$1").replace(/[,;]\s*[,;]/g, ", ").trim();
+  }
+
+  function serviceSafeTransferSummary(route = "", status = "", transfer = {}) {
+    const rawStatus = String(status || "").trim();
+    const positiveInclusion = /(?:included|included in (?:the )?price|free of charge|включен[аои]?|включен[аои]? в цената|безплатен|безплатна)/iu;
+    const negatedInclusion = /(?:(?:is|are|was|were)\s+)?(?:not|isn't|aren't|не\s+(?:е|са|бил[аои]?))\s+(?:included|включен[аои]?)/iu;
+    const safeStatus = transfer?.included === true || !positiveInclusion.test(rawStatus) || negatedInclusion.test(rawStatus)
+      ? rawStatus : "Трансферът подлежи на потвърждение";
+    return [String(route || "").trim(), safeStatus].filter(Boolean).join(". ");
+  }
+
   function hotelBookingFacts(hotel = {}) {
     const nights = hotel.nights;
     return [
@@ -572,6 +598,8 @@
     mealServiceEvidence,
     paidMealText,
     mealSafeDescription,
+    serviceSafeDescription,
+    serviceSafeTransferSummary,
     dateRangeNights,
     heroFacts,
     hotelIdentity,

@@ -112,7 +112,10 @@ function groupSmartHotelScreenshots(records) {
     if (!item.auto || item.conflict) continue;
     const { property } = item;
     for (const option of item.exact) {
-      for (const field of ["stars", "area", "location", "description"]) option[field] ||= property[field];
+      for (const field of ["stars", "area", "location", "description"]) {
+        if (field === "stars" && option.classificationProvenance?.kind === "operator-correction") continue;
+        option[field] ||= property[field];
+      }
       // Keep checkout conditions tied to the checkout source.
       if (option.pageKind !== "checkout") option.transferOnRequest ??= property.transferOnRequest;
       if (property.sourceId) option.propertySourceIds.push(property.sourceId);

@@ -187,24 +187,21 @@
     return presentationViewModel.selectedOptionPayload(hotel, index, currency, input);
   }
 
-  function hotelSubtitle(hotel = {}) {
+  function hotelSubtitle(hotel = {}, input = {}) {
     return localizeClientText(text(
-      hotel.subtitle ||
-      hotel.area ||
-      hotel.location ||
-      presentationViewModel.mealSafeDescription(hotel),
+      presentationViewModel.serviceSafeDescription({ ...hotel, description: hotel.subtitle || hotel.area || hotel.location || hotel.description }, input.transfer),
       "Детайли за настаняването за потвърждение"
     ));
   }
 
-  function hotelHighlights(hotel = {}) {
+  function hotelHighlights(hotel = {}, input = {}) {
     const candidates = [
       ...(Array.isArray(hotel.amenities) ? hotel.amenities : []),
       ...(Array.isArray(hotel.highlights) ? hotel.highlights : []),
       ...(Array.isArray(hotel.travelHighlights) ? hotel.travelHighlights : []),
       hotel.roomsLeft,
       hotel.availability
-    ].filter(Boolean).map((item) => localizeClientText(presentationViewModel.mealSafeDescription({ ...hotel, description: item })).trim()).filter(Boolean);
+    ].filter(Boolean).map((item) => localizeClientText(presentationViewModel.serviceSafeDescription({ ...hotel, description: item }, input.transfer)).trim()).filter(Boolean);
     return [...new Set(candidates)].slice(0, 8);
   }
 
@@ -511,8 +508,8 @@
       image: firstHotelImage(hotel, input),
       images,
       url: optionUrl,
-      subtitle: hotelSubtitle(hotel),
-      description: localizeClientText(text(presentationViewModel.mealSafeDescription(hotel), "Описание на хотела за потвърждение.")),
+      subtitle: hotelSubtitle(hotel, input),
+      description: localizeClientText(text(presentationViewModel.serviceSafeDescription(hotel, input.transfer), "Описание на хотела за потвърждение.")),
       room: localizeClientText(text(hotel.room || hotel.roomType, "Стая за потвърждение")),
       meal: payload.mealPlan,
       mealCompact: payload.mealPlan,
@@ -521,7 +518,7 @@
       area: localizeClientText(text(hotel.area || hotel.location || hotel.city, "Локация за потвърждение")),
       stars: numericStars(hotel),
       transfer: transferSummary(input, hotel),
-      highlights: hotelHighlights(hotel),
+      highlights: hotelHighlights(hotel, input),
       reasons: supportedRecommendationReasons(input, hotel, Array.isArray(input.hotelOptions) ? input.hotelOptions : [])
     };
   }
@@ -652,7 +649,7 @@
         : "\u0417\u0430 \u043f\u043e\u0442\u0432\u044a\u0440\u0436\u0434\u0435\u043d\u0438\u0435"
     );
     const route = text(transfer.route || transfer.description, "\u041b\u0435\u0442\u0438\u0449\u0435 \u2192 \u043c\u044f\u0441\u0442\u043e \u0437\u0430 \u043d\u0430\u0441\u0442\u0430\u043d\u044f\u0432\u0430\u043d\u0435 \u2192 \u043b\u0435\u0442\u0438\u0449\u0435");
-    return `${localizeClientText(route)}. ${localizeClientText(status)}`;
+    return localizeClientText(presentationViewModel.serviceSafeTransferSummary(route, status, transfer));
   }
 
   function transferBlock(input = {}, selectedHotel = {}) {

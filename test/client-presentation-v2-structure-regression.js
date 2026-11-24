@@ -8,3 +8,13 @@ test('exact selected ID preserves price, room, meal and images in PDF without ch
 test('comparison keeps all supplied options and conditions; missing image remains explicit',()=>{const input=fixture();input.hotelOptions[0].images=[];const selected=pdf.renderPrintProposal(input);assert(selected.includes('Снимка за потвърждение'));assert(!selected.includes('triviho.jpg'));const comparison=pdf.renderPrintProposal(input,{mode:'comparison'});for(const value of ['The Hive Hotel','Triviho Hotel','Cancellation terms'])assert(comparison.includes(value));});
 
 test('package summary reports supplied baggage text without inventing checked allowance',()=>{const input=fixture();input.flight.baggage='Багаж за потвърждение';const rendered=html.renderMultiHotelProposal(input);assert(rendered.includes('Багажът подлежи на потвърждение'));assert(!rendered.includes('Багаж: Багажът подлежи на потвърждение'));assert(!rendered.includes('Регистриран багаж'));});
+test('structured transfer ownership suppresses unsupported inclusion claims and keeps airport proximity',()=>{
+ const input=fixture();input.hotelOptions[0].description='Хотелът е на 5 минути от летището; airport transfer is included, а СПА е включено.';input.transfer={included:false,status:'За потвърждение'};
+ for(const rendered of [html.renderMultiHotelProposal(input),pdf.renderPrintProposal(input)]){assert(rendered.includes('5 минути от летището'));assert(rendered.includes('СПА е включено'));assert(!rendered.includes('airport transfer is included'));assert(!rendered.includes('data-service-state="included"'))}
+ input.transfer.included=true;const approved=html.renderMultiHotelProposal(input),approvedPdf=pdf.renderPrintProposal(input);assert(approved.includes('airport transfer is included'));assert(approvedPdf.includes('airport transfer is included'));assert(approvedPdf.includes('data-service-state="included"'));
+});
+test('transfer status cannot claim inclusion without structured ownership',()=>{
+ const input=fixture();input.transfer={included:false,status:'Airport transfer included',route:'Airport → hotel'};
+ for(const rendered of [html.renderMultiHotelProposal(input),pdf.renderPrintProposal(input)]){assert(rendered.includes('Airport → hotel'));assert(!rendered.includes('Airport transfer included'));assert(rendered.includes('подлежи на потвърждение'));}
+ input.transfer.included=true;const approved=html.renderMultiHotelProposal(input),approvedPdf=pdf.renderPrintProposal(input);assert(approved.includes('Airport transfer included'));assert(approvedPdf.includes('Airport transfer included'));
+});

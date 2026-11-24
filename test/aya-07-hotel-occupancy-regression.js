@@ -166,7 +166,8 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   vm.runInContext(section(server, 'app.get("/api/offers",', 'app.get("/api/offers/stats/summary",') +
     section(server, 'app.get("/api/offers/:id",', 'app.post("/api/offers",'), integration);
   const body = withOccupancy({ ...normalized, childAges: [1, 9] });
-  body.hotels[0] = { ...body.hotels[0], stars: "4", transferOnRequest: false };
+  body.hotels[0] = { ...body.hotels[0], stars: "4", transferOnRequest: false,
+    classificationProvenance: { kind: "operator-correction", sourceStars: "5", value: "4", sourceIds: ["SRC-2"], actorId: "QA", correctedAt: "2026-11-24T00:00:00.000Z" } };
   body.hotelStars = "5";
   body.smartImportIntakeId = "SMART-1795542082853-a1b2c3";
   body.destination = '';
@@ -175,6 +176,7 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   assert.deepEqual(JSON.parse(JSON.stringify(saved.hotels[0].occupancy)), { ...normalized, childAges: [1, 9] });
   assert.equal(saved.hotels[0].stars, "4");
   assert.notEqual(saved.hotels[0].stars, body.hotelStars);
+  assert.deepEqual(JSON.parse(JSON.stringify(saved.hotels[0].classificationProvenance)), body.hotels[0].classificationProvenance);
   assert.equal(saved.hotels[0].transferOnRequest, false);
   assert.equal(saved.smartImportIntakeId, body.smartImportIntakeId);
   const flightBefore = JSON.stringify(saved.flights);
@@ -186,6 +188,7 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   assert.equal(edit.hotels[0].selected, true);
   assert.deepEqual(JSON.parse(JSON.stringify(edit.hotels[0].occupancy)), { ...normalized, childAges: [1, 9] });
   assert.equal(edit.hotels[0].transferOnRequest, false);
+  assert.deepEqual(JSON.parse(JSON.stringify(edit.hotels[0].classificationProvenance)), body.hotels[0].classificationProvenance);
   assert.equal(edit.smartImportIntakeId, body.smartImportIntakeId);
   let single, list;
   routes.get('/api/offers/:id')({ params: { id: saved.id } }, { json: x => { single = x.offer; } });
@@ -196,6 +199,10 @@ test("real save normalizer, JSON persistence, edit normalization and list/detail
   assert.equal(single.guests, body.guests);
   assert.equal(single.hotels[0].occupancy.children, 2);
   assert.equal(single.hotels[0].occupancy.rooms, 1);
+  const deliberateUnknown = integration.normalizeOffer({ ...body, hotels: [{ ...body.hotels[0], stars: "",
+    classificationProvenance: { kind: "operator-correction", sourceStars: "4", value: "", sourceIds: ["SRC-2"], actorId: "QA", correctedAt: "2026-11-24T00:00:00.000Z" } }] });
+  assert.equal(deliberateUnknown.hotels[0].stars, "");
+  assert.equal(deliberateUnknown.hotels[0].classificationProvenance.value, "");
   const unconfirmed = integration.normalizeOffer({ ...body, hotels: [{ ...body.hotels[0], occupancy: { ...normalized, confirmed: false } }] });
   assert.equal(unconfirmed.hotels[0].occupancy.confirmed, false);
 });
