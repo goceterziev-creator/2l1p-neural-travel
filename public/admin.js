@@ -2589,8 +2589,112 @@ function setValue(id, value = "") {
   if (el) el.value = value ?? "";
 }
 
-function setEditMode(offerId = null, offerVersion = null) {
+let offerUpdateDiagnostic = null;
+
+function canUseOfferUpdateDiagnostic() {
+  return roleLabel() === "ADMIN" && hasCapability("offers.update") && hasCapability("offers.view");
+}
+
+function diagnosticStars(object, key) {
+  if (!object || !Object.hasOwn(object, key)) return { state: "MISSING" };
+  const value = object[key];
+  if (value === null || value === "") return { state: "UNKNOWN", value };
+  if (["string", "number"].includes(typeof value) && /^[0-5](?:[.,][0-9])?\s*\u2605?$/u.test(String(value).trim())) {
+    return { state: "VALUE", value };
+  }
+  return { state: "REDACTED" };
+}
+
+function diagnosticClassification(offer) {
+  return {
+    legacyHotelStars: diagnosticStars(offer, "hotelStars"),
+    hotels: (Array.isArray(offer.hotels) ? offer.hotels : []).slice(0, 20).map((hotel, index) => {
+      const provenance = hotel?.classificationProvenance;
+      return {
+        index, selected: hotel?.selected === true,
+        stars: diagnosticStars(hotel, "stars"),
+        provenance: !provenance ? { state: "MISSING" } : {
+          kind: ["source", "operator-correction"].includes(provenance.kind) ? provenance.kind : "REDACTED",
+          sourceStars: diagnosticStars(provenance, "sourceStars"),
+          value: diagnosticStars(provenance, "value"),
+          sourceIds: Array.isArray(provenance.sourceIds) ? provenance.sourceIds.filter(id => typeof id === "string" && /^SRC-[1-8]$/.test(id)).slice(0, 8) : [],
+          ...(typeof provenance.actorId === "string" && /^(?:USR|USER|U)-[a-z0-9-]{1,60}$/i.test(provenance.actorId) ? { actorId: provenance.actorId } : {}),
+          ...(typeof provenance.correctedAt === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(provenance.correctedAt) ? { correctedAt: provenance.correctedAt } : {})
+        }
+      };
+    })
+  };
+}
+
+function renderOfferUpdateDiagnostic() {
+  const panel = $("offerUpdateDiagnostic");
+  if (!panel) return;
+  const enabled = canUseOfferUpdateDiagnostic();
+  const diagnostic = enabled ? offerUpdateDiagnostic : null;
+  panel.hidden = !enabled || (!editingOfferId && !diagnostic);
+  $("armOfferUpdateDiagnostic").hidden = !editingOfferId || diagnostic?.state === "ARMED" || diagnostic?.state === "CAPTURING";
+  $("copyOfferUpdateDiagnostic").hidden = !diagnostic || ["ARMED", "CAPTURING"].includes(diagnostic.state);
+  $("offerUpdateDiagnosticJson").textContent = diagnostic ? JSON.stringify(diagnostic.report, null, 2) : "";
+  if (!diagnostic) panel.open = false;
+}
+
+function armOfferUpdateDiagnostic() {
+  if (!editingOfferId || !canUseOfferUpdateDiagnostic()) return;
+  offerUpdateDiagnostic = { offerId: editingOfferId, state: "ARMED",
+    report: { events: [], serverIntermediateNormalization: "UNOBSERVED" } };
+  renderOfferUpdateDiagnostic();
+}
+
+function copyOfferUpdateDiagnostic() {
+  if (!canUseOfferUpdateDiagnostic() || !offerUpdateDiagnostic ||
+      ["ARMED", "CAPTURING"].includes(offerUpdateDiagnostic.state)) return;
+  copyText(JSON.stringify(offerUpdateDiagnostic.report, null, 2), "Diagnostic JSON");
+}
+
+for (const type of ["input", "change", "blur"]) {
+  document.addEventListener(type, event => {
+    try {
+      const diagnostic = offerUpdateDiagnostic;
+      if (!event.isTrusted || !diagnostic || diagnostic.state !== "ARMED" ||
+          diagnostic.offerId !== editingOfferId || !canUseOfferUpdateDiagnostic() ||
+          !event.target.matches?.("#hotelCards [data-classification-input]")) return;
+      const events = diagnostic.report.events;
+      if (events.length >= 30) events.shift();
+      events.push({ type, value: diagnosticStars({ value: event.target.value }, "value"),
+        timestamp: new Date().toISOString() });
+    } catch { /* Observation is optional. */ }
+  }, true);
+}
+
+async function readOfferUpdateDiagnostic(diagnostic, result) {
+  try {
+    if (!canUseOfferUpdateDiagnostic() || offerUpdateDiagnostic !== diagnostic) return;
+    diagnostic.report.update = { state: "RETURNED", returned: diagnosticClassification(result.offer) };
+    const response = await fetch(`/api/offers/${encodeURIComponent(diagnostic.offerId)}`,
+      { cache: "no-store", credentials: "same-origin", redirect: "error", signal: AbortSignal.timeout(5000) });
+    if (!response.ok) {
+      diagnostic.report.readback = { state: "UNKNOWN", http: response.status };
+    } else {
+      const data = await response.json();
+      const sameVersion = Boolean(result.offerVersion && data.offerVersion === result.offerVersion);
+      diagnostic.report.readback = {
+        state: sameVersion ? "SAME_VERSION" : "UNKNOWN",
+        versionDrift: result.offerVersion && data.offerVersion ? !sameVersion : null,
+        ...(data.offer ? { returned: diagnosticClassification(data.offer) } : {})
+      };
+    }
+  } catch {
+    diagnostic.report.readback = { state: "UNKNOWN" };
+  } finally {
+    diagnostic.state = "COMPLETE";
+    if (offerUpdateDiagnostic === diagnostic) renderOfferUpdateDiagnostic();
+  }
+}
+
+function setEditMode(offerId = null, offerVersion = null, completedDiagnostic = null) {
+  offerUpdateDiagnostic = completedDiagnostic;
   editingOfferId = offerId;
+  try { renderOfferUpdateDiagnostic(); } catch { /* Saving and editing remain available. */ }
   editingOfferVersion = offerId ? offerVersion : null;
   const isEditing = Boolean(offerId);
   if (!isEditing) window.currentValidationWarnings = [];
@@ -3733,6 +3837,15 @@ async function saveOffer() {
   }
   flights = reviewedFlights;
   syncPrimaryFlightDateFields();
+  let diagnostic = null;
+  try {
+    if (offerUpdateDiagnostic?.state === "ARMED" && offerUpdateDiagnostic.offerId === editingOfferId &&
+        canUseOfferUpdateDiagnostic()) {
+      diagnostic = offerUpdateDiagnostic;
+      const mirror = $("hotelStars");
+      diagnostic.report.beforeCollectForm = diagnosticClassification({ hotels, ...(mirror && { hotelStars: mirror.value }) });
+    }
+  } catch { diagnostic = null; }
   const payload = collectForm();
 
   payload.flights = flights.map(normalizeFlightFields);
@@ -3815,18 +3928,36 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
     alert("Destination is required.");
     return;
   }
+  let updateReturned = false;
   try {
     const wasEditing = Boolean(editingOfferId);
     const editId = editingOfferId;
 
+    if (diagnostic !== offerUpdateDiagnostic || diagnostic?.offerId !== editId ||
+        diagnostic?.state !== "ARMED" || !wasEditing) diagnostic = null;
+    if (diagnostic) {
+      try {
+        const mirror = $("hotelStars");
+        diagnostic.report.beforeSerialization = diagnosticClassification({ hotels, ...(mirror && { hotelStars: mirror.value }) });
+      } catch { diagnostic.report.beforeSerialization = { state: "UNKNOWN" }; }
+    }
+    const body = JSON.stringify(wasEditing ? { ...payload, expectedVersion: editingOfferVersion } : payload);
+    if (diagnostic) {
+      diagnostic.state = "CAPTURING";
+      try { diagnostic.report.serializedPut = diagnosticClassification(JSON.parse(body)); }
+      catch { diagnostic.report.serializedPut = { state: "UNKNOWN" }; }
+    }
     const result = await fetchJson(wasEditing ? `/api/offers/${editId}` : "/api/offers", {
       method: wasEditing ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(wasEditing ? { ...payload, expectedVersion: editingOfferVersion } : payload)
+      body
     });
 
+    updateReturned = Boolean(result?.offer);
     alert(wasEditing ? `Offer updated: ${result.offer.id}` : `Offer saved: ${result.offer.id}`);
-    setEditMode(null);
+    const completedDiagnostic = offerUpdateDiagnostic === diagnostic ? diagnostic : null;
+    setEditMode(null, null, completedDiagnostic);
+    if (completedDiagnostic) void readOfferUpdateDiagnostic(completedDiagnostic, result).catch(() => {});
     if (!wasEditing) setCreateSurfaceOpen(false);
 
     await loadStats();
@@ -3836,6 +3967,15 @@ console.log("SAVE PAYLOAD WARNINGS:", payload.validationWarnings);
       window.open(`/api/offers/view/${result.offer.id}`, "_blank");
     }
   } catch (error) {
+    if (!updateReturned && diagnostic && offerUpdateDiagnostic === diagnostic) {
+      try {
+        diagnostic.report.update = { state: "REJECTED_OR_UNAVAILABLE",
+          ...(Number.isInteger(error.status) && { http: error.status }) };
+        diagnostic.report.readback = { state: "NOT_EXECUTED" };
+        diagnostic.state = "COMPLETE";
+        renderOfferUpdateDiagnostic();
+      } catch { /* The original save error still reaches the operator. */ }
+    }
     if (/^FLIGHT_(?:PRICE|OPERATOR_PRICE)_/.test(error.details?.code || "")) {
       alert(`Полетен вариант ${error.details.flightIndex + 1}: ${error.details.code}. Проверете маршрута, пътниците и цената или изберете „Използвай операторска полетна цена“.`);
       return;
@@ -4187,7 +4327,7 @@ function renderHotelCards() {
         <input placeholder="Hotel Name" value="${escapeHtml(h.name || "")}" onchange="hotels[${i}].name=this.value;hotels[${i}].occupancy={...hotels[${i}].occupancy,confirmed:false};renderHotelCards();updateAutoPrice();" />
       </label>
       <label>Stars
-        <input placeholder="Unknown" value="${escapeHtml(h.stars || "")}" onchange="setHotelStars(${i}, this.value)" />
+        <input data-classification-input placeholder="Unknown" value="${escapeHtml(h.stars || "")}" onchange="setHotelStars(${i}, this.value)" />
       </label>
       <label>Area
         <input placeholder="Not specified" value="${escapeHtml(h.area || "")}" onchange="hotels[${i}].area=this.value;updateAutoPrice();" />
@@ -4342,6 +4482,8 @@ function setHotelStars(index, value) {
 }
 
 function clearForm() {
+  offerUpdateDiagnostic = null;
+  try { renderOfferUpdateDiagnostic(); } catch { /* Form clearing remains available. */ }
   appliedSmartImportIntakeId = "";
   if (editingOfferId) setEditMode(null);
 

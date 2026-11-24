@@ -339,6 +339,124 @@ async function run() {
     assert.equal(offer.flights.length, 1);
     console.log("PASS local Admin save/readback 200/200", baseTotal, advertisedTotal);
 
+    if (process.argv.includes("--offer-update-diagnostic")) {
+      await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+      const url = base + "/api/offers/" + id;
+      const requests = [];
+      page.on("request", request => {
+        if (request.url() === url) requests.push(request.method());
+      });
+      const field = "#hotelCards [data-classification-input]";
+      const open = async () => {
+        await page.evaluate(offerId => editOffer(offerId), id);
+        assert.equal(await page.$eval("#offerUpdateDiagnosticJson", node => node.textContent), "");
+      };
+      const arm = async () => {
+        await page.click("#offerUpdateDiagnostic summary");
+        await page.click("#armOfferUpdateDiagnostic");
+      };
+      const readDiagnostic = () => page.$eval("#offerUpdateDiagnosticJson", node => JSON.parse(node.textContent));
+      const waitForDiagnostic = () => page.waitForFunction(() => {
+        const text = document.getElementById("offerUpdateDiagnosticJson").textContent;
+        return text && JSON.parse(text).readback;
+      });
+      await open();
+      requests.length = 0;
+      await page.evaluate(() => saveOffer());
+      assert.deepEqual(requests, ["PUT"]);
+
+      await open();
+      await page.evaluate(() => {
+        const role = currentUser.role;
+        currentUser.role = "agent";
+        armOfferUpdateDiagnostic();
+        if (offerUpdateDiagnostic) throw Error("Non-admin armed the diagnostic");
+        currentUser.role = role;
+      });
+      await arm();
+      await page.focus(field);
+      await page.keyboard.press("Tab");
+      await page.focus(field);
+      await page.$eval(field, node => node.select());
+      await page.keyboard.type("5");
+      await page.keyboard.press("Tab");
+      const sanitized = await page.evaluate(() => diagnosticClassification({
+        hotelStars: "DO-NOT-EXPOSE-SECRET", hotels: [{ classificationProvenance: {
+          kind: "operator-correction", sourceIds: ["SRC-1", "DO-NOT-EXPOSE-SECRET"],
+          actorId: "admin@example.test"
+        } }]
+      }));
+      assert.deepEqual(sanitized.legacyHotelStars, { state: "REDACTED" });
+      assert.deepEqual(sanitized.hotels[0].stars, { state: "MISSING" });
+      assert.deepEqual(sanitized.hotels[0].provenance.sourceIds, ["SRC-1"]);
+      assert(!JSON.stringify(sanitized).includes("DO-NOT-EXPOSE") && !JSON.stringify(sanitized).includes("example.test"));
+      requests.length = 0;
+      await page.evaluate(() => saveOffer());
+      await waitForDiagnostic();
+      assert.deepEqual(requests, ["PUT", "GET"]);
+      const report = await readDiagnostic();
+      assert.deepEqual(new Set(report.events.map(event => event.type)), new Set(["blur", "input", "change"]));
+      assert(report.events.every(event => Object.keys(event).sort().join(",") === "timestamp,type,value"));
+      assert.equal(report.beforeCollectForm.hotels[0].stars.value, "5");
+      assert.equal(report.beforeSerialization.hotels[0].provenance.kind, "operator-correction");
+      assert.deepEqual(report.serializedPut.legacyHotelStars, { state: "VALUE", value: "5" });
+      assert.deepEqual(report.serializedPut.hotels[0].provenance.value, { state: "VALUE", value: "5" });
+      assert.equal(report.update.returned.hotels[0].stars.value, "5");
+      assert.equal(report.serverIntermediateNormalization, "UNOBSERVED");
+      assert.equal(report.readback.state, "SAME_VERSION");
+      assert.equal(report.readback.returned.hotels[0].stars.value, "5");
+      assert(!JSON.stringify(report).includes("DO-NOT-EXPOSE"));
+      await page.evaluate(() => {
+        const copy = copyText;
+        copyText = text => { window.qaDiagnosticClipboard = text; };
+        copyOfferUpdateDiagnostic();
+        copyText = copy;
+      });
+      assert.deepEqual(JSON.parse(await page.evaluate(() => window.qaDiagnosticClipboard)), report);
+
+      await open();
+      await arm();
+      await page.evaluate(() => {
+        setHotelStars(0, "");
+        const original = window.fetch;
+        window.fetch = async (...args) => {
+          const response = await original(...args);
+          if (String(args[0]) === "/api/offers/" + editingDiagnosticOffer() && args[1]?.cache === "no-store") {
+            return new Response(JSON.stringify({ ...(await response.json()), offerVersion: "changed" }), { status: 200 });
+          }
+          return response;
+        };
+        function editingDiagnosticOffer() { return offerUpdateDiagnostic?.offerId; }
+      });
+      await page.evaluate(() => saveOffer());
+      await waitForDiagnostic();
+      const drift = await readDiagnostic();
+      assert.deepEqual(drift.serializedPut.hotels[0].stars, { state: "UNKNOWN", value: "" });
+      assert.deepEqual(drift.serializedPut.hotels[0].provenance.actorId, undefined);
+      assert.equal(drift.readback.state, "UNKNOWN");
+      assert.equal(drift.readback.versionDrift, true);
+
+      await open();
+      await arm();
+      await page.evaluate(() => { editingOfferVersion = "stale"; });
+      requests.length = 0;
+      await page.evaluate(() => saveOffer());
+      assert.deepEqual(requests, ["PUT"]);
+      assert.deepEqual((await readDiagnostic()).update, { state: "REJECTED_OR_UNAVAILABLE", http: 409 });
+      assert.equal((await readDiagnostic()).readback.state, "NOT_EXECUTED");
+
+      await open();
+      await arm();
+      await page.evaluate(() => { diagnosticClassification = () => { throw Error("Synthetic capture failure"); }; });
+      const savedAfterFailure = page.waitForResponse(response => response.url() === url && response.request().method() === "PUT");
+      requests.length = 0;
+      await page.evaluate(() => saveOffer());
+      assert.equal((await savedAfterFailure).status(), 200);
+      assert.deepEqual(requests, ["PUT"]);
+      console.log("PASS Android-sized Update diagnostic, trusted control events, redaction, PUT/GET, version drift, rejection and non-blocking capture failure");
+      return;
+    }
+
     const saveStarValue = async value => {
       await page.evaluate(offerId => editOffer(offerId), id);
       const selector = "#hotelCards .hotel-card input[placeholder=\"Unknown\"]";
