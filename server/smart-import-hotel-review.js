@@ -1,4 +1,51 @@
 "use strict";
+const { tokens } = require("../public/flight-data-consistency");
+
+function hotelStay(value) {
+  const missing = part => part == null || part === "";
+  const parse = (part, count) => {
+    if (missing(part)) return [];
+    if (typeof part !== "string") return [null];
+    const matches = tokens(part);
+    return matches.length === count ? matches.map(item => item.key) : [null];
+  };
+  if (missing(value)) return { status: "unknown", dates: [null, null] };
+  let dates;
+  if (Array.isArray(value) && value.length === 2) {
+    dates = value.map(part => parse(part, 1)[0] ?? (missing(part) ? "" : null));
+  } else if (value && typeof value === "object" && !Array.isArray(value) &&
+      ("checkin" in value || "checkout" in value || "checkIn" in value || "checkOut" in value)) {
+    const sides = [[value.checkin, value.checkIn], [value.checkout, value.checkOut]];
+    const aliases = sides.map(parts => [...new Set(parts.filter(part => !missing(part)).map(part => parse(part, 1)[0]))]);
+    if (aliases.some(side => side.length > 1)) return { status: "conflicting", dates: aliases };
+    dates = aliases.map(side => side.length ? side[0] : "");
+  } else if (typeof value === "string") {
+    // A common checkout shorthand explicitly shares the month and year.
+    const compact = value.trim().match(/^(\d{1,2})\s*[-–—]\s*(\d{1,2}[./]\d{1,2}(?:[./]\d{4})?)\.?$/);
+    const expanded = compact ? `${compact[1]}.${compact[2].split(/[./]/).slice(1).join(".")} – ${compact[2]}` : value;
+    dates = parse(expanded, 2);
+    if (dates.length === 1 && dates[0] === null) {
+      const single = parse(value, 1)[0];
+      if (single) return { status: "partial", dates: [single, null] };
+    }
+  }
+  if (!dates || dates.length !== 2 || dates.some(part => part === null)) {
+    return { status: "malformed", dates: [null, null], raw: value };
+  }
+  if (dates.every(part => part && !part.startsWith("????-"))) {
+    return { status: dates[0] < dates[1] ? "complete" : "conflicting", dates };
+  }
+  return { status: dates.some(Boolean) ? "partial" : "unknown", dates: dates.map(part => part || null) };
+}
+function conflictingHotelStays(a, b) {
+  const first = hotelStay(a), second = hotelStay(b);
+  return first.dates.some((date, index) => {
+    const other = second.dates[index];
+    if (typeof date !== "string" || typeof other !== "string") return false;
+    if (date.startsWith("????-") || other.startsWith("????-")) return date.slice(4) !== other.slice(4);
+    return date !== other;
+  });
+}
 function currencyFromText(text, fallback = "") {
   const value = String(text || "").toUpperCase().replace(/МКД/g, "MKD");
   const code = value.match(/\b(EUR|MKD|QAR|USD|GBP|BGN|CHF|JPY|AED|TRY|RON|SEK|NOK|DKK|CAD|AUD)\b/);
@@ -48,8 +95,8 @@ function smartHotelRecord(parsed, sourceId) {
   const label = String(parsed.priceLabel || "").trim();
   const currency = currencyFromText(priceText);
   const verifiedTotal = parsed.priceRole === "stay_total" &&
-    /^(?:общо|крайна цена|цена за престоя|total|grand total|total (?:stay price|price|for the stay))[:.]?$/iu.test(label) &&
-    /^(?:(?:[A-Z]{3}|[€£])\s*\d[\d.,\s]*|\d[\d.,\s]*\s*(?:[A-Z]{3}|[€£]))$/iu.test(priceText) &&
+    /^(?:общо|крайна цена|цена за престоя|total|grand total|total (?:reservation|stay price|price|for the stay))[:.]?$/iu.test(label) &&
+    /^(?:(?:[A-Z]{3}|[€£])\s*(?:\d+|\d{1,3}(?:[ \u00a0\u202f.,]\d{3})+)(?:[.,]\d{1,2})?|(?:\d+|\d{1,3}(?:[ \u00a0\u202f.,]\d{3})+)(?:[.,]\d{1,2})?\s*(?:[A-Z]{3}|[€£]))$/iu.test(priceText) &&
     Boolean(currency) && moneyFromText(priceText) > 0;
   return { ...parsed, sourceId, price: verifiedTotal && parsed.pageKind === "checkout" ? moneyFromText(priceText) : 0,
     currency: verifiedTotal && parsed.pageKind === "checkout" ? currency : "",
@@ -84,7 +131,7 @@ function groupSmartHotelScreenshots(records) {
   for (const record of rates) {
     const signature = item => JSON.stringify([
       key(item.name), key(item.address), key(item.room), key(item.ratePlan), item.price,
-      item.currency, item.priceEvidence?.text, item.stayDates, item.nights,
+      item.currency, item.priceEvidence?.text, hotelStay(item.stayDates), item.nights,
       item.nonRefundable, item.meal, item.occupancy, item.transferOnRequest
     ]);
     const evidence = record.priceEvidence?.text ? [record.priceEvidence] : [];
@@ -98,7 +145,8 @@ function groupSmartHotelScreenshots(records) {
     const candidates = options.filter(option => key(property.name) && key(option.name) === key(property.name) &&
       (!streetAddress(property) || !streetAddress(option) || streetAddress(option) === streetAddress(property)));
     const exact = candidates.filter(option => streetAddress(property) && streetAddress(option) === streetAddress(property));
-    return { property, candidates, exact, auto: exact.length > 0 && exact.length === candidates.length };
+    const conflict = exact.some(option => conflictingHotelStays(property.stayDates, option.stayDates));
+    return { property, candidates, exact, conflict, auto: exact.length > 0 && exact.length === candidates.length };
   });
   for (const option of options) {
     const matches = propertyReview.filter(item => item.auto && item.exact.includes(option));
@@ -143,12 +191,16 @@ function hotelReviewWarnings(hotels, unresolved = [], sourceRecords = []) {
     if (record.pageKind !== "checkout") continue;
     const occupancy = record.occupancy || {};
     const conditions = hotelBookingConditions(record);
+    const stay = hotelStay(record.stayDates);
+    if (stay.status === "conflicting" || stay.status === "malformed") {
+      warnings.push(`${record.name || "Хотел"} (${record.sourceId}): ${stay.status === "conflicting" ? "противоречащи" : "невалидни"} дати на престоя.`);
+    }
     const missing = [
       [occupancy.adults == null, "възрастни"],
       [occupancy.children == null, "деца"],
       [occupancy.rooms == null, "стаи"],
       [!conditions.nights, "нощувки"],
-      [typeof record.stayDates !== "string" || !record.stayDates.trim(), "дати на престоя"],
+      [["unknown", "partial"].includes(stay.status), "дати на престоя"],
       [typeof record.nonRefundable !== "boolean", "условия за възстановяване"],
       [typeof record.transferOnRequest !== "boolean", "заявка за трансфер"]
     ].filter(([unknown]) => unknown).map(([, label]) => label);
@@ -179,8 +231,15 @@ function importedMealEvidence(hotel = {}, parsed = {}) {
     /[,;]|\s+(?:and|и|plus|плюс|\+)\s+/iu.test(hotel.meal) &&
     hotel.meal.split(/[,;]|\s+(?:and|и|plus|плюс|\+)\s+/iu)
       .some(part => part.trim() && !Object.keys(vm.mealServiceConditions(part)).length);
-  const meal = qualified || hasAdjacentService ? quote : supported ? hotel.meal : "";
+  const excluded = Object.values(quoted).includes("excluded");
+  const bedOnly = /^bed\s+only$/i.test(quote);
+  const explicitExclusion = vm.compactMealLabel(quote) === "Без включено хранене" &&
+    /без (?:включено )?(?:хранене|изхранване)/i.test(quote);
+  const meal = qualified || hasAdjacentService ? quote
+    : excluded ? Object.entries(quoted).filter(([, state]) => state === "excluded")
+      .map(([name]) => name === "breakfast" ? "Закуската не е включена" : "Вечерята не е включена").join("; ")
+    : bedOnly || explicitExclusion ? "Без включено изхранване" : supported ? hotel.meal : "";
   const description = vm.mealSafeDescription({ ...hotel, meal });
-  return { ...hotel, meal, description };
+  return { ...hotel, meal, ...(meal && quote ? { mealSourceText: quote } : {}), description };
 }
-module.exports={smartHotelRecord,groupSmartHotelScreenshots,hotelBookingConditions,importedMealEvidence,currencyFromText,moneyFromText,normalizeHotelMoney,groupHotelScreenshots,hotelReviewWarnings};
+module.exports={hotelStay,smartHotelRecord,groupSmartHotelScreenshots,hotelBookingConditions,importedMealEvidence,currencyFromText,moneyFromText,normalizeHotelMoney,groupHotelScreenshots,hotelReviewWarnings};

@@ -97,6 +97,7 @@ function addHotel(hotel = {}) {
     distance: hotel.distance || "",
     room: hotel.room || "",
     meal: hotel.meal || "",
+    mealSourceText: hotel.mealSourceText,
     price: Number(hotel.price || 0),
     currency: hotel.currency || "EUR",
     sourcePrice: hotel.sourcePrice,
@@ -340,6 +341,9 @@ function getOfferWarnings(offer = {}) {
   const warnings = Array.isArray(offer.validationWarnings) ? offer.validationWarnings.filter(Boolean) : [];
   const occupancyWarning = globalThis.AYAHotelOccupancy.warning(offer);
   if (occupancyWarning) warnings.push(occupancyWarning);
+  for (const issue of globalThis.AYAHotelOccupancy.insufficient(offer)) {
+    if (issue.warning !== occupancyWarning) warnings.push(`[WARNING] ${issue.hotelId}: ${issue.warning}`);
+  }
   const hotels = Array.isArray(offer.hotels) && offer.hotels.length
     ? offer.hotels
     : (Array.isArray(offer.hotelOptions) ? offer.hotelOptions : []);
@@ -1234,7 +1238,7 @@ function getPdfOfferUrl(id) {
 
 function getWhatsAppText(id) {
   const offer = getOfferById(id) || {};
-  if (!flightDateClientReady(offer) || offer.unresolvedNoticeCount > 0) return "";
+  if (!flightDateClientReady(offer) || offer.unresolvedNoticeCount > 0 || globalThis.AYAHotelOccupancy.insufficient(offer).length) return "";
   return `Здравейте!\nВашата оферта е готова:\n${getPublicOfferUrl(id)}`;
 }
 
@@ -3154,7 +3158,9 @@ function renderUniversalTravelReview(data = {}, files = []) {
   const hotelOptions = data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : []);
   const hotelSourceLinks = [...new Set([...(data.hotelLinks || []),hotel.url].filter(Boolean))];
   const sourceCurrencies = [...new Set([candidate?.checkoutBinding ? "" : flight.currency, ...hotelOptions.map(h=>h.currency)].filter(c=>c && c !== "EUR"))];
-  const warnings = Array.from(new Set((data.warnings || []).map(universalWarningText).filter(Boolean)));
+  const occupancyFindings = globalThis.AYAHotelOccupancy.insufficient({ guests: $("guests")?.value, hotels: hotelOptions });
+  const warnings = Array.from(new Set([...(data.warnings || []).map(universalWarningText),
+    ...occupancyFindings.map(item => [item.hotelId, item.warning].filter(Boolean).join(" — "))].filter(Boolean)));
   const sources = Array.isArray(data.sources) ? data.sources : [];
   const hasFlight = Boolean(flight.route || flight.airline || (flight.outboundSegments || []).length || (flight.inboundSegments || []).length);
   const showFlight = hasFlight || Boolean(candidate);
@@ -3180,7 +3186,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
         <div class="warning" style="margin: 10px 0;">
           ${warnings.map((warning) => `<div>• ${escapeHtml(warning)}</div>`).join("")}
         </div>
-      ` : `<div class="muted">Няма критични предупреждения от Gemini.</div>`}
+      ` : `<div class="muted">Няма критични предупреждения от импорта.</div>`}
 
       ${data.flightSourceReview ? `<section data-flight-source-review><h4>Полетен линк — вътрешен преглед</h4>
         ${(data.flightSourceReview.warnings || []).map(value=>`<div class="muted">${escapeHtml(value)}</div>`).join("")}
@@ -3188,9 +3194,9 @@ function renderUniversalTravelReview(data = {}, files = []) {
         <div class="muted">Всички сегменти, цена, наличност и резервация: UNKNOWN спрямо URL.</div></section>` : ""}
       ${hotelSourceLinks.map(link=>`<div class="muted">Линк към хотел: <a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" style="color:#93c5fd">${escapeHtml(link)}</a></div>`).join("")}
       <div class="muted" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin: 10px 0;">
-        <div><strong>Flight source:</strong> ${escapeHtml(flight.sourceAuthority?.flightPrimary || hotelAuthority.flightPrimary || "gemini-vision")}</div>
-        <div><strong>Hotel source:</strong> ${escapeHtml(hotelAuthority.hotelPrimary || "operator-review")}</div>
-        <div><strong>Hotel hints:</strong> ${escapeHtml(hotelAuthority.hotelHints || "gemini-screenshot")}</div>
+        <div><strong>Flight source:</strong> ${escapeHtml([flight.sourceAuthority?.flightPrimary || "unknown", flight.sourceAuthority?.extractionPath].filter(Boolean).join(" / "))}</div>
+        <div><strong>Hotel source:</strong> ${escapeHtml(Object.hasOwn(hotelAuthority, "imageEnrichment") ? hotelAuthority.hotelPrimary : "unknown")}</div>
+        <div><strong>Hotel image enrichment:</strong> ${escapeHtml(hotelAuthority.imageEnrichment || "none")}</div>
       </div>
 
       <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px;">
@@ -4420,6 +4426,7 @@ function renderHotelCards() {
         <label><input type="checkbox" ${h.occupancy?.confirmed === true ? 'checked' : ''}
           onchange="confirmHotelOccupancy(${i}, this.checked)" /> Потвърждавам хотелските гости и броя стаи по хотелския източник</label>
         <small>${escapeHtml(globalThis.AYAHotelOccupancy.label(h.occupancy))}</small>
+        <small>${escapeHtml(globalThis.AYAHotelOccupancy.coverage(document.getElementById("guests")?.value, h.occupancy))}</small>
       </fieldset>
       <fieldset>
         <legend>Условия на хотелската тарифа</legend>
@@ -4499,6 +4506,7 @@ function addHotel(hotel = {}) {
     distance: hotel.distance || "",
     room: hotel.room || "",
     meal: hotel.meal || "",
+    mealSourceText: hotel.mealSourceText,
     price: Number(hotel.price || 0),
     currency: hotel.currency || "EUR",
     importedPrice: hotel.importedPrice,

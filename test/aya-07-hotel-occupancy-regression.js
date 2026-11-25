@@ -109,7 +109,7 @@ test("edit changes revoke confirmation and imported hotel data is never auto-con
   state.confirmHotelOccupancy(0, true);
   assert.equal(state.hotels[0].occupancy.confirmed, true);
   const add = admin.slice(admin.lastIndexOf("function addHotel("), admin.indexOf("function removeHotel("));
-  const imported = vm.createContext({ AYAHotelOccupancy: occupancy, hotels: [], uniqueHotelImages: x => x,
+  const imported = vm.createContext({ AYAHotelOccupancy: occupancy, hotels: [], uniqueHotelImages: x => x, offerUpdateDiagnostic: null,
     renderHotelCards() {}, updateAutoPrice() {} });
   vm.runInContext(section(admin, "function collectHotelImageAliases(", "function dedupeHotelOptionImages(") + add, imported);
   imported.addHotel({ name: "Synthetic imported", occupancy: normalized });

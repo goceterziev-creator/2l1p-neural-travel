@@ -127,6 +127,10 @@ harness._compile(fs.readFileSync(filename, "utf8") + `
   fixtures["hotel-child.jpg"] = { ...fixtures["hotel-checkout.jpg"], occupancy: {adults:2, children:1, rooms:1, childAges:[7]} };
   fixtures["hotel-unknown.jpg"] = { ...fixtures["hotel-checkout.jpg"], occupancy: {}, nonRefundable: null };
   fixtures["hotel-refundable.jpg"] = { ...fixtures["hotel-checkout.jpg"], nonRefundable: false };
+  fixtures["hotel-rin-total.jpg"] = { ...fixtures["hotel-checkout.jpg"], name: "QA RIN reservation",
+    priceText: "1444,00 €", priceLabel: "Total Reservation", meal: "Breakfast Excluded",
+    mealSourceText: "Breakfast Excluded", ratePlan: "Bed Only", nights:10,
+    stayDates: ["2026-12-01","2026-12-11"], occupancy:{adults:3, children:0, rooms:2} };
   fixtures["hotel-foreign.jpg"] = { ...fixtures["hotel-checkout.jpg"], priceText: "248,28 USD" };
   fixtures["hotel-no-address.jpg"] = { ...fixtures["hotel-property.jpg"], address: "" };
   fixtures["hotel-conflicting.jpg"] = { ...fixtures["hotel-property.jpg"], address: "", transferOnRequest: false };
@@ -1056,6 +1060,78 @@ async function run() {
     assert.equal(operator.status, 200);
     assert.deepEqual((await operator.json()).offer.hotels[0].importedPrice, { kind: "operator", sourceIds: [] });
     console.log("PASS cross-agency rejection, legacy resave, explicit property link/exclusion and operator price");
+
+    {
+      await upload(["hotel-rin-total.jpg"]);
+      assert.equal(await page.$eval("#universalHotelMeal", node => node.value), "Закуската не е включена");
+      await page.evaluate(() => applyUniversalTravelIntakeResult());
+      const rinHotel = await page.evaluate(() => hotels[0]);
+      assert.equal(rinHotel.price,1444);
+      assert.equal(rinHotel.mealSourceText,"Breakfast Excluded");
+
+      const headers = { cookie, "content-type":"application/json" };
+      const requestOffer = async (url, method, body) => fetch(base + url, { method, headers,
+        ...(body && { body:JSON.stringify(body) }) });
+      const safeHotel = { ...rinHotel, id:"rin-qa", selected:true, occupancy:{ ...rinHotel.occupancy, confirmed:true } };
+      const unsafeHotel = { id:"caro-qa", name:"QA insufficient checkout", price:1941.90, currency:"EUR",
+        occupancy:{adults:2, children:0, rooms:1, confirmed:true}, selected:false };
+      const packageData = { status:"draft", destination:"Bucharest", travelDates:"2026-12-01 - 2026-12-11",
+        guests:"3 adults", markupPercent:5, hotels:[safeHotel,unsafeHotel],
+        flights:[{airline:"QA Airline",route:"SOF → OTP / OTP → SOF",price:200,baggage:"1",
+          outboundSegments:[{from:"SOF",to:"OTP",flightNumber:"QA101",departure:"2026-12-01T10:00",arrival:"2026-12-01T11:00"}],
+          inboundSegments:[{from:"OTP",to:"SOF",flightNumber:"QA102",departure:"2026-12-11T10:00",arrival:"2026-12-11T11:00"}]}] };
+      const draft = await requestOffer("/api/offers","POST",packageData);
+      assert.equal(draft.status,200);
+      const offerId = (await draft.json()).offer.id;
+      const route = "/api/offers/" + offerId;
+      const before = await readOffer(offerId);
+      assert.equal(before.offer.hotels[0].price,1444);
+      assert.equal(before.offer.hotels[0].mealSourceText,"Breakfast Excluded");
+      const beforeUnsafe = fs.readFileSync(process.env.DB_FILE);
+      for (const [url,method,body] of [
+        ["/api/offers","POST",{...packageData,status:"ready"}],
+        [route,"PUT",{...before.offer,status:"sent",expectedVersion:before.offerVersion}],
+        ...["ready","sent","booked"].map(status=>[route+"/status","PATCH",{status}]),
+        [route+"/book","POST"], [route+"/click","POST"], ["/api/offers/view/"+offerId,"GET"],
+        [route+"/print?selectedHotelId=caro-qa","GET"], [route+"/print?mode=comparison","GET"],
+        [route+"/pdf?selectedHotelId=caro-qa","GET"]
+      ]) {
+        const refused = await requestOffer(url,method,body);
+        assert.equal(refused.status,422,method+" "+url);
+        assert.equal((await refused.json()).error,"AYA_HOTEL_OCCUPANCY_BLOCKED",method+" "+url);
+        assert.deepEqual(fs.readFileSync(process.env.DB_FILE),beforeUnsafe);
+      }
+      const selectedPrint = await requestOffer(route+"/print?selectedHotelId=rin-qa","GET");
+      assert.equal(selectedPrint.status,200);
+      assert.match(await selectedPrint.text(),/Закуската не е включена/);
+      await page.evaluate(id=>editOffer(id),offerId);
+      assert.match(await page.$eval("#hotelCards",node=>node.innerText),/2 от 3/);
+      const edited = { ...before.offer, hotels:[safeHotel, {...unsafeHotel,id:"second-safe",name:"QA valid alternative",
+        occupancy:{adults:3,children:0,rooms:2,confirmed:true},meal:"Breakfast Included"}] };
+      const result = await put({ ...before, offer:edited });
+      assert.equal(result.status,200);
+      const reread = await readOffer(offerId);
+      assert.equal(reread.offer.hotels.length,2);
+      assert.equal(reread.offer.hotels[0].mealSourceText,"Breakfast Excluded");
+      assert.equal(reread.offer.finalPrice,1726.2);
+      const published = await requestOffer("/api/offers/view/"+offerId,"GET");
+      const html = await published.text();
+      assert.equal(published.status,200);
+      assert.match(html,/Закуската не е включена/);
+      assert.match(html,/QA valid alternative/);
+      assert.match(html,/Багажът подлежи на потвърждение/);
+      assert.doesNotMatch(html,/mealSourceText|checkoutBinding|Total Reservation/);
+      const pdf = await requestOffer(route+"/pdf?selectedHotelId=rin-qa","GET");
+      assert.equal(pdf.status,200);
+      const pdfText = execFileSync("pdftotext",["-","-"],{input:Buffer.from(await pdf.arrayBuffer()),encoding:"utf8"});
+      assert.match(pdfText,/Закуската не е включена/);
+      assert.match(pdfText.replace(/\s+/g," "),/Багажът подлежи на потвърждение/);
+      const freshlyRead = await readOffer(offerId);
+      assert.equal(freshlyRead.offer.hotels[0].occupancy.adults,3);
+      assert.equal(freshlyRead.offer.hotels[1].occupancy.adults,3);
+      console.log("PASS Bucharest-derived RIN Review/Apply, Save/reopen/Update, coverage boundary matrix, atomic refusals, valid alternatives, HTML and PDF");
+
+    }
 
     await upload(["hotel-foreign.jpg"]);
     await page.evaluate(() => applyUniversalTravelIntakeResult());

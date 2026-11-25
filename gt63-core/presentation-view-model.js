@@ -52,7 +52,8 @@
       .replace(/\bchecked baggage included\b/gi, "Включен регистриран багаж")
       .replace(/\bcabin baggage included\b/gi, "Включен ръчен багаж")
       .replace(/\bbreakfast included\b/gi, "Включена закуска")
-      .replace(/\broom only\b/gi, "Без включено хранене")
+      .replace(/\bbreakfast (?:excluded|not included)\b/gi, "Закуската не е включена")
+      .replace(/\b(?:room|bed) only\b/gi, "Без включено хранене")
       .replace(/\bnot specified\b/gi, "Не е посочено")
       .replace(/\s+г\.\s*-\s*/g, " г. – ")
       .replace(/\bTokyo\b/g, "Токио")
@@ -202,7 +203,7 @@
         const link = "\\s+(?:(?:is|are|е|са)\\s+)?";
         let state = "declared";
         if (has(`${group}${link}(?:(?:available|included|се\\s+предлага|включен[аои])(?:\\s*,\\s*|\\s+))?${fee}`) || has(`(?:доплащане|extra charge|additional charge)\\s+(?:за\\s+)?${group}`)) state = "paid";
-        else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
+        else if (has(`(?:no|without|без)\\s+(?:включен[аои]\\s+)?${group}`) || has(`${group}${link}(?:excluded|not\\s+included|не\\s+(?:е\\s+)?включен[аои])`)) state = "excluded";
         else if (has(`(?:възможна|непотвърдена|possible|unconfirmed)\\s+${group}`) || has(`${group}${link}(?:available|on request|not confirmed|за потвърждение|подлежи на потвърждение)`)) state = "uncertain";
         else if (has(`(?:included|включен[аои])\\s+${group}`) || has(`${group}${link}(?:included|включен[аои])`)) state = "included";
         let last = index;
@@ -258,11 +259,11 @@
     const services = meals.map(meal => meal.state);
     // Keep the actual paid/mixed condition, including any visible charge amount.
     if (services.includes("paid")) return localizeClientText(paidMealText(raw, meals));
-    if (services.includes("excluded") && services.includes("included")) return localizeClientText(raw);
+    if (services.includes("excluded")) return localizeClientText(raw);
     if (services.includes("uncertain")) return services.includes("included") ? localizeClientText(raw) : "Хранене за потвърждение";
     // Qualifiers and exclusions take precedence over board-plan keywords.
     if (/възмож|вероят|непотвърден|не е потвърден|за потвърждение|подлежи на потвърждение|по заявка|според видим|при запитване|срещу (?:допълнително )?заплащане|доплащане|may|might|possible|unconfirmed|not confirmed|subject to|on request|extra charge|additional charge|not included|without breakfast|no breakfast|не е включен|не са включен/i.test(raw)) return "Хранене за потвърждение";
-    if (/room\s*only|no meals?|без (?:включен[оаи] )?(?:хранене|изхранване|закуска)/i.test(raw)) return "Без включено хранене";
+    if (/(?:room|bed)\s*only|no meals?|без (?:включен[оаи] )?(?:хранене|изхранване|закуска)/i.test(raw)) return "Без включено хранене";
     if (/all\s*inclusive|всичко включено/i.test(raw)) return "All Inclusive";
     if (/half\s*board|полупансион/i.test(raw)) return "Полупансион";
     if (/full\s*board|пълен пансион/i.test(raw)) return "Пълен пансион";
@@ -561,7 +562,7 @@
       return parts.join("; ") || pending;
     }
     const raw = typeof value === "string" ? value.trim() : "";
-    return !raw || /\[object Object\]|^(?:unknown|not specified|not provided|BusinessPrime|PrimeFly|(?:багаж )?за потвърждение|багажът подлежи на потвърждение|не е посочен[оа]?)$/i.test(raw) ? pending : raw;
+    return !raw || /^\d+(?:[.,]\d+)?$/.test(raw) || /\[object Object\]|^(?:unknown|not specified|not provided|BusinessPrime|PrimeFly|(?:багаж )?за потвърждение|багажът подлежи на потвърждение|не е посочен[оа]?)$/i.test(raw) ? pending : raw;
   }
 
   function buildPresentationViewModel(input = {}, options = {}) {

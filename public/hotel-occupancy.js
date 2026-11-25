@@ -40,16 +40,31 @@
     }
     return options[0] || null;
   }
+  function coverage(guests, value) {
+    const requested = String(guests || "");
+    const adults = count(requested.match(/(\d+)\s*(?:възрастни|възрастен|adults?)(?![\p{L}])/iu)?.[1], 1);
+    const children = count(requested.match(/(\d+)\s*(?:деца|дете|children|child|kids?)(?![\p{L}])/iu)?.[1], 0);
+    const occupancy = normalize(value);
+    const gaps = [[adults, occupancy.adults, "възрастни"], [children, occupancy.children, "деца"]]
+      .filter(([needed, covered]) => needed !== null && covered !== null && covered < needed);
+    return gaps.map(([needed, covered, category]) => `За ${category}: настаняването покрива ${covered} от ${needed} заявени.`).join(" ");
+  }
+  function insufficient(offer = {}) {
+    return hotels(offer).flatMap(hotel => {
+      const warning = coverage(offer.guests, hotel.occupancy);
+      return warning ? [{ hotelId: String(hotel.id || hotel.name || ""), warning }] : [];
+    });
+  }
   function summary(offer = {}) {
     const hotel = selected(offer);
     const occupancy = normalize(hotel?.occupancy);
-    return { blockingWarning: occupancy.confirmed ? "" : WARNING, selectedHotelId: hotel ? String(hotel.id || hotel.name || "") : null,
+    return { blockingWarning: coverage(offer.guests, occupancy) || (occupancy.confirmed ? "" : WARNING), selectedHotelId: hotel ? String(hotel.id || hotel.name || "") : null,
       occupancy };
   }
   function warning(offer = {}) {
     const hasHotels = hotels(offer).length > 0;
     const status = hasHotels ? summary(offer) : (offer.hotelOccupancyStatus || summary(offer));
-    return normalize(status.occupancy).confirmed ? "" : WARNING;
+    return hasHotels ? status.blockingWarning : (normalize(status.occupancy).confirmed ? "" : WARNING);
   }
   function label(value) {
     const o = normalize(value);
@@ -66,7 +81,9 @@
     function project(hotel) {
       if (!hotel) return hotel;
       const matches = saved.filter(item => hotel.id && item.id ? item.id === hotel.id : item.name && item.name === hotel.name);
-      return { ...hotel, occupancy: normalize(matches.length === 1 ? matches[0].occupancy : null),
+      const source = matches.length === 1 ? matches[0] : null;
+      return { ...hotel, ...(source && typeof source.meal === "string" ? { meal: source.meal, board: source.meal } : {}),
+        occupancy: normalize(source?.occupancy),
         selected: matches.length === 1 && matches[0] === selected(offer) };
     }
     copy.hotelOptions = (Array.isArray(copy.hotelOptions) ? copy.hotelOptions : []).map(project);
@@ -82,5 +99,5 @@
     }
     return copy;
   }
-  return { normalize, selected, summary, warning, label, applyToInput, WARNING };
+  return { normalize, selected, summary, warning, coverage, insufficient, label, applyToInput, WARNING };
 });

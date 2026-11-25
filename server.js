@@ -1265,9 +1265,27 @@ function assertFlightDateSafety(offer) {
     throw error;
   }
 }
+function assertHotelCoverage(offer, printOptions) {
+  // Selected print mode publishes just one option. HTML and comparison print
+  // expose every alternative and must validate all of them.
+  if (printOptions && (printOptions.mode || "selected") === "selected") {
+    const raw = offer.proposalInput != null ? normalizeProposalInputForOffer(offer.proposalInput) : buildLegacyOfferPrintInput(offer);
+    if (raw && (!raw.printMode || printOptions.mode || raw.printMode === "selected")) {
+      const input = hotelOccupancyQa.applyToInput(raw, offer);
+      const selected = presentationViewModel.resolveSelectedHotel(input, printOptions).hotel;
+      const issue = hotelOccupancyQa.coverage(offer.guests, selected?.occupancy);
+      if (issue) throw routeError("AYA_HOTEL_OCCUPANCY_BLOCKED", 422, { alternatives: [{ hotelId: selected.id || selected.name || "", warning: issue }] });
+      // Also guard saved offers whose legacy selection could not be projected.
+      if (!hotelOccupancyQa.insufficient(offer).length || selected?.occupancy?.adults != null) return;
+    }
+  }
+  const alternatives = hotelOccupancyQa.insufficient(offer);
+  if (alternatives.length) throw routeError("AYA_HOTEL_OCCUPANCY_BLOCKED", 422, { alternatives });
+}
 function assertClientStatusSafety(offer) {
   if (!["ready", "sent", "booked"].includes(String(offer.status).toLowerCase())) return;
   assertFlightDateSafety(offer);
+  assertHotelCoverage(offer);
   if (hotelOccupancyQa.warning(offer)) {
     throw routeError("AYA_HOTEL_OCCUPANCY_BLOCKED", 422, hotelOccupancyQa.summary(offer));
   }
@@ -2133,6 +2151,7 @@ const hotels = inputHotels.length
   ? inputHotels.map((h, index) => ({
       id: h.id || "",
       occupancy: hotelOccupancyQa.normalize(h.occupancy),
+      ...(typeof h.mealSourceText === "string" && h.mealSourceText ? { mealSourceText: h.mealSourceText.slice(0, 2000) } : {}),
       ...hotelBookingConditions(h),
       name: h.name || "",
       stars: h.stars || "",
@@ -8099,7 +8118,8 @@ async function renderOfferHtml(offer, options = {}) {
           <div><strong>Стая</strong><br>${escapeHtml(detailValue(hotel.room))}</div>
           ${presentationViewModel.hotelBookingFacts(hotel).map(([label, value]) =>
             `<div><strong>${escapeHtml(label)}</strong><br>${escapeHtml(value)}</div>`).join("")}
-          <div><strong>Изхранване</strong><br>${escapeHtml(detailValue(presentationViewModel.paidMealText(hotel.meal)))}</div>
+          <div><strong>Изхранване</strong><br>${escapeHtml(detailValue(Object.values(presentationViewModel.mealServiceConditions(hotel.meal)).includes("excluded")
+            ? presentationViewModel.compactMealLabel(hotel.meal) : presentationViewModel.paidMealText(hotel.meal)))}</div>
           <div><strong>Хотелска заетост</strong><br>${escapeHtml(hotelOccupancyQa.label(hotel.occupancy))}</div>
           <div><strong>Локация</strong><br>${escapeHtml(detailValue(cleanBrochureLocation(hotel.area, destinationName)))}</div>
           <div><strong>Наличност</strong><br>${escapeHtml(detailValue(hotel.roomsLeft))}</div>
@@ -9644,6 +9664,7 @@ app.post("/api/offers/:id/click", async (req, res) => {
       if (!offer) throw routeError("Offer not found", 404);
 
       assertFlightDateSafety(offer);
+      assertHotelCoverage(offer);
       offer.clicks = toNumber(offer.clicks, 0) + 1;
       offer.updatedAt = new Date().toISOString();
       response = { success: true, clicks: offer.clicks };
@@ -9709,7 +9730,7 @@ app.get("/api/offers/view/:id", async (req, res) => {
       const offer = db.offers.find((o) => o.id === req.params.id);
       if (!offer) throw routeError("Offer not found", 404);
 
-      assertClientStatusSafety({ ...offer, status: "viewed" });
+      assertHotelCoverage(offer);
       offer.clientViews = (offer.clientViews || 0) + 1;
 
 offer.clientViewed = true; // оставяме го за compatibility
@@ -9751,6 +9772,7 @@ app.get("/api/offers/:id/print", async (req, res) => {
       mode: req.query?.mode,
       selectedHotelId: req.query?.selectedHotelId
     };
+    assertHotelCoverage(offer, printOptions);
     const rawInput = offer.proposalInput != null ? normalizeProposalInputForOffer(offer.proposalInput) : buildLegacyOfferPrintInput(offer);
     const input = rawInput ? hotelOccupancyQa.applyToInput(rawInput, offer) : null;
     if (!input) return res.status(400).json({ error: "GT63_PRINT_INVALID_PROPOSAL_INPUT", message: "Offer proposal input is invalid" });
@@ -9763,6 +9785,7 @@ app.get("/api/offers/:id/print", async (req, res) => {
     res.setHeader("Content-Type", "text/html; charset=UTF-8");
     res.send(html);
   } catch (error) {
+    if (error.message === "AYA_HOTEL_OCCUPANCY_BLOCKED") return res.status(422).json({ error: error.message, details: error.details });
     if (error.status === 400 || /^GT63_PRINT_/.test(String(error.code || ""))) {
       return res.status(400).json({
         error: error.code || "GT63_PRINT_ROUTE_ERROR",
@@ -9778,6 +9801,10 @@ app.get("/api/offers/:id/pdf", async (req, res) => {
   const db = readDb();
   const offer = db.offers.find((o) => o.id === req.params.id);
   if (!offer) return res.status(404).send("Offer not found");
+
+  try { assertHotelCoverage(offer, req.query); } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message, details: error.details });
+  }
 
   const printUrl = new URL(`/api/offers/${encodeURIComponent(offer.id)}/print`, LIVE_BASE_URL);
   if (req.query?.mode) printUrl.searchParams.set("mode", String(req.query.mode));
@@ -10225,7 +10252,7 @@ function geminiCanonicalToFlight(gemini = {}) {
     segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments])
   };
   flight.sourceAuthority = {
-    flightPrimary: "gemini-vision"
+    flightPrimary: "gemini-vision", extractionPath: "direct"
   };
   flight.displayBg = {
     itineraryText: renderClientFlightItineraryBg(flight)
@@ -10473,9 +10500,9 @@ async function extractFlightWithOpenAiVision(files = [], { destination = "", sou
   const canonical = validateGeminiFlightJson(extractJsonObject(outputText));
   const flight = geminiCanonicalToFlight(canonical);
   flight.sourceAuthority = {
-    flightPrimary: "openai-vision"
+    flightPrimary: "openai-vision", extractionPath: "direct"
   };
-  flight.notes = String(flight.notes || "").replace("Gemini Vision Test result.", "OpenAI Vision fallback result.");
+  flight.notes = String(flight.notes || "").replace("Gemini Vision Test result.", "OpenAI Vision result.");
   return {
     model,
     provider: "openai-vision",
@@ -10501,6 +10528,8 @@ async function extractFlightWithAiVision(files = [], options = {}) {
     if (!process.env.OPENAI_API_KEY || !shouldFallbackToOpenAiFlight(error)) throw error;
     console.warn(`GT63 FLIGHT VISION FALLBACK: Gemini failed (${sanitizeUniversalIntakeDetails(error.message)}). Trying OpenAI Vision.`);
     const result = await extractFlightWithOpenAiVision(files, options);
+    result.flight.sourceAuthority = { flightPrimary: result.provider, extractionPath: "fallback", fallbackFrom: "gemini-vision" };
+    result.flight.notes = String(result.flight.notes || "").replace("OpenAI Vision result.", "OpenAI Vision fallback result.");
     result.fallbackFrom = "gemini";
     result.fallbackReason = error.message;
     return result;
@@ -10784,18 +10813,18 @@ function universalFlightToOfferFlight(universalFlight = {}) {
     inboundSegments: normalizeStoredFlightSegments(inboundSegments),
     segments: normalizeStoredFlightSegments([...outboundSegments, ...inboundSegments]),
     sourceAuthority: {
-      flightPrimary: "gemini-vision"
+      flightPrimary: "gemini-vision", extractionPath: "direct"
     }
   };
   flight.displayBg = { itineraryText: renderClientFlightItineraryBg(flight) };
   return flight;
 }
 
-function universalHotelSourceAuthority({ hasSerpApiKey = false, imageCount = 0, hotelName = "" } = {}) {
+function universalHotelSourceAuthority({ hasSerpApiKey = false, imageCount = 0, extractor = "unknown" } = {}) {
   return {
-    hotelPrimary: hasSerpApiKey && hotelName ? "serpapi" : "operator-review",
-    hotelHints: "gemini-screenshot",
-    flightPrimary: "gemini-vision",
+    hotelPrimary: extractor,
+    hotelHints: extractor === "unknown" ? "unknown" : "screenshot",
+    imageEnrichment: imageCount > 0 ? "serpapi" : null,
     serpApiAvailable: Boolean(hasSerpApiKey),
     serpApiImages: Number(imageCount || 0)
   };
@@ -10813,7 +10842,7 @@ async function universalHotelToOfferHotel(hotel = {}, { destination = "" } = {})
   const sourceAuthority = universalHotelSourceAuthority({
     hasSerpApiKey: Boolean(process.env.SERPAPI_KEY),
     imageCount: imageUrls.length,
-    hotelName
+    extractor: "gemini-vision"
   });
   return {
     name: hotel.name || "",
@@ -11753,8 +11782,8 @@ async function buildSmartImportHotelOption(hotel = {}, parsed = {}, destination 
   }
   option.sourceAuthority = universalHotelSourceAuthority({
     hasSerpApiKey: Boolean(process.env.SERPAPI_KEY),
-    imageCount: mergedImages.length,
-    hotelName: option.name
+    imageCount: imageUrls.length,
+    extractor: "openai-vision"
   });
   option.geminiHints = buildHotelGeminiHints(option);
   option.selected = index === 0;
