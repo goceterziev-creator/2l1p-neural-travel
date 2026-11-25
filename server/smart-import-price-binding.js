@@ -45,7 +45,28 @@ function checkoutRecord({ intakeId, agencyId, hotel, source, parsed, quote }) {
   };
 }
 
-function bindOfferPrices({ body, agencyId, intakes, previous, invalid }) {
+function legacyStayIdentity(stored, hotel, record, previous, archivedHotel) {
+  if (stored === "[object object]") {
+    // The previous format did not distinguish two different objects. Only
+    // the integrity-checked intake response can recover the bound source stay.
+    const restored = archivedHotel && hotelStay(archivedHotel.stayDates);
+    return restored?.status === "complete" ? JSON.stringify(restored) : null;
+  }
+  const array = typeof stored === "string" && stored.match(/^(\d{4}-\d{2}-\d{2})?,(\d{4}-\d{2}-\d{2})?$/);
+  const stay = hotelStay(array ? [array[1], array[2]] : stored);
+  if (stay.status === "complete") return JSON.stringify(stay);
+  if (!["unknown", "partial"].includes(stay.status)) return null;
+  // Preserve an existing attachment with only partial information on an
+  // unrelated Update. Never upgrade it to a different or fully dated stay.
+  const claim = hotel.importedPrice;
+  const existing = previous?.hotels?.filter(old =>
+    old.importedPrice?.referenceId === record.referenceId && old.importedPrice.version === claim.version &&
+    old.importedPrice.sourceId === claim.sourceId && old.importedPrice.intakeId === claim.intakeId &&
+    (!old.id || old.id === hotel.id) && JSON.stringify(hotelIdentity(old)) === JSON.stringify(hotelIdentity(hotel)));
+  return existing?.length === 1 ? JSON.stringify(stay) : null;
+}
+
+function bindOfferPrices({ body, agencyId, intakes, previous, readArchivedHotel, invalid }) {
   if (!Array.isArray(body.hotels)) return body;
   const hotels = body.hotels.map((hotel, index) => {
     if (hotel?.importedPrice?.kind !== "checkout") {
@@ -76,13 +97,9 @@ function bindOfferPrices({ body, agencyId, intakes, previous, invalid }) {
     const observedIdentity = Array.isArray(record.identity) ? record.identity.slice() : [];
     const storedStay = observedIdentity[4];
     if (typeof storedStay === "string" && !storedStay.startsWith("{")) {
-      // Legacy V2 bindings only retained a stringified date. An object placeholder
-      // cannot prove an equivalent stay; the operator can explicitly reprice.
-      if (storedStay !== "[object object]") {
-        const oldValue = storedStay.split(",").length === 2 && storedStay.split(",").every(day => /^\d{4}-\d{2}-\d{2}$/.test(day))
-          ? storedStay.split(",") : storedStay;
-        observedIdentity[4] = JSON.stringify(hotelStay(oldValue));
-      }
+      observedIdentity[4] = legacyStayIdentity(storedStay, hotel, record, previous,
+        storedStay === "[object object]" ? readArchivedHotel?.(intake, record) : null);
+      if (!observedIdentity[4]) throw invalid(index, "CHECKOUT_STAY_IDENTITY_UNAVAILABLE");
     }
     if (JSON.stringify(observedIdentity) !== JSON.stringify(hotelIdentity(hotel))) throw invalid(index, "CHECKOUT_HOTEL_RATE_MISMATCH");
     const claimedScope = commercialScope(hotel);

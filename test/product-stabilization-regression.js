@@ -159,3 +159,59 @@ test("flight metadata distinguishes direct, fallback, failed and unknown paths w
     fs.rmSync(temp,{recursive:true,force:true});
   }
 });
+
+test("coverage recognizes normalized Admin party labels and separates unknown from sufficient", () => {
+  for (const party of ["3 adults","3 възрастни","3 vazrastni","3 vazrastnni","3 възрастнни"]) {
+    assert.equal(occupancy.partyCoverage(party,insufficient).state,"insufficient",party);
+    assert.equal(occupancy.partyCoverage(party,valid).state,"sufficient",party);
+  }
+  for (const party of ["3 adults and 1 child","3 възрастни, 1 дете","3 vazrastni i 1 dete","3 възрастни и 1 бебе"]) {
+    assert.equal(occupancy.partyCoverage(party,valid).state,"insufficient",party);
+    assert.equal(occupancy.partyCoverage(party,{...valid,children:null}).state,"unknown",party);
+    assert.equal(occupancy.partyCoverage(party,{...valid,children:1}).state,"sufficient",party);
+  }
+  for (const party of ["3 adults or 2 adults","3-4 възрастни","група","2 adults, 1 adult"]) {
+    assert.equal(occupancy.partyCoverage(party,valid).state,"unknown",party);
+    assert.match(occupancy.coverage(party,valid),/еднозначно/,party);
+  }
+  assert.equal(occupancy.partyCoverage("3 пътници",valid).state,"sufficient");
+  assert.equal(occupancy.partyCoverage("3 adults",{...valid,children:null}).state,"unknown");
+});
+
+test("literal pre-PR61 V2 identity fixtures preserve unrelated edits and existing commercial checks", () => {
+  const agencyId="AGY-QA", intakeId="SMART-1795568264465-8bba9f", sourceId="SRC-5", referenceId="legacy-v2";
+  const claim={kind:"checkout",version:2,intakeId,sourceId,referenceId};
+  const original={...rin,id:"rin",price:1444,currency:"EUR",sourcePrice:2888, sourceCurrency:"USD",exchangeRate:2,importedPrice:claim};
+  const testBinding=(stored, stayDates, { previous, archive, changes, agency=agencyId }={})=>{
+    // This is the persisted pre-PR61 contract: a five-element identity string
+    // array and independent V2 scope/FX data, without a current date object.
+    const record={version:2,referenceId,intakeId,agencyId,sourceId,
+      identity:["rin airport hotel","street 15","standard twin","bed only",stored],
+      commercialScope:{adults:3,children:null,childAges:null,rooms:2,nights:10,meal:"breakfast excluded",nonRefundable:null},
+      originalAmount:2888,currency:"USD",rate:2,rateOrigin:"fixture",rateDate:"2026-11-25",eurPrice:1444};
+    return bindOfferPrices({agencyId:agency,intakes:{[intakeId]:{agencyId,records:[record]}},
+      body:{notes:"Unrelated edit",hotels:[{...original,stayDates,...changes}]},
+      previous:previous && {hotels:[{...original,stayDates:previous.value}]},
+      readArchivedHotel:archive && (()=>archive), invalid:(i,code)=>new Error(code)}).hotels[0];
+  };
+  for (const legacy of ["1.12.2026 - 11.12.2026","2026-12-01,2026-12-11"]) {
+    const result=testBinding(legacy,{checkin:dates[0],checkout:dates[1]});
+    assert.equal(result.price,1444);
+    assert.equal(result.exchangeRate,2);
+    assert.equal(result.sourceCurrency,"USD");
+    assert.equal(result.importedPrice.sourceId,sourceId);
+    assert.throws(()=>testBinding(legacy,[dates[0],"2026-12-12"]),/HOTEL_RATE_MISMATCH/);
+    assert.throws(()=>testBinding(legacy,dates,{agency:"OTHER"}),/REFERENCE_INVALID/);
+    assert.throws(()=>testBinding(legacy,dates,{changes:{exchangeRate:3}}),/AMOUNT_OR_FX_MISMATCH/);
+    assert.throws(()=>testBinding(legacy,dates,{changes:{nights:11}}),/COMMERCIAL_SCOPE_MISMATCH/);
+  }
+  for (const [stored,value] of [["",null],[",2026-12-11",[null,dates[1]]],["1.12 - 11.12",["1.12","11.12"]]]) {
+    assert.equal(testBinding(stored,value,{previous:{value}}).price,1444);
+    assert.throws(()=>testBinding(stored,value),/STAY_IDENTITY_UNAVAILABLE/);
+    assert.throws(()=>testBinding(stored,dates,{previous:{value}}),/STAY_IDENTITY_UNAVAILABLE/);
+  }
+  assert.throws(()=>testBinding("[object object]",dates,{previous:{value:dates}}),/STAY_IDENTITY_UNAVAILABLE/);
+  assert.equal(testBinding("[object object]",dates,{archive:{stayDates:{checkin:dates[0],checkout:dates[1]}}}).price,1444);
+  assert.throws(()=>testBinding("[object object]",dates,{archive:{stayDates:[dates[0],"2026-12-12"]}}),/HOTEL_RATE_MISMATCH/);
+  assert.equal(testBinding("[object object]",dates,{previous:{value:dates},changes:{importedPrice:{kind:"operator"}}}).importedPrice.kind,"operator");
+});

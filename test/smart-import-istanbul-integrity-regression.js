@@ -1129,6 +1129,90 @@ async function run() {
       const freshlyRead = await readOffer(offerId);
       assert.equal(freshlyRead.offer.hotels[0].occupancy.adults,3);
       assert.equal(freshlyRead.offer.hotels[1].occupancy.adults,3);
+      const buildLegacyInput = require("../gt63-core/legacy-offer-print-input").buildLegacyOfferPrintInput;
+      const proposal = buildLegacyInput({ ...before.offer, hotels:[safeHotel,unsafeHotel] });
+      proposal.hotelOptions.reverse();
+      proposal.selectedHotelIndex = 0;
+      const createProposal = async (guests, input) => {
+        const response = await requestOffer("/api/offers","POST",{...packageData,guests,proposalInput:input,proposalTemplate:input.proposalTemplate});
+        assert.equal(response.status,200);
+        return (await response.json()).offer.id;
+      };
+      const projectionId = await createProposal("3 vazrastni",proposal);
+      const projectionRoute = "/api/offers/"+projectionId;
+      for (const [suffix,expected] of [["/print",200],["/print?selectedHotelId=rin-qa",200],
+        ["/print?selectedHotelId=caro-qa",422],["/print?mode=comparison",422],["/pdf?mode=comparison",422],
+        ["/pdf?selectedHotelId=missing",400]]) {
+        const response=await requestOffer(projectionRoute+suffix,"GET");
+        assert.equal(response.status,expected,suffix);
+        if(expected===400) assert.equal((await response.json()).error,"GT63_PRINT_INVALID_SELECTED_HOTEL_ID");
+        if(expected===200) {
+          const output=await response.text();
+          assert.match(output,/QA RIN reservation/);
+          assert.doesNotMatch(output,/QA insufficient checkout/);
+        }
+      }
+      assert.equal((await requestOffer("/api/offers/view/"+projectionId+"?selectedHotelId=rin-qa","GET")).status,422);
+      const selectedPdf=await requestOffer(projectionRoute+"/pdf?selectedHotelId=rin-qa","GET");
+      assert.equal(selectedPdf.status,200);
+      const selectedText=execFileSync("pdftotext",["-","-"],{input:Buffer.from(await selectedPdf.arrayBuffer()),encoding:"utf8"});
+      assert.match(selectedText,/QA RIN reservation/);
+      assert.doesNotMatch(selectedText,/QA insufficient checkout/);
+      for (const format of ["print","pdf"]) {
+        const comparison=await requestOffer(route+"/"+format+"?mode=comparison","GET");
+        assert.equal(comparison.status,200);
+        const text = format === "pdf"
+          ? execFileSync("pdftotext",["-","-"],{input:Buffer.from(await comparison.arrayBuffer()),encoding:"utf8"})
+          : await comparison.text();
+        for (const name of ["QA RIN reservation","QA valid alternative"]) assert(text.replace(/\s+/g," ").includes(name));
+      }
+      const stale=structuredClone(proposal);
+      stale.hotelOptions[0].name="QA stale reference";
+      const staleId=await createProposal("3 adults",stale);
+      const staleRoute="/api/offers/"+staleId;
+      assert.equal((await requestOffer(staleRoute+"/print?selectedHotelId=rin-qa","GET")).status,200);
+      for (const suffix of ["/print?selectedHotelId=caro-qa","/print?mode=comparison","/pdf?mode=comparison"]) {
+        assert.equal((await requestOffer(staleRoute+suffix,"GET")).status,422,suffix);
+      }
+      assert.equal((await requestOffer("/api/offers/view/"+staleId,"GET")).status,422);
+      const unknownId=await createProposal("3 adults or 2 adults",proposal);
+      assert.equal((await requestOffer("/api/offers/"+unknownId+"/print?selectedHotelId=rin-qa","GET")).status,422);
+      assert.equal((await put(await readOffer(unknownId))).status,200);
+
+      // Replay the actual pre-PR61 V2 identity encoding against a saved offer.
+      const checkout = freshlyRead.offer.hotels[0].importedPrice;
+      const dbFile=process.env.DB_FILE;
+      const db=JSON.parse(fs.readFileSync(dbFile,"utf8"));
+      const intake=db.smartImportPriceEvidenceV1[checkout.intakeId];
+      const bound=intake.records.find(item=>item.referenceId===checkout.referenceId);
+      bound.identity[4]="2026-12-01,2026-12-11";
+      fs.writeFileSync(dbFile,JSON.stringify(db));
+      const beforeLegacyUpdate=await readOffer(offerId);
+      beforeLegacyUpdate.offer.notes="QA unrelated note";
+      assert.equal((await put(beforeLegacyUpdate)).status,200);
+      const legacyReadback=await readOffer(offerId);
+      assert.equal(legacyReadback.offer.notes,"QA unrelated note");
+      assert.deepEqual(legacyReadback.offer.hotels[0].importedPrice,checkout);
+      const legacyDb=JSON.parse(fs.readFileSync(dbFile,"utf8"));
+      const legacyIntake=legacyDb.smartImportPriceEvidenceV1[checkout.intakeId];
+      legacyIntake.records.find(item=>item.referenceId===checkout.referenceId).identity[4]="[object object]";
+      fs.writeFileSync(dbFile,JSON.stringify(legacyDb));
+      assert.equal((await put(await readOffer(offerId))).status,200,"recover only from integrity-checked archived checkout");
+      const missingArchive=JSON.parse(fs.readFileSync(dbFile,"utf8"));
+      delete missingArchive.smartImportPriceEvidenceV1[checkout.intakeId].archive;
+      fs.writeFileSync(dbFile,JSON.stringify(missingArchive));
+      const beforeUnavailable=fs.readFileSync(dbFile);
+      const unavailable=await put(await readOffer(offerId));
+      assert.equal(unavailable.status,422);
+      assert.equal((await unavailable.json()).details.code,"CHECKOUT_STAY_IDENTITY_UNAVAILABLE");
+      assert.deepEqual(fs.readFileSync(dbFile),beforeUnavailable);
+      const operatorEdit=await readOffer(offerId);
+      operatorEdit.offer.hotels[0].importedPrice={kind:"operator"};
+      assert.equal((await put(operatorEdit)).status,200);
+      const operatorReadback=(await readOffer(offerId)).offer.hotels[0];
+      assert.deepEqual(operatorReadback.importedPrice,{kind:"operator",sourceIds:[]});
+      assert.equal(operatorReadback.price,1444);
+      console.log("PASS IR-01 transliterated party and exact publication projection; IR-03 legacy V2 Update and archive recovery");
       console.log("PASS Bucharest-derived RIN Review/Apply, Save/reopen/Update, coverage boundary matrix, atomic refusals, valid alternatives, HTML and PDF");
 
     }
