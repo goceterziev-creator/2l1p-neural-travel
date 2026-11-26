@@ -10281,8 +10281,8 @@ function geminiCanonicalToFlight(gemini = {}) {
   return flight;
 }
 
-function extractJsonFromGeminiResponse(payload = {}) {
-  const parts = safeArray(payload?.candidates?.[0]?.content?.parts);
+function extractJsonFromGeminiResponse(payload = {}, skipThoughts = false) {
+  const parts = safeArray(payload?.candidates?.[0]?.content?.parts).filter(part => !skipThoughts || part.thought !== true);
   const text = parts.map((part) => part.text || "").join("\n").trim();
   if (!text) throw new Error("Gemini returned an empty response.");
   try {
@@ -10328,13 +10328,23 @@ function wait(ms = 0) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function exhaustedGeminiQuota(status, payload) {
+  if (status !== 429) return false;
+  const details = safeArray(payload?.error?.details);
+  const violations = details.flatMap(detail => safeArray(detail?.violations));
+  return violations.some(item => /(?:per[_ -]?day|daily)/i.test(`${item.quotaId || ""} ${item.quotaMetric || ""}`) ||
+    item.quotaValue === 0 || item.quotaValue === "0") ||
+    /(?:per[_ -]?day|daily quota|daily limit|\b(?:limit|quota)\s*:\s*0\b)/i.test(payload?.error?.message || "");
+}
+
 async function postGeminiVisionWithRetry({
   apiKey,
   requestBody,
   primaryModel = "",
   fallbackModel = "",
   requestId = "",
-  label = "Gemini Vision"
+  label = "Gemini Vision",
+  smartVision = null
 } = {}) {
   const models = uniqueGeminiModels(
     primaryModel || process.env.GEMINI_VISION_MODEL || DEFAULT_GEMINI_VISION_MODEL,
@@ -10344,6 +10354,7 @@ async function postGeminiVisionWithRetry({
 
   for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
     const model = models[modelIndex];
+    if (smartVision?.exhausted.has(model)) continue;
     const maxAttempts = modelIndex === 0 ? 2 : 1;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
@@ -10356,14 +10367,38 @@ async function postGeminiVisionWithRetry({
         });
         const payload = await response.json().catch(() => ({}));
         if (response.ok) {
+          let parsed;
+          if (smartVision) {
+            try {
+              parsed = extractJsonFromGeminiResponse(payload, true);
+              if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Expected JSON object");
+            } catch {
+              last = { status: 502, reason: "INVALID_JSON", message: "Gemini did not return a JSON object" };
+              break; // Do not repeat the same model after invalid JSON.
+            }
+          }
           if (modelIndex > 0 || attempt > 1) {
             console.warn(`[Gemini Retry] requestId=${requestId || "-"} label=${label} recovered model=${model} attempt=${attempt}`);
           }
-          return { response, payload, model, attempt };
+          return { response, payload, model, attempt, parsed };
         }
 
         const message = geminiResponseErrorMessage(payload, `HTTP ${response.status}`);
         last = { response, payload, model, attempt, status: response.status, message };
+        if (smartVision) {
+          if (exhaustedGeminiQuota(response.status, payload)) {
+            smartVision.exhausted.add(model);
+            last = { status: 429, reason: "QUOTA_EXHAUSTED", message: "Gemini quota exhausted" };
+            break;
+          }
+          if (response.status === 404) {
+            last = { status: 502, reason: "MODEL_UNAVAILABLE", message: "Gemini model unavailable" };
+            break;
+          }
+          if (response.status === 429) {
+            last = { status: 429, reason: "QUOTA_UNKNOWN", message: "Gemini throttled; quota scope unknown" };
+          }
+        }
         if (isTemporaryGeminiDemandError(response.status, message) && (attempt < maxAttempts || modelIndex < models.length - 1)) {
           console.warn(`[Gemini Retry] requestId=${requestId || "-"} label=${label} model=${model} attempt=${attempt} status=${response.status} reason=${sanitizeUniversalIntakeDetails(message)}`);
           await wait(700 * attempt);
@@ -10386,10 +10421,67 @@ async function postGeminiVisionWithRetry({
   return last || { response: null, payload: {}, model: "", attempt: 0, status: 0, message: "Gemini request failed" };
 }
 
+const GEMINI_CLASSIFICATION_SCHEMA = { type: "object", properties: {
+  sourceType: { type: "string", enum: ["flight", "hotel", "mixed", "unknown"] },
+  confidence: { type: "number" }, reason: { type: "string" }, flightProvider: { type: "string" }
+} };
+const GEMINI_HOTEL_PRICE_SCHEMA = { type: "object", properties: {
+  price: { type: "number" }, priceText: { type: "string" }, currency: { type: "string" }
+} };
+const GEMINI_HOTEL_SCHEMA = { type: "object", properties: {
+  ...GEMINI_HOTEL_PRICE_SCHEMA.properties,
+  ...Object.fromEntries("name stars area distance room meal mealSourceText roomsLeft description address location rating ratePlan priceLabel".split(" ")
+    .map(field => [field, { type: "string" }])),
+  amenities: { type: "array", items: { type: "string" } },
+  pageKind: { type: "string", enum: ["property", "checkout", "unknown"] },
+  priceRole: { type: "string" },
+  occupancy: { type: "object", nullable: true, properties: {
+    adults: { type: "integer", nullable: true }, children: { type: "integer", nullable: true },
+    rooms: { type: "integer", nullable: true }, childAges: { type: "array", nullable: true, items: { type: "integer" } }
+  } },
+  nights: { type: "integer", nullable: true },
+  stayDates: { anyOf: [
+    { type: "string", nullable: true }, { type: "array", items: { type: "string" } },
+    { type: "object", properties: { checkin: { type: "string" }, checkout: { type: "string" } } }
+  ] },
+  nonRefundable: { type: "boolean", nullable: true }, transferOnRequest: { type: "boolean", nullable: true }
+} };
+
+async function smartImportGeminiJson({ smartVision, operation, sourceIds, prompt, imageParts, schema }) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw routeError("Gemini Smart Import stopped: GEMINI_API_KEY is unavailable", 503);
+  const result = await postGeminiVisionWithRetry({
+    apiKey, smartVision, label: operation, requestId: smartVision.intakeId,
+    primaryModel: process.env.GEMINI_VISION_MODEL || "gemini-3.5-flash-lite",
+    fallbackModel: process.env.GEMINI_VISION_FALLBACK_MODEL || "gemini-3.8-flash",
+    requestBody: {
+      contents: [{ role: "user", parts: [{ text: prompt }, ...imageParts] }],
+      generationConfig: {
+        temperature: 0, responseMimeType: "application/json", responseSchema: schema,
+        thinkingConfig: { thinkingLevel: "MEDIUM" }, mediaResolution: "MEDIA_RESOLUTION_HIGH"
+      }
+    }
+  });
+  if (!result.parsed) {
+    const reason = result.reason || (result.status === 429 ? "QUOTA_UNKNOWN" : result.status ? `HTTP_${result.status}` : "NETWORK_FAILURE");
+    throw routeError(`Gemini Smart Import stopped (${operation}, ${sourceIds.join(", ")}): ${reason}`, result.status === 429 ? 429 : 502);
+  }
+  smartVision.executions.push({ operation, sourceIds, provider: "gemini-vision", model: result.model });
+  return result;
+}
+
+function smartImportScreenshotJson(args, smartVision, operation, sourceId, schema) {
+  if (!smartVision) return callVisionJson(args);
+  return smartImportGeminiJson({
+    smartVision, operation, sourceIds: [sourceId], schema, prompt: args.prompt,
+    imageParts: [{ inlineData: { mimeType: args.mimeType, data: args.imageBuffer.toString("base64") } }]
+  }).then(result => result.parsed);
+}
+
 const FLIGHT_PRICE_OBSERVATION_RULE = "Return priceObservations for every visible monetary amount, including competing headlines and totals. Each object contains sourceId, label (exact visible label), text (only the exact visible amount and currency), amount, currency, priceUnit (per-person, party-total, unknown), routeScope (segment, one-way, round-trip, unknown), componentRole (fare-total, tax, add-on, unknown), and passengerScope (count, adults, children, infants when evidenced by the same provider for that fare). An all-passengers label alone does not establish the count. Use unknown or omit unsupported details. Never infer a per-person price from arithmetic or treat a from-price as a total. Transcribe the visible party total separately. For missing flight fields omit them or use empty strings, never the string null.";
 const FLIGHT_SCREENSHOT_DATE_RULE = "For EVERY segment departure and arrival, retain the visibly associated day/month from itinerary date headings, including explicit next-day labels. Do not return only a clock when its date is visible. If the year is absent, retain day/month without a year; never guess the current year or borrow a hotel year. Do not assume arrival is on the departure day. If a heading cannot be associated unambiguously, leave the date missing and add a warning.";
 
-async function extractFlightWithGeminiVision(files = [], { destination = "", sourceIds = [] } = {}) {
+async function extractFlightWithGeminiVision(files = [], { destination = "", sourceIds = [], smartVision = null } = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     const error = new Error("Missing GEMINI_API_KEY. Add it in Railway Variables to enable Gemini Vision Test.");
@@ -10416,6 +10508,12 @@ async function extractFlightWithGeminiVision(files = [], { destination = "", sou
       data: Buffer.from(file.buffer).toString("base64")
     }
   }));
+
+  if (smartVision) {
+    const result = await smartImportGeminiJson({ smartVision, operation: "flight", sourceIds, prompt, imageParts, schema: GEMINI_FLIGHT_SCHEMA });
+    const canonical = validateGeminiFlightJson(result.parsed);
+    return { model: result.model, provider: "gemini-vision", canonical, flight: geminiCanonicalToFlight(canonical) };
+  }
 
   const gemini = await postGeminiVisionWithRetry({
     apiKey,
@@ -10539,6 +10637,7 @@ function shouldFallbackToOpenAiFlight(error = {}) {
 }
 
 async function extractFlightWithAiVision(files = [], options = {}) {
+  if (options.smartVision) return extractFlightWithGeminiVision(files, options);
   const provider = String(process.env.AI_FLIGHT_PROVIDER || process.env.FLIGHT_VISION_PROVIDER || "auto").toLowerCase();
   if (provider === "openai") return extractFlightWithOpenAiVision(files, options);
   if (provider === "gemini") return extractFlightWithGeminiVision(files, options);
@@ -11788,7 +11887,7 @@ function buildHotelGeminiHints(hotel = {}) {
   };
 }
 
-async function buildSmartImportHotelOption(hotel = {}, parsed = {}, destination = "", index = 0) {
+async function buildSmartImportHotelOption(hotel = {}, parsed = {}, destination = "", index = 0, smartVision = null) {
   const option = enrichHotelImportFallbacks(hotel, parsed, destination || "");
   const imageUrls = await findHotelImagesWithSerpApi(
     option.name,
@@ -11804,18 +11903,19 @@ async function buildSmartImportHotelOption(hotel = {}, parsed = {}, destination 
   option.sourceAuthority = universalHotelSourceAuthority({
     hasSerpApiKey: Boolean(process.env.SERPAPI_KEY),
     imageCount: imageUrls.length,
-    extractor: "openai-vision"
+    extractor: smartVision ? "gemini-vision" : "openai-vision"
   });
   option.geminiHints = buildHotelGeminiHints(option);
   option.selected = index === 0;
   return option;
 }
 
-async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true, hotelLink = "", hotelLinks = [], smartSources = null } = {}) {
+async function extractHotelHintWithSerpApi(imageFiles = [], { destination = "", archive = true, hotelLink = "", hotelLinks = [], smartSources = null, smartVision = null } = {}) {
   const parsedHotels = [];
   const rawParsedHotels = [];
   for (const [index, file] of imageFiles.entries()) {
-    let parsed = await callVisionJson({
+    const sourceId = smartSources?.[index]?.sourceId;
+    let parsed = await smartImportScreenshotJson({
       imageBuffer: file.buffer,
       mimeType: file.mimetype || "image/png",
       prompt: `
@@ -11866,15 +11966,37 @@ Rules:
 ${smartSources ? `For Smart Import also return pageKind (property, checkout, or unknown), priceRole (stay_total, per_person, tax, discount, credit, cancellation_fee, add_on, or unknown), and priceLabel (verbatim label on the same row as priceText). A Genius balance is a credit, including on a property page. For a visible non-total amount preserve its role, label and exact amount in these evidence fields; never label it stay_total.
 Read occupancy, nights and stayDates from the checkout reservation summary for the selected room. Read nonRefundable alongside the selected room conditions. Keep the commercial keys in the example and use null when unknown; return ratePlan only when visible. Return nights as an integer or null, nonRefundable true for an explicit non-refundable rate, false for an explicitly refundable rate, or null when unstated; transferOnRequest true for explicit availability on request, including an optional checkout checkbox offering to request an airport transfer or receive details and prices (even when unchecked); a generic airport shuttle amenity is insufficient. Use false for explicit unavailability or null when unstated. A transfer request is not an included transfer. Never assume zero children or infer occupancy from a room name. Keep transfer and cancellation claims out of description and amenities.` : ""}
 `
-    });
-    parsed = smartSources ? smartHotelRecord(parsed, smartSources[index]?.sourceId) : normalizeHotelMoney(parsed);
-    if (!smartSources && parsed.name && !(parsed.price > 0)) {
+    }, smartVision, "hotel", sourceId, GEMINI_HOTEL_SCHEMA);
+    const observedPrice = parsed.price;
+    const observedCurrency = parsed.currency;
+    parsed = smartSources ? smartHotelRecord(parsed, sourceId) : normalizeHotelMoney(parsed);
+    // This recovery only re-reads a checkout total already identified by the
+    // primary extraction. Never retry an unknown role or a property-only price.
+    const recoverCheckoutPrice = smartVision && parsed.name && parsed.pageKind === "checkout" &&
+      parsed.priceRole === "stay_total" && parsed.priceEvidence.label && !parsed.priceText &&
+      Number.isFinite(observedPrice) && observedPrice > 0 && /^[A-Z]{3}$/.test(observedCurrency);
+    if ((!smartSources && parsed.name && !(parsed.price > 0)) || recoverCheckoutPrice) {
       try {
-      const metadata = await sharp(file.buffer).metadata();
-      const pricePanel = await sharp(file.buffer).extract({ left: 0, top: 0, width: Math.ceil(metadata.width * 0.42), height: metadata.height }).resize({ width: 1000 }).jpeg().toBuffer();
-      const recovered = await callVisionJson({ imageBuffer: pricePanel, mimeType: "image/jpeg", prompt: 'Read only the TOTAL STAY price from this hotel checkout price summary. Return strict JSON with priceText (exact visible total and currency), price (numeric), currency (visible currency, never assume EUR). Exclude crossed-out prices, discounts, cancellation fees and alternate payment-currency amounts. If unreadable return price 0 and priceText "".' });
-      if (recovered.priceText) parsed = normalizeHotelMoney({ ...parsed, ...recovered });
-      } catch (error) { console.warn("Hotel price panel review unavailable:", error.message); }
+        let imageBuffer = file.buffer;
+        let mimeType = file.mimetype || "image/png";
+        if (!smartVision) {
+          const { width, height } = await sharp(file.buffer).metadata();
+          imageBuffer = await sharp(file.buffer).extract({ left: 0, top: 0, width: Math.ceil(width * 0.42), height }).resize({ width: 1000 }).jpeg().toBuffer();
+          mimeType = "image/jpeg";
+        }
+        const recovered = await smartImportScreenshotJson({ imageBuffer, mimeType, prompt: 'Read only the TOTAL STAY price from this hotel checkout price summary. Return strict JSON with priceText (exact visible total and currency), price (numeric), currency (visible currency, never assume EUR). Exclude crossed-out prices, discounts, cancellation fees and alternate payment-currency amounts. If unreadable return price 0 and priceText "".' }, smartVision, "hotel-price-recovery", sourceId, GEMINI_HOTEL_PRICE_SCHEMA);
+        if (recovered.priceText) {
+          const candidate = { ...parsed, priceText: recovered.priceText, price: recovered.price, currency: recovered.currency };
+          if (!smartVision) parsed = normalizeHotelMoney({ ...parsed, ...recovered });
+          else {
+            const checked = smartHotelRecord(candidate, sourceId);
+            if (checked.price === observedPrice && checked.currency === observedCurrency) parsed = checked;
+          }
+        }
+      } catch (error) {
+        if (smartVision) throw error;
+        console.warn("Hotel price panel review unavailable:", error.message);
+      }
     }
     rawParsedHotels.push(parsed);
     parsedHotels.push(enrichHotelImportFallbacks(
@@ -11893,7 +12015,7 @@ Read occupancy, nights and stayDates from the checkout reservation summary for t
       priceEvidence: parsed.priceEvidenceRecords, checkoutSourceId: parsed.sourceId,
       address: parsed.address, ratePlan: parsed.ratePlan, stayDates: parsed.stayDates,
       propertySourceIds: parsed.propertySourceIds, transferOnRequest: parsed.transferOnRequest, ...hotelBookingConditions(parsed)
-    } : {}) }, parsed, destination || "", index
+    } : {}) }, parsed, destination || "", index, smartVision
   )));
   const hotel = hotelOptions[0] || (smartSources ? {} : await buildSmartImportHotelOption(
     mergeImportedHotelRecords(parsedHotels),
@@ -11934,9 +12056,9 @@ Read occupancy, nights and stayDates from the checkout reservation summary for t
   };
 }
 
-async function classifySmartImportSource(file = {}, index = 0) {
+async function classifySmartImportSource(file = {}, index = 0, smartVision = null) {
   try {
-    const result = await callVisionJson({
+    const result = await smartImportScreenshotJson({
       imageBuffer: file.buffer,
       mimeType: file.mimetype || "image/png",
       prompt: `
@@ -11958,7 +12080,7 @@ Rules:
 - use unknown if unsure
 - confidence is 0 to 1
 `
-    });
+    }, smartVision, "classification", `SRC-${index + 1}`, GEMINI_CLASSIFICATION_SCHEMA);
     const sourceType = ["flight", "hotel", "mixed", "unknown"].includes(result.sourceType)
       ? result.sourceType
       : "unknown";
@@ -11970,6 +12092,7 @@ Rules:
       reason: String(result.reason || "").trim()
     };
   } catch (error) {
+    if (smartVision) throw error;
     return {
       sourceId: `SRC-${index + 1}`,
       sourceType: "unknown",
@@ -12178,6 +12301,8 @@ app.get(["/api/smart-import/:intakeId", "/api/smart-import/:intakeId/source/:sou
 
 app.post("/api/smart-import", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {
   const intakeId = `SMART-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+  const smartVision = process.env.SMART_IMPORT_GEMINI_ONLY === "true"
+    ? { intakeId, exhausted: new Set(), executions: [] } : null;
   try {
     const imageFiles = getUploadedImageFiles(req);
     if (!imageFiles.length) {
@@ -12187,7 +12312,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
     const destination = req.body?.destination || "";
     const classifications = [];
     for (let index = 0; index < imageFiles.length; index += 1) {
-      classifications.push(await classifySmartImportSource(imageFiles[index], index));
+      classifications.push(await classifySmartImportSource(imageFiles[index], index, smartVision));
     }
 
     const sources = classifications.map((classification, index) => ({
@@ -12223,9 +12348,10 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       const results = [];
       for (const group of groups.values()) {
         try {
-          const result = await extractFlightWithAiVision(group.files, { destination, sourceIds: group.sourceIds });
+          const result = await extractFlightWithAiVision(group.files, { destination, sourceIds: group.sourceIds, smartVision });
           results.push({ provider: group.provider, sourceIds: group.sourceIds, result });
         } catch (error) {
+          if (smartVision) throw error;
           warnings.push(`Flight extraction failed (${group.provider || group.sourceIds.join(", ")}): ${error.message}`);
         }
       }
@@ -12259,11 +12385,12 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       try {
         let hotelLinks=[];
         try {hotelLinks=JSON.parse(req.body?.hotelLinks || "[]");} catch {warnings.push("Линковете не са разчетени. Импортът продължава със скрийншотите.");}
-        hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false, hotelLink:req.body?.hotelLink || "", hotelLinks, smartSources: nextSources.filter(source => ["hotel", "mixed"].includes(source.sourceType)) });
+        hotelResult = await extractHotelHintWithSerpApi(hotelFiles, { destination, archive: false, smartVision, hotelLink:req.body?.hotelLink || "", hotelLinks, smartSources: nextSources.filter(source => ["hotel", "mixed"].includes(source.sourceType)) });
         offerHotel = hotelResult.hotel || {};
         offerHotelOptions = safeArray(hotelResult.hotelOptions);
         warnings.push(...safeArray(hotelResult.operatorWarnings));
       } catch (error) {
+        if (smartVision) throw error;
         warnings.push(`Hotel extraction failed: ${error.message}`);
       }
     }
@@ -12327,6 +12454,8 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       hotelResult
     });
 
+    if (smartVision) responsePayload.debug.visionExecutions = smartVision.executions;
+
     let archive;
     if (evidence?.archived && evidence.root) {
       const evidenceRoot = path.dirname(evidence.root);
@@ -12358,7 +12487,8 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       success: false,
       error: "Smart Import failed",
       details: error.message,
-      intakeId
+      intakeId,
+      ...(smartVision && { debug: { visionExecutions: smartVision.executions } })
     });
   }
 });
