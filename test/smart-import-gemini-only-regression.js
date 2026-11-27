@@ -123,6 +123,123 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       assert.deepEqual((await stored.json()).debug.visionExecutions,body.debug.visionExecutions);
     });
 
+    await t.test("flight completeness keeps partial evidence separate from priced itineraries", async () => {
+      const sky = "skyscanner.jpg";
+      const priced = fixture[legacyFlight];
+      const outbound = priced.outbound.segments[0];
+      const inbound = priced.inbound.segments[0];
+      const segment = { ...outbound, to: "OTP", flightNumber: "RO292" };
+      const returning = { ...inbound, from: "OTP", to: "CTA", flightNumber: "FR324" };
+      const connected = { ...inbound, from: "CTA", flightNumber: "FR5036", transferBefore: "90 min self-transfer" };
+      const observation = { amount: 266, currency: "EUR", priceUnit: "per-person", routeScope: "round-trip", componentRole: "fare-total" };
+      reply = call => call.operation === "classification" && call.name === sky
+        ? { sourceType: "flight", flightProvider: "Skyscanner" }
+        : call.operation === "flight" && call.name === legacyFlight
+          ? { outbound: { segments: [segment, { flightNumber: "PARTIAL", airline: "Tarom" }, { from: null }] },
+              inbound: { segments: [] }, priceObservations: [observation] }
+          : call.operation === "flight" && call.name === sky ? {
+              ...fixture[sky],
+              outbound: { segments: [{ ...fixture[sky].outbound.segments[0], flightNumber: "PC272" }] },
+              inbound: { segments: [{ ...fixture[sky].inbound.segments[0], flightNumber: "PC273" }] }
+            } : null;
+      const mixed = await upload(legacyFlight, sky);
+      assert.equal(mixed.status, 200, JSON.stringify(mixed.body));
+      const [valid, partial] = mixed.body.flightCandidates;
+      assert.deepEqual(valid.sourceIds, ["SRC-2"]);
+      assert.equal(valid.checkoutBinding.eurPrice, 288);
+      assert.deepEqual(partial.sourceIds, ["SRC-1"]);
+      assert.equal(partial.itineraryEvidence.outbound.length, 2);
+      assert.equal(partial.itineraryEvidence.outbound[1].flightNumber, "PARTIAL");
+      assert.equal(partial.flight.outboundSegments.length, 1);
+      assert(!JSON.stringify(partial.flight).includes("PARTIAL"));
+      assert(!JSON.stringify(mixed.body.offerFlight).includes("PARTIAL"));
+      assert.equal(partial.checkoutBinding, undefined);
+      assert.equal(partial.flight.price, 0);
+      assert.equal(partial.observations[0].amount, 266);
+      assert.deepEqual(partial.warnings, ["FLIGHT_EXTRACTION_INCOMPLETE", "FLIGHT_PRICE_SCOPE_UNKNOWN"]);
+      const contract = calls.find(call => call.operation === "flight").config.responseSchema;
+      assert.deepEqual(contract.required, ["outbound", "inbound", "itineraryDirection"]);
+      for (const key of ["outbound", "inbound"]) {
+        assert.deepEqual(contract.properties[key].required, ["segments"]);
+        const item = contract.properties[key].properties.segments.items;
+        assert(item.required.includes("transferBefore"));
+        assert(item.required.every(field => item.properties[field].nullable));
+      }
+      reply = ({operation}) => operation === "flight" ? {
+        outbound: { segments: [segment] }, inbound: { segments: [returning, connected] },
+        priceObservations: [observation]
+      } : null;
+      const roundTrip = (await upload(legacyFlight)).body.flightCandidates[0];
+      assert.deepEqual(roundTrip.flight.segments.map(item => item.flightNumber), ["RO292", "FR324", "FR5036"]);
+      assert.equal(roundTrip.flight.inboundSegments[1].transferBefore, "90 min self-transfer");
+      assert.equal(roundTrip.flight.outboundSegments[0].departure, segment.departure);
+      assert(!roundTrip.warnings.includes("FLIGHT_EXTRACTION_INCOMPLETE"));
+      reply = ({operation}) => operation === "flight" ? {
+        itineraryDirection: "one-way", outbound: { segments: [segment] }, inbound: { segments: [] },
+        priceObservations: [{ ...observation, routeScope: "unknown" }]
+      } : null;
+      const oneWay = (await upload(legacyFlight)).body.flightCandidates[0];
+      assert.equal(oneWay.flight.inboundSegments.length, 0);
+      assert(!oneWay.warnings?.includes("FLIGHT_EXTRACTION_INCOMPLETE"));
+      for (const routeScope of ["unknown", "one-way"]) {
+        reply = ({operation}) => operation === "flight" ? {
+          itineraryDirection: "unknown", outbound: { segments: [segment] }, inbound: { segments: [] },
+          priceObservations: [{ ...observation, routeScope }]
+        } : null;
+        const { body } = await upload(legacyFlight);
+        const candidate = body.flightCandidates[0];
+        assert.equal(body.flight.itineraryDirection, "unknown");
+        assert(candidate.warnings.includes("FLIGHT_EXTRACTION_INCOMPLETE"));
+        assert.equal(candidate.checkoutBinding, undefined);
+      }
+      for (const missing of [{ airline: null }, { flightNumber: "null" }]) {
+        reply = ({operation}) => operation === "flight" ? {
+          ...priced, itineraryDirection: "round-trip",
+          outbound: { segments: [{ ...outbound, ...missing }] }
+        } : null;
+        const candidate = (await upload(legacyFlight)).body.flightCandidates[0];
+        const field = Object.keys(missing)[0];
+        assert.equal(candidate.itineraryEvidence.outbound[0][field], "");
+        assert.equal(candidate.flight.outboundSegments.length, 0);
+        assert(candidate.warnings.includes("FLIGHT_EXTRACTION_INCOMPLETE"));
+        assert.equal(candidate.checkoutBinding, undefined);
+      }
+      reply = null;
+
+      const vm = require("node:vm");
+      const admin = fs.readFileSync(path.join(__dirname, "../public/admin.js"), "utf8");
+      const start = admin.indexOf("async function applyUniversalTravelIntakeResult()");
+      const next = admin.indexOf("\nasync function ", start + 1);
+      const alerts = [];
+      const review = vm.createContext({
+        latestUniversalTravelIntake: { flightCandidates: [partial] },
+        $: () => null, alert: message => alerts.push(message)
+      });
+      vm.runInContext(admin.slice(start, next), review);
+      await review.applyUniversalTravelIntakeResult();
+      assert.match(alerts[0], /Непълно извличане/);
+      const manual = {
+        reviewFlightOperatorPrice: "798", universalFlightAirline: "Operator carrier",
+        universalFlightRoute: "SOF -> OTP / OTP -> SOF",
+        universalFlightDeparture: "2026-12-01 10:55", universalFlightArrival: "2026-12-11 19:45"
+      };
+      review.$ = key => key in manual ? { value: manual[key] } : null;
+      review.AYAFlightDataConsistency = require("../public/flight-data-consistency");
+      review.reviewFlightDateConsistencyUI = async flight => flight;
+      let applied;
+      review.addFlight = async flight => { applied = flight; return false; };
+      await review.applyUniversalTravelIntakeResult();
+      assert.equal(applied.route, manual.universalFlightRoute);
+      assert.equal(applied.price, 798);
+      assert.equal(applied.importedFlightPrice.kind, "operator");
+      assert.equal(applied.itineraryEvidence, undefined);
+      assert.equal(applied.outboundSegments, undefined);
+      assert(!JSON.stringify(applied).includes("PARTIAL"));
+      const { buildPresentationViewModel } = require("../gt63-core/presentation-view-model");
+      const projection = buildPresentationViewModel({ flight: applied });
+      assert(!JSON.stringify(projection).includes("PARTIAL"));
+    });
+
     await t.test("hotel schema requires commercial keys and preserves source-grounded unknowns", async () => {
       const rin = {
         name: "RIN Airport Hotel", stars: "4", pageKind: "checkout", priceRole: "stay_total",

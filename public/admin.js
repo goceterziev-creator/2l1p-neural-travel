@@ -3205,13 +3205,13 @@ function renderUniversalTravelReview(data = {}, files = []) {
           ${showFlight ? `
             ${!hasFlight ? `<p class="warning">Попълнете проверените полетни данни. Операторската цена и въведените данни не са потвърдени от доставчик.</p>` : ""}
             <label>Airline</label>
-            <input id="universalFlightAirline" value="${escapeHtml(flight.airline || "")}" />
+            <input id="universalFlightAirline" value="${escapeHtml(candidate?.itineraryEvidence ? "" : flight.airline || "")}" />
             <label>Route</label>
-            <input id="universalFlightRoute" value="${escapeHtml(flight.route || "")}" />
+            <input id="universalFlightRoute" value="${escapeHtml(candidate?.itineraryEvidence ? "" : flight.route || "")}" />
             <label>Outbound</label>
-            <input id="universalFlightDeparture" value="${escapeHtml(flight.departure || "")}" />
+            <input id="universalFlightDeparture" value="${escapeHtml(candidate?.itineraryEvidence ? "" : flight.departure || "")}" />
             <label>Inbound</label>
-            <input id="universalFlightArrival" value="${escapeHtml(flight.arrival || "")}" />
+            <input id="universalFlightArrival" value="${escapeHtml(candidate?.itineraryEvidence ? "" : flight.arrival || "")}" />
             <label>Baggage</label>
             <input id="universalFlightBaggage" value="${escapeHtml(adminBaggageText(flight.baggage))}" />
             <label>Flight Price (${escapeHtml(flight.currency || "неизвестна валута")})</label>
@@ -3219,7 +3219,11 @@ function renderUniversalTravelReview(data = {}, files = []) {
             ${candidate ? `<label>Операторска полетна цена в EUR
               <input id="reviewFlightOperatorPrice" type="number" min="0.01" step="0.01" placeholder="Въведете изрично след проверка" />
             </label>
-            ${(candidate.warnings || []).map(warning => `<p class="warning">Цената изисква преглед (${escapeHtml(warning)}).</p>`).join("")}
+            ${(candidate.warnings || []).map(warning => `<p class="warning">${warning === "FLIGHT_EXTRACTION_INCOMPLETE" ? "Непълно извличане. Прегледайте източника и въведете потвърдени маршрут и дати." : "Цената изисква преглед"} (${escapeHtml(warning)}).</p>`).join("")}
+            ${Object.entries(candidate.itineraryEvidence || {}).map(([direction, segments]) =>
+              segments.map(segment => `<p>${escapeHtml([...(candidate.sourceIds || []), direction === "outbound" ? "Отиване" : "Връщане",
+                ...["from", "to", "departure", "arrival", "airline", "flightNumber", "transferBefore"].map(key => segment[key] || "?")
+              ].join(" · "))}</p>`).join("")).join("")}
             ${(candidate.observations || []).map(item => `<p>${escapeHtml([item.sourceId, item.label, item.text, item.priceUnit, item.routeScope, item.componentRole].filter(Boolean).join(" · "))}</p>`).join("")}` : ""}
             ${flight.displayBg?.itineraryText ? `<pre class="flight-segment-summary" style="white-space:pre-wrap; line-height:1.45;">${escapeHtml(flight.displayBg.itineraryText)}</pre>` : ""}
           ` : `<div class="muted">Не е открит видим полет.</div>`}
@@ -3284,7 +3288,7 @@ function renderUniversalTravelReview(data = {}, files = []) {
               ? "normalized-preview-candidate" : "normalized-selected-candidate",
             candidateId: candidate.candidateId,
             provider: candidate.provider, sourceIds: candidate.sourceIds, flight: candidate.flight,
-            observations: candidate.observations, priceReview: candidate.priceReview, warnings: candidate.warnings || []
+            observations: candidate.observations, itineraryEvidence: candidate.itineraryEvidence, priceReview: candidate.priceReview, warnings: candidate.warnings || []
           } : data.flight,
           hotel: data.hotel,
           sourceAuthority: {
@@ -3492,6 +3496,14 @@ async function applyUniversalTravelIntakeResult() {
   const selectedCandidate = candidates[selectedIndex];
   let flight = { ...(selectedCandidate?.flight || data.offerFlight || {}) };
   const hotel = { ...(data.offerHotel || {}) };
+  if (selectedCandidate?.itineraryEvidence) {
+    if (!$("reviewFlightOperatorPrice")?.value) {
+      alert("Непълно извличане: проверете източника и въведете потвърдени полетни данни и операторска цена.");
+      return;
+    }
+    // Only explicitly entered itinerary details may be applied for this candidate.
+    flight = {};
+  }
 
   if ($("universalFlightAirline")) flight.airline = $("universalFlightAirline").value.trim();
   if ($("universalFlightRoute")) flight.route = $("universalFlightRoute").value.trim();
