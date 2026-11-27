@@ -195,6 +195,44 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       reply = null;
     });
 
+    await t.test("a checkout room conflict preserves the observation without issuing a price reference", async () => {
+      const ocr = require("../server/checkout-ocr");
+      const read = ocr.readCheckoutOcr;
+      const reconcile = ocr.roomConflict;
+      const conflict = { sourceId: "SRC-1", reportedRooms: 1, observedRooms: 2, headings: [] };
+      try {
+        const raw = { sourceId: "SRC-1", sourceDigest: crypto.createHash("sha256").update(checkout).digest("hex"),
+          tsv: "internal-only-ocr", blocks: [{ text: "private OCR block" }], confidence: 90,
+          initializationMs: 11, recognitionMs: 22, peakRssKiB: 12000 };
+        ocr.readCheckoutOcr = async () => ({ status: "observed", ...raw });
+        ocr.roomConflict = () => conflict;
+        const { status, body } = await upload(checkout);
+        assert.equal(status, 200, JSON.stringify(body));
+        const option = body.offerHotelOptions[0];
+        assert.deepEqual(option.checkoutOcr.conflict, conflict);
+        assert.equal(option.price, 190.98);
+        assert.equal(option.currency, "EUR");
+        assert.equal(option.occupancy.rooms, 1);
+        assert.equal(option.checkoutBinding, undefined);
+        assert.deepEqual(calls.map(call => call.operation), ["classification", "hotel"]);
+        const db = JSON.parse(fs.readFileSync(env.DB_FILE, "utf8"));
+        assert.deepEqual(db.smartImportPriceEvidenceV1[body.intakeId].records, []);
+        const recovered = await nativeFetch(base + "/api/smart-import/" + body.intakeId, { headers: { cookie } });
+        assert.equal(recovered.status, 200);
+        const recoveredBody = await recovered.json();
+        assert.deepEqual(recoveredBody.offerHotelOptions[0].checkoutOcr.conflict, conflict);
+        assert.equal(body.checkoutOcrEvidence, undefined);
+        assert.equal(recoveredBody.checkoutOcrEvidence, undefined);
+        const bytes = fs.readFileSync(path.join(env.SOURCE_EVIDENCE_DIR, "offers", body.intakeId, "smart_import_response.json"));
+        assert.equal(crypto.createHash("sha256").update(bytes).digest("hex"),
+          db.smartImportPriceEvidenceV1[body.intakeId].archive.responseDigest);
+        assert.deepEqual(JSON.parse(bytes).checkoutOcrEvidence, [raw]);
+      } finally {
+        ocr.readCheckoutOcr = read;
+        ocr.roomConflict = reconcile;
+      }
+    });
+
     await t.test("hotel price recovery uses the same source and verifies amount, role and currency",async () => {
       reply = ({operation}) => operation === "hotel" ? {...fixture[checkout],priceText:"",price:190.98,currency:"EUR"} : null;
       const {status,body}=await upload(checkout);

@@ -12304,7 +12304,8 @@ app.get(["/api/smart-import/:intakeId", "/api/smart-import/:intakeId/source/:sou
         return res.set("X-Content-Type-Options", "nosniff").attachment(source.filename)
           .type("application/octet-stream").send(archive.sourceBytes[sourceIndex]);
       }
-      return res.json({ ...archive.payload, sources: archive.sources, evidence: { archived: true, sources: archive.sources } });
+      const { checkoutOcrEvidence, ...payload } = archive.payload;
+      return res.json({ ...payload, sources: archive.sources, evidence: { archived: true, sources: archive.sources } });
   });
 
 app.post("/api/smart-import", requireCapability("imports.run"), upload.array("image", 8), async (req, res) => {
@@ -12419,13 +12420,26 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       }
     }
     const checkoutRecords = [];
+    const checkoutOcrBySource = new Map();
+    const checkoutOcrEvidence = [];
     for (const hotel of offerHotelOptions) {
       if (!(hotel.price > 0) || !Array.isArray(hotel.priceEvidence)) continue;
-      const record = smartImportPriceBinding.checkoutRecord({
-        intakeId, agencyId, hotel, quote,
-        source: nextSources.find(item => item.sourceId === hotel.checkoutSourceId),
-        parsed: hotelResult?.rawParsedHotels?.find(item => item.sourceId === hotel.checkoutSourceId)
-      });
+      const sourceIndex = nextSources.findIndex(item => item.sourceId === hotel.checkoutSourceId);
+      const source = nextSources[sourceIndex];
+      const parsed = hotelResult?.rawParsedHotels?.find(item => item.sourceId === hotel.checkoutSourceId);
+      if (smartVision && parsed?.pageKind === "checkout" && imageFiles[sourceIndex]?.buffer) {
+        const { readCheckoutOcr, roomConflict, archiveCheckoutOcr } = require("./server/checkout-ocr");
+        if (!checkoutOcrBySource.has(source.sourceId)) {
+          const evidence = await readCheckoutOcr(imageFiles[sourceIndex].buffer, source.sourceId);
+          if (evidence.status === "observed") checkoutOcrEvidence.push(archiveCheckoutOcr(evidence));
+          checkoutOcrBySource.set(source.sourceId, evidence.status === "observed"
+            ? { status: evidence.status, conflict: roomConflict(evidence, parsed.occupancy) }
+            : evidence);
+        }
+        hotel.checkoutOcr = checkoutOcrBySource.get(source.sourceId);
+        if (hotel.checkoutOcr.conflict) continue;
+      }
+      const record = smartImportPriceBinding.checkoutRecord({ intakeId, agencyId, hotel, quote, source, parsed });
       if (record) {
         checkoutRecords.push(record);
         hotel.checkoutBinding = { version: record.version, referenceId: record.referenceId, intakeId, sourceId: record.sourceId, rate: record.rate, eurPrice: record.eurPrice };
@@ -12475,7 +12489,8 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
           readSmartImportArchiveFile(fs.realpathSync(evidenceRoot), path.join("original", filename), digest);
           return { sourceId: source.sourceId, filename, digest };
         });
-        const response = JSON.stringify(responsePayload, null, 2);
+        const response = JSON.stringify(checkoutOcrEvidence.length
+          ? { ...responsePayload, checkoutOcrEvidence } : responsePayload, null, checkoutOcrEvidence.length ? 0 : 2);
         fs.writeFileSync(path.join(evidenceRoot, "smart_import_response.json"), response, { flag: "wx" });
         archive = { version: 1, responseDigest: smartImportArchiveDigest(response), originals };
       } catch (error) {

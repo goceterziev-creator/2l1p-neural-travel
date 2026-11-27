@@ -57,7 +57,13 @@ test("reservation total is bound once, distinct from tax, fees and other observa
   assert.equal(bindOfferPrices({...options,body:{hotels:[applied]}}).hotels[0].price,1444);
   assert.throws(()=>bindOfferPrices({...options,body:{hotels:[{...applied,stayDates:[dates[0],"2026-12-12"]}]}}),/CHECKOUT_HOTEL_RATE_MISMATCH/);
   assert.throws(()=>bindOfferPrices({...options,previous:{hotels:[applied]},body:{hotels:[{...applied,importedPrice:undefined}]}}),/CHECKOUT_OPERATOR_CORRECTION_REQUIRED/);
-  assert.equal(bindOfferPrices({...options,previous:{hotels:[applied]},body:{hotels:[{...applied,importedPrice:{kind:"operator"}}]}}).hotels[0].price,1444);
+  const unresolved = { ...applied, occupancy: { adults: 2, rooms: 1, children: null, confirmed: false },
+    importedPrice: { kind: "operator" } };
+  const [operator] = bindOfferPrices({ ...options, previous: { hotels: [applied] }, body: { hotels: [unresolved] } }).hotels;
+  assert.equal(operator.price, 1444);
+  assert.deepEqual(operator.importedPrice, { kind: "operator" });
+  assert.deepEqual(operator.occupancy, unresolved.occupancy);
+  assert.match(occupancy.warning({ guests: "3 adults", hotels: [operator] }), /2 от 3/);
 });
 
 test("Bucharest Debug JSON replay retains price and party boundaries across sources", () => {
