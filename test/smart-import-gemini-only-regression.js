@@ -70,7 +70,7 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       : prompt.includes("Classify this travel screenshot") ? "classification"
       : prompt.startsWith("Read only the TOTAL STAY price") ? "hotel-price-recovery" : "hotel";
     const model = provider === "gemini" ? url.pathname.split("/").at(-1).split(":")[0] : body.model;
-    const call = {provider,operation,model,name,config:body.generationConfig};
+    const call = {provider,operation,model,name,prompt,config:body.generationConfig};
     calls.push(call);
     if (provider === "openai" && !allowOpenAi) throw new Error("OpenAI attempted in Gemini-only mode");
     if (provider === "gemini" && !allowOpenAi) {
@@ -123,6 +123,78 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       assert.deepEqual((await stored.json()).debug.visionExecutions,body.debug.visionExecutions);
     });
 
+    await t.test("hotel schema requires commercial keys and preserves source-grounded unknowns", async () => {
+      const rin = {
+        name: "RIN Airport Hotel", stars: "4", pageKind: "checkout", priceRole: "stay_total",
+        priceLabel: "Total Reservation", priceText: "1444,00 €", price: 1444, currency: "EUR",
+        occupancy: { adults: 3, children: null, rooms: 2, childAges: null },
+        room: "Standard Twin", meal: "Breakfast Excluded", mealSourceText: "Breakfast Excluded",
+        ratePlan: "Bed Only", nights: 10, stayDates: ["2026-12-01", "2026-12-11"],
+        nonRefundable: null, transferOnRequest: null
+      };
+      let extracted = rin;
+      reply = ({operation}) => operation === "hotel" ? extracted : null;
+      const full = await upload(checkout);
+      assert.equal(full.status, 200, JSON.stringify(full.body));
+      const [{ config: { responseSchema: schema }, prompt }] = calls.filter(call => call.operation === "hotel");
+      assert.deepEqual(schema.required, Object.keys(rin).filter(key => key !== "ratePlan"));
+      assert.deepEqual(schema.properties.occupancy.required, ["adults", "children", "rooms", "childAges"]);
+      assert.equal(schema.properties.occupancy.nullable, true);
+      assert(schema.properties.stayDates.anyOf.some(option => option.nullable));
+      for (const field of schema.properties.occupancy.required) {
+        assert.equal(schema.properties.occupancy.properties[field].nullable, true);
+      }
+      const example = JSON.parse(prompt.match(/Return ONLY strict JSON:\n([\s\S]+?)\nRules:/)[1]);
+      assert(schema.required.every(field => Object.hasOwn(example, field)));
+      assert.equal(example.currency, "");
+      assert.equal(example.pageKind, "unknown");
+      assert.equal(example.priceRole, "unknown");
+      const historicalSparse = { name: rin.name, stars: rin.stars, transferOnRequest: null };
+      assert.deepEqual(schema.required.filter(field => !Object.hasOwn(historicalSparse, field)),
+        schema.required.filter(field => !["name", "stars", "transferOnRequest"].includes(field)));
+      const option = full.body.offerHotelOptions[0];
+      assert.equal(option.checkoutBinding.eurPrice, 1444);
+      assert.equal(option.priceEvidence[0].label, "Total Reservation");
+      assert.equal(option.priceEvidence[0].sourceId, "SRC-1");
+      assert.equal(option.name, rin.name);
+      assert.equal(String(option.stars), rin.stars);
+      assert.deepEqual(option.stayDates, rin.stayDates);
+      assert.equal(option.ratePlan, rin.ratePlan);
+      assert.equal(option.room, rin.room);
+      assert.equal(option.mealSourceText, rin.mealSourceText);
+      assert.equal(option.nights, 10);
+      assert.equal(option.occupancy.adults, 3);
+      assert.equal(option.occupancy.rooms, 2);
+      assert.equal(option.occupancy.children, null);
+
+      extracted = { ...rin, priceLabel: "Reservation Subtotal",
+        occupancy: { ...rin.occupancy, rooms: null } };
+      const partial = await upload(checkout);
+      assert.equal(partial.status, 200);
+      const partialOption = partial.body.offerHotelOptions[0];
+      assert.equal(partialOption.occupancy.adults, 3);
+      assert.equal(partialOption.occupancy.rooms, null);
+      assert.equal(partialOption.occupancy.children, null);
+      assert.equal(partialOption.checkoutBinding, undefined);
+
+      extracted = { ...rin, occupancy: { ...rin.occupancy, children: 0 } };
+      const explicitZero = await upload(checkout);
+      assert.equal(explicitZero.status, 200);
+      assert.equal(explicitZero.body.offerHotelOptions[0].occupancy.children, 0);
+
+      extracted = { ...example, name: "Unpriced property", pageKind: "property", occupancy: null };
+      const unpriced = await upload(property);
+      assert.equal(unpriced.status, 200);
+      const [propertyOption] = unpriced.body.hotel.hints;
+      assert.equal(propertyOption.price, 0);
+      assert.equal(propertyOption.currency, "");
+      assert.equal(propertyOption.room, "");
+      assert.equal(propertyOption.meal, "");
+      assert(unpriced.body.offerHotelOptions.every(option => !option.checkoutBinding && !option.price));
+      assert.deepEqual(calls.map(call => call.operation), ["classification", "hotel"]);
+      reply = null;
+    });
+
     await t.test("hotel price recovery uses the same source and verifies amount, role and currency",async () => {
       reply = ({operation}) => operation === "hotel" ? {...fixture[checkout],priceText:"",price:190.98,currency:"EUR"} : null;
       const {status,body}=await upload(checkout);
@@ -130,6 +202,9 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       assert.deepEqual(calls.map(c=>c.operation),["classification","hotel","hotel-price-recovery"]);
       assert.equal(body.offerHotelOptions[0].checkoutBinding.eurPrice,190.98);
       assert.deepEqual(body.debug.visionExecutions.at(-1).sourceIds,["SRC-1"]);
+      assert.deepEqual(calls.at(-1).config.responseSchema, { type: "object", properties: {
+        price: { type: "number" }, priceText: { type: "string" }, currency: { type: "string" }
+      } });
       reply = ({operation}) => operation === "hotel" ? {...fixture[checkout],priceText:"",price:190.98,currency:"EUR"}
         : operation === "hotel-price-recovery" ? {priceText:"195 EUR",price:195,currency:"EUR"} : null;
       assert.equal((await upload(checkout)).body.offerHotelOptions[0].checkoutBinding,undefined);
@@ -195,6 +270,9 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       assert.deepEqual(calls.filter(c=>c.provider==="openai").map(c=>c.operation),
         ["classification","classification","flight","hotel"],JSON.stringify(body.sources));
       assert.equal(body.offerHotel.sourceAuthority.hotelPrimary,"openai-vision");
+      const legacyHotel = calls.find(call => call.operation === "hotel");
+      assert.match(legacyHotel.prompt, /"currency": "EUR"/);
+      assert.doesNotMatch(legacyHotel.prompt, /Return every required key/);
       assert.equal(body.offerHotelOptions[0].checkoutBinding.eurPrice,190.98);
       assert.equal(body.offerFlight.sourceAuthority.extractionPath,"fallback");
       assert.equal(body.debug.visionExecutions,undefined);

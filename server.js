@@ -10428,14 +10428,17 @@ const GEMINI_CLASSIFICATION_SCHEMA = { type: "object", properties: {
 const GEMINI_HOTEL_PRICE_SCHEMA = { type: "object", properties: {
   price: { type: "number" }, priceText: { type: "string" }, currency: { type: "string" }
 } };
-const GEMINI_HOTEL_SCHEMA = { type: "object", properties: {
+const GEMINI_HOTEL_SCHEMA = { type: "object", required: [
+  "name", "stars", "pageKind", "priceRole", "priceLabel", "priceText", "price", "currency",
+  "occupancy", "room", "meal", "mealSourceText", "nights", "stayDates", "nonRefundable", "transferOnRequest"
+], properties: {
   ...GEMINI_HOTEL_PRICE_SCHEMA.properties,
   ...Object.fromEntries("name stars area distance room meal mealSourceText roomsLeft description address location rating ratePlan priceLabel".split(" ")
     .map(field => [field, { type: "string" }])),
   amenities: { type: "array", items: { type: "string" } },
   pageKind: { type: "string", enum: ["property", "checkout", "unknown"] },
   priceRole: { type: "string" },
-  occupancy: { type: "object", nullable: true, properties: {
+  occupancy: { type: "object", nullable: true, required: ["adults", "children", "rooms", "childAges"], properties: {
     adults: { type: "integer", nullable: true }, children: { type: "integer", nullable: true },
     rooms: { type: "integer", nullable: true }, childAges: { type: "array", nullable: true, items: { type: "integer" } }
   } },
@@ -11931,13 +11934,16 @@ Return ONLY strict JSON:
   "mealSourceText": "",
   "price": 0,
   "priceText": "",
-  "currency": "EUR",
+  "currency": "${smartVision ? "" : "EUR"}",
   "roomsLeft": "",
   "description": "",
   "address": "",
   "location": "",
   "rating": "",
-  "amenities": []${smartSources ? `,
+  "amenities": []${smartVision ? `,
+  "pageKind": "unknown",
+  "priceRole": "unknown",
+  "priceLabel": ""` : ""}${smartSources ? `,
   "occupancy": { "adults": null, "children": null, "rooms": null, "childAges": null },
   "nights": null,
   "stayDates": null,
@@ -11962,7 +11968,9 @@ Rules:
 - amenities should include visible facilities such as Free WiFi, Parking, rating, pool, restaurant
 - description should be short, client-friendly Bulgarian, based only on visible info
 - translate visible terms into Bulgarian, for example "breakfast included" -> "Включена закуска", "double room" -> "Двойна стая"
-- if not visible, use empty string or 0
+${smartVision ? `- Return every required key in the JSON example. Extract values only from visible source evidence.
+- For unknown values use price 0, currency and unknown text "", pageKind and priceRole "unknown", and null for unknown occupancy, nights, stayDates, nonRefundable and transferOnRequest.
+- If occupancy is partially known, return an object with adults, children, rooms and childAges, using null for each unknown value. Use children 0 only when explicitly evidenced.` : "- if not visible, use empty string or 0"}
 ${smartSources ? `For Smart Import also return pageKind (property, checkout, or unknown), priceRole (stay_total, per_person, tax, discount, credit, cancellation_fee, add_on, or unknown), and priceLabel (verbatim label on the same row as priceText). A Genius balance is a credit, including on a property page. For a visible non-total amount preserve its role, label and exact amount in these evidence fields; never label it stay_total.
 Read occupancy, nights and stayDates from the checkout reservation summary for the selected room. Read nonRefundable alongside the selected room conditions. Keep the commercial keys in the example and use null when unknown; return ratePlan only when visible. Return nights as an integer or null, nonRefundable true for an explicit non-refundable rate, false for an explicitly refundable rate, or null when unstated; transferOnRequest true for explicit availability on request, including an optional checkout checkbox offering to request an airport transfer or receive details and prices (even when unchecked); a generic airport shuttle amenity is insufficient. Use false for explicit unavailability or null when unstated. A transfer request is not an included transfer. Never assume zero children or infer occupancy from a room name. Keep transfer and cancellation claims out of description and amenities.` : ""}
 `
