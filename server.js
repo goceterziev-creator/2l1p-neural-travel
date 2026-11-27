@@ -12419,13 +12419,24 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       }
     }
     const checkoutRecords = [];
+    const checkoutOcrBySource = new Map();
     for (const hotel of offerHotelOptions) {
       if (!(hotel.price > 0) || !Array.isArray(hotel.priceEvidence)) continue;
-      const record = smartImportPriceBinding.checkoutRecord({
-        intakeId, agencyId, hotel, quote,
-        source: nextSources.find(item => item.sourceId === hotel.checkoutSourceId),
-        parsed: hotelResult?.rawParsedHotels?.find(item => item.sourceId === hotel.checkoutSourceId)
-      });
+      const sourceIndex = nextSources.findIndex(item => item.sourceId === hotel.checkoutSourceId);
+      const source = nextSources[sourceIndex];
+      const parsed = hotelResult?.rawParsedHotels?.find(item => item.sourceId === hotel.checkoutSourceId);
+      if (smartVision && parsed?.pageKind === "checkout" && imageFiles[sourceIndex]?.buffer) {
+        const { readCheckoutOcr, roomConflict } = require("./server/checkout-ocr");
+        if (!checkoutOcrBySource.has(source.sourceId)) {
+          const evidence = await readCheckoutOcr(imageFiles[sourceIndex].buffer, source.sourceId);
+          checkoutOcrBySource.set(source.sourceId, evidence.status === "observed"
+            ? { status: evidence.status, conflict: roomConflict(evidence, parsed.occupancy) }
+            : evidence);
+        }
+        hotel.checkoutOcr = checkoutOcrBySource.get(source.sourceId);
+        if (hotel.checkoutOcr.conflict) continue;
+      }
+      const record = smartImportPriceBinding.checkoutRecord({ intakeId, agencyId, hotel, quote, source, parsed });
       if (record) {
         checkoutRecords.push(record);
         hotel.checkoutBinding = { version: record.version, referenceId: record.referenceId, intakeId, sourceId: record.sourceId, rate: record.rate, eurPrice: record.eurPrice };

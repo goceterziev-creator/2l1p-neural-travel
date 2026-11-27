@@ -195,6 +195,34 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       reply = null;
     });
 
+    await t.test("a checkout room conflict preserves the observation without issuing a price reference", async () => {
+      const ocr = require("../server/checkout-ocr");
+      const read = ocr.readCheckoutOcr;
+      const reconcile = ocr.roomConflict;
+      const conflict = { sourceId: "SRC-1", reportedRooms: 1, observedRooms: 2, headings: [] };
+      try {
+        ocr.readCheckoutOcr = async () => ({ status: "observed" });
+        ocr.roomConflict = () => conflict;
+        const { status, body } = await upload(checkout);
+        assert.equal(status, 200, JSON.stringify(body));
+        const option = body.offerHotelOptions[0];
+        assert.deepEqual(option.checkoutOcr.conflict, conflict);
+        assert.equal(option.price, 190.98);
+        assert.equal(option.currency, "EUR");
+        assert.equal(option.occupancy.rooms, 1);
+        assert.equal(option.checkoutBinding, undefined);
+        assert.deepEqual(calls.map(call => call.operation), ["classification", "hotel"]);
+        const db = JSON.parse(fs.readFileSync(env.DB_FILE, "utf8"));
+        assert.deepEqual(db.smartImportPriceEvidenceV1[body.intakeId].records, []);
+        const recovered = await nativeFetch(base + "/api/smart-import/" + body.intakeId, { headers: { cookie } });
+        assert.equal(recovered.status, 200);
+        assert.deepEqual((await recovered.json()).offerHotelOptions[0].checkoutOcr.conflict, conflict);
+      } finally {
+        ocr.readCheckoutOcr = read;
+        ocr.roomConflict = reconcile;
+      }
+    });
+
     await t.test("hotel price recovery uses the same source and verifies amount, role and currency",async () => {
       reply = ({operation}) => operation === "hotel" ? {...fixture[checkout],priceText:"",price:190.98,currency:"EUR"} : null;
       const {status,body}=await upload(checkout);

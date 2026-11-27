@@ -3251,6 +3251,12 @@ function renderUniversalTravelReview(data = {}, files = []) {
         <select id="reviewFlightCandidate"><option value="" ${data.selectedFlightIndex == null ? "selected" : ""} disabled>Изберете полетен вариант</option>${candidates.map((candidate, index) =>
           `<option value="${index}" ${index === data.selectedFlightIndex ? "selected" : ""}>${escapeHtml(candidate.provider || candidate.sourceIds.join(", "))} · ${escapeHtml(formatPrice(candidate.flight.price, candidate.flight.currency))}</option>`
         ).join("")}</select></label>` : ""}
+      ${hotelOptions.map(h => h.checkoutOcr?.conflict).filter(Boolean).map(conflict =>
+        `<p><strong>${escapeHtml(conflict.sourceId)}: несъответствие в броя стаи.</strong>
+        Vision: ${escapeHtml(String(conflict.reportedRooms))}, OCR: ${escapeHtml(String(conflict.observedRooms))}.
+        ${conflict.headings.map(words => escapeHtml(words.map(word => word.text).join(" "))).join(" · ")}.
+        Проверете оригинала и заетостта. За да приложите цена, отбележете „Операторска цена“.</p>`).join("")}
+      ${hotelOptions.some(h => h.checkoutOcr?.status === "unavailable") ? "<p>OCR проверката на заетостта не е налична за част от checkout документите.</p>" : ""}
       ${hotelOptions.length ? `<section><h3>Всички хотелски варианти</h3>${hotelOptions.map((h,i)=>`<label>${escapeHtml([h.name, h.address, h.room, h.ratePlan, h.checkoutSourceId].filter(Boolean).join(" · "))} — ${escapeHtml(h.currency || "въведете проверена цена в EUR")}<input id="reviewHotelPrice${i}" type="number" step="0.01" value="${Number(h.price || 0) || ""}" />${Array.isArray(h.priceEvidence) ? `<span><input id="reviewHotelOperator${i}" type="checkbox" /> Операторска цена</span>` : ""}${h.checkoutBinding && h.currency !== "EUR" ? `<small>Курс при импорта: ${escapeHtml(String(h.checkoutBinding.rate))} · ${escapeHtml(formatPrice(h.checkoutBinding.eurPrice, "EUR"))}</small>` : ""}${(h.priceEvidence || []).map(e => `<small>${escapeHtml([e.sourceId, e.label, e.text, e.role].filter(Boolean).join(" · "))}</small>`).join("")}</label>`).join("")}</section>` : ""}
       ${(data.propertyReview || []).map((property, index) => `<label>${escapeHtml([property.sourceId, property.name,
         property.address || "без адрес", property.conflict ? "Противоречащи условия" : "Нееднозначна връзка",
@@ -3549,12 +3555,19 @@ async function applyUniversalTravelIntakeResult() {
   if ($("universalHotelPrice")) hotel.price = Number($("universalHotelPrice").value || 0);
   if ($("universalHotelDescription")) hotel.description = $("universalHotelDescription").value.trim();
 
-  const reviewedHotels = (data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : [])).map((h, i) => {
+  const options = data.offerHotelOptions?.length ? data.offerHotelOptions : (hotel.name ? [hotel] : []);
+  if (options.some((option, i) => option.checkoutOcr?.conflict && !$("reviewHotelOperator" + i)?.checked)) {
+    alert("Проверете разминаването в броя стаи и потвърдете изрична операторска цена.");
+    return;
+  }
+  const reviewedHotels = options.map((option, i) => {
+    const { checkoutOcr, ...h } = option;
+    const operatorPrice = $("reviewHotelOperator" + i)?.checked;
     const price = Number($("reviewHotelPrice" + i)?.value ?? h.price);
     const currency = h.currency || (price > 0 ? "EUR" : "");
     let importedPrice;
     if (data.mode === "GT63_SMART_IMPORT" && Array.isArray(h.priceEvidence) && price > 0) {
-      if ($("reviewHotelOperator" + i)?.checked || (!h.checkoutBinding && price !== h.price)) importedPrice = { kind: "operator" };
+      if (operatorPrice || (!h.checkoutBinding && price !== h.price)) importedPrice = { kind: "operator" };
       else if (h.checkoutBinding) importedPrice = { kind: "checkout", version: h.checkoutBinding.version,
         referenceId: h.checkoutBinding.referenceId, intakeId: h.checkoutBinding.intakeId, sourceId: h.checkoutBinding.sourceId };
     }
