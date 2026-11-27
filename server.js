@@ -10066,6 +10066,26 @@ const GEMINI_FLIGHT_SCHEMA = {
   }
 };
 
+const GEMINI_CONTRACT_SEGMENT_FIELDS = ["from", "to", "departure", "arrival", "airline", "flightNumber", "transferBefore"];
+const GEMINI_CONTRACT_FLIGHT_SCHEMA = {
+  ...GEMINI_FLIGHT_SCHEMA,
+  required: ["outbound", "inbound"],
+  properties: {
+    ...GEMINI_FLIGHT_SCHEMA.properties,
+    ...Object.fromEntries(["outbound", "inbound"].map(direction => {
+      const group = GEMINI_FLIGHT_SCHEMA.properties[direction];
+      const segments = group.properties.segments;
+      return [direction, { ...group, required: ["segments"], properties: {
+        ...group.properties,
+        segments: { ...segments, items: { ...segments.items, required: GEMINI_CONTRACT_SEGMENT_FIELDS,
+          properties: { ...segments.items.properties, ...Object.fromEntries(GEMINI_CONTRACT_SEGMENT_FIELDS
+            .map(field => [field, { type: "string", nullable: true }])) }
+        } }
+      } }];
+    }))
+  }
+};
+
 function normalizeGeminiIata(value = "") {
   const match = String(value || "").toUpperCase().match(/\b[A-Z]{3}\b/);
   return match ? match[0] : "";
@@ -10184,7 +10204,7 @@ function parseVisionPrice(value = 0) {
   return Number(cleaned) || 0;
 }
 
-function safeGeminiSegments(group = {}) {
+function safeGeminiSegments(group = {}, preservePartial = false) {
   return safeArray(group?.segments).map((segment) => ({
     from: normalizeGeminiIata(segment.from),
     to: normalizeGeminiIata(segment.to),
@@ -10194,13 +10214,14 @@ function safeGeminiSegments(group = {}) {
     flightNumber: String(segment.flightNumber || "").replace(/\s+/g, " ").trim(),
     duration: String(segment.duration || "").trim(),
     transferBefore: String(segment.transferBefore || "").trim()
-  })).filter((segment) => segment.from || segment.to || segment.departure || segment.arrival);
+  })).filter((segment) => preservePartial ? Object.values(segment).some(smartFlightPrice.flightText)
+    : segment.from || segment.to || segment.departure || segment.arrival);
 }
 
-function validateGeminiFlightJson(value = {}) {
+function validateGeminiFlightJson(value = {}, preservePartial = false) {
   value = normalizeVisionFlightJson(value);
-  const outboundSegments = safeGeminiSegments(value.outbound);
-  const inboundSegments = safeGeminiSegments(value.inbound);
+  const outboundSegments = safeGeminiSegments(value.outbound, preservePartial);
+  const inboundSegments = safeGeminiSegments(value.inbound, preservePartial);
   const price = parseVisionPrice(value.price);
   const dates = safeArray(value.dates).map(smartFlightPrice.flightText).filter(Boolean);
   return {
@@ -10513,9 +10534,23 @@ async function extractFlightWithGeminiVision(files = [], { destination = "", sou
   }));
 
   if (smartVision) {
-    const result = await smartImportGeminiJson({ smartVision, operation: "flight", sourceIds, prompt, imageParts, schema: GEMINI_FLIGHT_SCHEMA });
-    const canonical = validateGeminiFlightJson(result.parsed);
-    return { model: result.model, provider: "gemini-vision", canonical, flight: geminiCanonicalToFlight(canonical) };
+    const contractPrompt = prompt + "\nReturn both outbound and inbound, each with a segments array in source order. " +
+      "Keep partial segments. Return null for unsupported segment fields and [] when no segment was extracted. " +
+      "An empty inbound array does not establish a one-way trip. For transferBefore preserve explicit layover or self-transfer text only.";
+    const result = await smartImportGeminiJson({ smartVision, operation: "flight", sourceIds,
+      prompt: contractPrompt, imageParts, schema: GEMINI_CONTRACT_FLIGHT_SCHEMA });
+    const canonical = validateGeminiFlightJson(result.parsed, true);
+    const { outbound, inbound } = canonical;
+    const completeSegment = segment => ["from", "to", "departure", "arrival"]
+      .every(field => smartFlightPrice.flightText(segment[field]));
+    const expectsReturn = canonical.priceObservations.some(item => item.routeScope === "round-trip");
+    const incomplete = !outbound.segments.length || (expectsReturn && !inbound.segments.length) ||
+      [...outbound.segments, ...inbound.segments].some(segment => !completeSegment(segment));
+    const flight = geminiCanonicalToFlight({
+      ...canonical, outbound: { ...outbound, segments: outbound.segments.filter(completeSegment) },
+      inbound: { ...inbound, segments: inbound.segments.filter(completeSegment) }
+    });
+    return { model: result.model, provider: "gemini-vision", canonical, flight, incomplete };
   }
 
   const gemini = await postGeminiVisionWithRetry({
@@ -12371,10 +12406,13 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
         // The server can identify an unlabelled observation only in a single-image extraction.
         if (sourceIds.length === 1) for (const item of observations) item.sourceId ||= sourceIds[0];
         const priceReview = smartFlightPrice.reviewFlightPrice(flight, observations, sourceIds, result.canonical?.passengers);
-        flight.price = priceReview.total?.amount || 0;
-        flight.currency = priceReview.total?.currency || "";
+        flight.price = result.incomplete ? 0 : priceReview.total?.amount || 0;
+        flight.currency = result.incomplete ? "" : priceReview.total?.currency || "";
         flight.baggage = smartFlightPrice.flightText(flight.baggage);
-        flightCandidates.push({ candidateId: crypto.randomUUID(), provider, sourceIds, flight, observations, priceReview, result });
+        flightCandidates.push({ candidateId: crypto.randomUUID(), provider, sourceIds, flight, observations, priceReview, result,
+          ...(result.incomplete ? { warnings: ["FLIGHT_EXTRACTION_INCOMPLETE"],
+            itineraryEvidence: { outbound: result.canonical.outbound.segments, inbound: result.canonical.inbound.segments } } : {})
+        });
       }
       const completeness = ({ flight }) => {
         const segments = [...safeArray(flight.outboundSegments), ...safeArray(flight.inboundSegments)];
@@ -12450,7 +12488,7 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
     }
     const flightRecords = [];
     for (const candidate of flightCandidates) {
-      const record = smartFlightPrice.sourceFlightRecord({ intakeId, agencyId, candidate, quote });
+      const record = candidate.result.incomplete ? null : smartFlightPrice.sourceFlightRecord({ intakeId, agencyId, candidate, quote });
       if (record) {
         flightRecords.push(record);
         candidate.checkoutBinding = { version: record.version, intakeId, referenceId: record.referenceId,
@@ -12458,7 +12496,9 @@ app.post("/api/smart-import", requireCapability("imports.run"), upload.array("im
       } else {
         candidate.flight.price = 0;
         candidate.flight.currency = "";
-        candidate.warnings = [candidate.priceReview.warning || (candidate.provider ? "FLIGHT_PRICE_FX_UNAVAILABLE" : "FLIGHT_PRICE_PROVIDER_UNKNOWN")];
+        const priceWarning = candidate.priceReview.warning ||
+          (!candidate.result.incomplete ? (candidate.provider ? "FLIGHT_PRICE_FX_UNAVAILABLE" : "FLIGHT_PRICE_PROVIDER_UNKNOWN") : "");
+        candidate.warnings = [...(candidate.warnings || []), ...(priceWarning ? [priceWarning] : [])];
       }
     }
     const responsePayload = buildSmartImportResponse({
