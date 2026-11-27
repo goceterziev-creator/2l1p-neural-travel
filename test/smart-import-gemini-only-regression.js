@@ -137,7 +137,11 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
         : call.operation === "flight" && call.name === legacyFlight
           ? { outbound: { segments: [segment, { flightNumber: "PARTIAL", airline: "Tarom" }, { from: null }] },
               inbound: { segments: [] }, priceObservations: [observation] }
-          : null;
+          : call.operation === "flight" && call.name === sky ? {
+              ...fixture[sky],
+              outbound: { segments: [{ ...fixture[sky].outbound.segments[0], flightNumber: "PC272" }] },
+              inbound: { segments: [{ ...fixture[sky].inbound.segments[0], flightNumber: "PC273" }] }
+            } : null;
       const mixed = await upload(legacyFlight, sky);
       assert.equal(mixed.status, 200, JSON.stringify(mixed.body));
       const [valid, partial] = mixed.body.flightCandidates;
@@ -154,8 +158,8 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       assert.equal(partial.observations[0].amount, 266);
       assert.deepEqual(partial.warnings, ["FLIGHT_EXTRACTION_INCOMPLETE", "FLIGHT_PRICE_SCOPE_UNKNOWN"]);
       const contract = calls.find(call => call.operation === "flight").config.responseSchema;
-      assert.deepEqual(contract.required, ["outbound", "inbound"]);
-      for (const key of contract.required) {
+      assert.deepEqual(contract.required, ["outbound", "inbound", "itineraryDirection"]);
+      for (const key of ["outbound", "inbound"]) {
         assert.deepEqual(contract.properties[key].required, ["segments"]);
         const item = contract.properties[key].properties.segments.items;
         assert(item.required.includes("transferBefore"));
@@ -171,12 +175,35 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       assert.equal(roundTrip.flight.outboundSegments[0].departure, segment.departure);
       assert(!roundTrip.warnings.includes("FLIGHT_EXTRACTION_INCOMPLETE"));
       reply = ({operation}) => operation === "flight" ? {
-        outbound: { segments: [segment] }, inbound: { segments: [] },
-        priceObservations: [{ ...observation, routeScope: "one-way" }]
+        itineraryDirection: "one-way", outbound: { segments: [segment] }, inbound: { segments: [] },
+        priceObservations: [{ ...observation, routeScope: "unknown" }]
       } : null;
       const oneWay = (await upload(legacyFlight)).body.flightCandidates[0];
       assert.equal(oneWay.flight.inboundSegments.length, 0);
       assert(!oneWay.warnings?.includes("FLIGHT_EXTRACTION_INCOMPLETE"));
+      for (const routeScope of ["unknown", "one-way"]) {
+        reply = ({operation}) => operation === "flight" ? {
+          itineraryDirection: "unknown", outbound: { segments: [segment] }, inbound: { segments: [] },
+          priceObservations: [{ ...observation, routeScope }]
+        } : null;
+        const { body } = await upload(legacyFlight);
+        const candidate = body.flightCandidates[0];
+        assert.equal(body.flight.itineraryDirection, "unknown");
+        assert(candidate.warnings.includes("FLIGHT_EXTRACTION_INCOMPLETE"));
+        assert.equal(candidate.checkoutBinding, undefined);
+      }
+      for (const missing of [{ airline: null }, { flightNumber: "null" }]) {
+        reply = ({operation}) => operation === "flight" ? {
+          ...priced, itineraryDirection: "round-trip",
+          outbound: { segments: [{ ...outbound, ...missing }] }
+        } : null;
+        const candidate = (await upload(legacyFlight)).body.flightCandidates[0];
+        const field = Object.keys(missing)[0];
+        assert.equal(candidate.itineraryEvidence.outbound[0][field], "");
+        assert.equal(candidate.flight.outboundSegments.length, 0);
+        assert(candidate.warnings.includes("FLIGHT_EXTRACTION_INCOMPLETE"));
+        assert.equal(candidate.checkoutBinding, undefined);
+      }
       reply = null;
 
       const vm = require("node:vm");

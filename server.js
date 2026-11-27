@@ -10067,11 +10067,13 @@ const GEMINI_FLIGHT_SCHEMA = {
 };
 
 const GEMINI_CONTRACT_SEGMENT_FIELDS = ["from", "to", "departure", "arrival", "airline", "flightNumber", "transferBefore"];
+const GEMINI_ITINERARY_DIRECTIONS = ["one-way", "round-trip", "unknown"];
 const GEMINI_CONTRACT_FLIGHT_SCHEMA = {
   ...GEMINI_FLIGHT_SCHEMA,
-  required: ["outbound", "inbound"],
+  required: ["outbound", "inbound", "itineraryDirection"],
   properties: {
     ...GEMINI_FLIGHT_SCHEMA.properties,
+    itineraryDirection: { type: "string", enum: GEMINI_ITINERARY_DIRECTIONS },
     ...Object.fromEntries(["outbound", "inbound"].map(direction => {
       const group = GEMINI_FLIGHT_SCHEMA.properties[direction];
       const segments = group.properties.segments;
@@ -10536,21 +10538,25 @@ async function extractFlightWithGeminiVision(files = [], { destination = "", sou
   if (smartVision) {
     const contractPrompt = prompt + "\nReturn both outbound and inbound, each with a segments array in source order. " +
       "Keep partial segments. Return null for unsupported segment fields and [] when no segment was extracted. " +
-      "An empty inbound array does not establish a one-way trip. For transferBefore preserve explicit layover or self-transfer text only.";
+      "Set itineraryDirection from the itinerary's explicit direction label or visible outbound and return itinerary, independent of fare scope. " +
+      "Use unknown if direction is not established. An empty inbound array does not establish one-way. " +
+      "For transferBefore preserve explicit layover or self-transfer text only.";
     const result = await smartImportGeminiJson({ smartVision, operation: "flight", sourceIds,
       prompt: contractPrompt, imageParts, schema: GEMINI_CONTRACT_FLIGHT_SCHEMA });
     const canonical = validateGeminiFlightJson(result.parsed, true);
+    const reportedDirection = result.parsed.itineraryDirection;
+    const itineraryDirection = GEMINI_ITINERARY_DIRECTIONS.includes(reportedDirection) ? reportedDirection : "unknown";
     const { outbound, inbound } = canonical;
-    const completeSegment = segment => ["from", "to", "departure", "arrival"]
+    const completeSegment = segment => GEMINI_CONTRACT_SEGMENT_FIELDS.filter(field => field !== "transferBefore")
       .every(field => smartFlightPrice.flightText(segment[field]));
-    const expectsReturn = canonical.priceObservations.some(item => item.routeScope === "round-trip");
-    const incomplete = !outbound.segments.length || (expectsReturn && !inbound.segments.length) ||
+    const directionIncomplete = itineraryDirection === "one-way" ? inbound.segments.length > 0 : !inbound.segments.length;
+    const incomplete = !outbound.segments.length || directionIncomplete ||
       [...outbound.segments, ...inbound.segments].some(segment => !completeSegment(segment));
     const flight = geminiCanonicalToFlight({
       ...canonical, outbound: { ...outbound, segments: outbound.segments.filter(completeSegment) },
       inbound: { ...inbound, segments: inbound.segments.filter(completeSegment) }
     });
-    return { model: result.model, provider: "gemini-vision", canonical, flight, incomplete };
+    return { model: result.model, provider: "gemini-vision", canonical: { ...canonical, itineraryDirection }, flight, incomplete };
   }
 
   const gemini = await postGeminiVisionWithRetry({
