@@ -11,7 +11,8 @@
     "v9:check": "node scripts/v9-architecture-check.js",
     "v9:boundary": "node scripts/v9-boundary-test.js",
     "qa": "node scripts/run-qa.js && node scripts/v9-boundary-test.js",
-    "production:check": "node scripts/production-check.js"
+    "production:check": "node scripts/production-check.js",
+    "build": "node scripts/verify-checkout-ocr-model.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

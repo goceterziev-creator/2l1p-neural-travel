@@ -201,7 +201,10 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
       const reconcile = ocr.roomConflict;
       const conflict = { sourceId: "SRC-1", reportedRooms: 1, observedRooms: 2, headings: [] };
       try {
-        ocr.readCheckoutOcr = async () => ({ status: "observed" });
+        const raw = { sourceId: "SRC-1", sourceDigest: crypto.createHash("sha256").update(checkout).digest("hex"),
+          tsv: "internal-only-ocr", blocks: [{ text: "private OCR block" }], confidence: 90,
+          initializationMs: 11, recognitionMs: 22, peakRssKiB: 12000 };
+        ocr.readCheckoutOcr = async () => ({ status: "observed", ...raw });
         ocr.roomConflict = () => conflict;
         const { status, body } = await upload(checkout);
         assert.equal(status, 200, JSON.stringify(body));
@@ -216,7 +219,14 @@ test("Smart Import Gemini-only policy with isolated provider transports", async 
         assert.deepEqual(db.smartImportPriceEvidenceV1[body.intakeId].records, []);
         const recovered = await nativeFetch(base + "/api/smart-import/" + body.intakeId, { headers: { cookie } });
         assert.equal(recovered.status, 200);
-        assert.deepEqual((await recovered.json()).offerHotelOptions[0].checkoutOcr.conflict, conflict);
+        const recoveredBody = await recovered.json();
+        assert.deepEqual(recoveredBody.offerHotelOptions[0].checkoutOcr.conflict, conflict);
+        assert.equal(body.checkoutOcrEvidence, undefined);
+        assert.equal(recoveredBody.checkoutOcrEvidence, undefined);
+        const bytes = fs.readFileSync(path.join(env.SOURCE_EVIDENCE_DIR, "offers", body.intakeId, "smart_import_response.json"));
+        assert.equal(crypto.createHash("sha256").update(bytes).digest("hex"),
+          db.smartImportPriceEvidenceV1[body.intakeId].archive.responseDigest);
+        assert.deepEqual(JSON.parse(bytes).checkoutOcrEvidence, [raw]);
       } finally {
         ocr.readCheckoutOcr = read;
         ocr.roomConflict = reconcile;
